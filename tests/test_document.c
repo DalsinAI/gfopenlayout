@@ -776,6 +776,128 @@ static void test_tabs(void)
     ol_document_free(doc);
 }
 
+/* a paragraph of one text node with the given stops */
+static ol_node *tab_para(ol_document *doc, const char *utf8, int n, const ol_tab_stop *stops,
+                         ol_text_align align)
+{
+    ol_node *p = block(doc, NULL, OL_ROLE_PARAGRAPH, align);
+    CHECK(ol_node_set_tab_stops(p, n, stops));
+    return text(doc, p, utf8, OL_CSSPX(16), 0);
+}
+
+/* 0.3: right, centred and decimal stops, and leaders */
+static void test_aligned_tabs(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_tab_stop st[3];
+    ol_node *toc, *edge, *centre, *dec, *dec_none, *no_room, *two, *wrap, *just, *left_past, *p;
+    const ol_display_op *ops[16];
+    ol_text_position pos;
+    ol_rect caret;
+    int pg = -1;
+    size_t n;
+
+    memset(st, 0, sizeof st);
+    /* a contents line: the page number at a right stop past the line's end, with dots */
+    st[0].position = OL_CSSPX(200);
+    st[0].align = OL_TAB_RIGHT;
+    st[0].leader = OL_LEADER_DOT;
+    toc = tab_para(doc, "Executive summary\t3", 1, st, OL_ALIGN_START);
+    /* a right stop at the line's end */
+    st[0].position = OL_CSSPX(180);
+    st[0].leader = OL_LEADER_NONE;
+    edge = tab_para(doc, "Scope\t12", 1, st, OL_ALIGN_START);
+    /* centred */
+    st[0].position = OL_CSSPX(100);
+    st[0].align = OL_TAB_CENTER;
+    st[0].leader = OL_LEADER_HYPHEN;
+    centre = tab_para(doc, "ab\tcdef", 1, st, OL_ALIGN_START);
+    /* decimal, then decimal with no point */
+    st[0].position = OL_CSSPX(120);
+    st[0].align = OL_TAB_DECIMAL;
+    st[0].leader = OL_LEADER_UNDERSCORE;
+    dec = tab_para(doc, "x\t12.50", 1, st, OL_ALIGN_START);
+    dec_none = tab_para(doc, "x\t125", 1, st, OL_ALIGN_START);
+    /* no room before the stop: the text stays after the tab */
+    st[0].position = OL_CSSPX(60);
+    st[0].align = OL_TAB_RIGHT;
+    st[0].leader = OL_LEADER_NONE;
+    no_room = tab_para(doc, "abcdef\tlongtext", 1, st, OL_ALIGN_START);
+    /* a right stop, then a left one */
+    st[0].position = OL_CSSPX(100);
+    st[1].position = OL_CSSPX(150);
+    st[1].align = OL_TAB_LEFT;
+    two = tab_para(doc, "a\tb\tc", 2, st, OL_ALIGN_START);
+    /* the text after a right stop wraps: what is on the line goes to the stop */
+    st[0].position = OL_CSSPX(176);
+    wrap = tab_para(doc, "a\tbbbb cccc dddd eeee ffff", 1, st, OL_ALIGN_START);
+    /* a justified line with a right stop is not widened */
+    st[0].position = OL_CSSPX(160);
+    p = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_JUSTIFY);
+    CHECK(ol_node_set_tab_stops(p, 1, st));
+    just = text(doc, p, "aa bb\tcc\nnext", OL_CSSPX(16), 0);
+    /* a justified line that a left stop past its end breaks is not widened */
+    st[0].position = OL_CSSPX(400);
+    st[0].align = OL_TAB_LEFT;
+    p = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_JUSTIFY);
+    CHECK(ol_node_set_tab_stops(p, 1, st));
+    left_past = text(doc, p, "aa bb cc\t9", OL_CSSPX(16), 0);
+    /* bad calls */
+    CHECK(!ol_node_set_tab_stops(p, OL_MAX_TABS + 1, st));
+    CHECK(!ol_node_set_tab_stops(p, 1, NULL));
+    CHECK(ol_node_set_tab_stops(p, 0, NULL) && ol_node_set_tab_stops(p, 1, st));
+
+    CHECK(ol_layout(doc, OL_CSSPX(180), measure, NULL));
+
+    /* "Executive summary" is 136 px; the 3 ends at 200, on the same line */
+    n = text_ops(doc, ol_node_id(toc), ops, 16);
+    CHECK(n == 4);
+    if (n == 4) {
+        CHECK(ops[3]->u.text.bounds.x == OL_CSSPX(192));
+        CHECK(ops[3]->u.text.bounds.y == ops[0]->u.text.bounds.y);
+        CHECK(ops[2]->u.text.bounds.x == OL_CSSPX(136) && ops[2]->u.text.bounds.width == OL_CSSPX(56));
+        CHECK(OL_TEXT_LEADER_OF(ops[2]->u.text.style.text_flags) == OL_LEADER_DOT);
+        CHECK(OL_TEXT_LEADER_OF(ops[0]->u.text.style.text_flags) == OL_LEADER_NONE);
+    }
+    n = text_ops(doc, ol_node_id(edge), ops, 16);
+    CHECK(n == 3 && ops[2]->u.text.bounds.x == OL_CSSPX(164) && ops[2]->u.text.bounds.y == ops[0]->u.text.bounds.y);
+    CHECK(n == 3 && OL_TEXT_LEADER_OF(ops[1]->u.text.style.text_flags) == OL_LEADER_NONE);
+    n = text_ops(doc, ol_node_id(centre), ops, 16);
+    CHECK(n == 3 && ops[2]->u.text.bounds.x == OL_CSSPX(84) && ops[1]->u.text.bounds.width == OL_CSSPX(68));
+    CHECK(n == 3 && OL_TEXT_LEADER_OF(ops[1]->u.text.style.text_flags) == OL_LEADER_HYPHEN);
+    n = text_ops(doc, ol_node_id(dec), ops, 16);
+    CHECK(n == 3 && ops[2]->u.text.bounds.x == OL_CSSPX(104));
+    CHECK(n == 3 && OL_TEXT_LEADER_OF(ops[1]->u.text.style.text_flags) == OL_LEADER_UNDERSCORE);
+    n = text_ops(doc, ol_node_id(dec_none), ops, 16);
+    CHECK(n == 3 && ops[2]->u.text.bounds.x == OL_CSSPX(96));
+    n = text_ops(doc, ol_node_id(no_room), ops, 16);
+    CHECK(n == 3 && ops[2]->u.text.bounds.x == OL_CSSPX(48) && ops[1]->u.text.bounds.width == 0);
+    n = text_ops(doc, ol_node_id(two), ops, 16);
+    CHECK(n == 5 && ops[2]->u.text.bounds.x == OL_CSSPX(92) && ops[4]->u.text.bounds.x == OL_CSSPX(150));
+    n = text_ops(doc, ol_node_id(wrap), ops, 16);
+    CHECK(n == 7);
+    if (n == 7) {
+        /* "bbbb cccc dddd eeee" (152 px) has room after the tab at 8: it ends at 176; ffff wraps */
+        CHECK(ops[2]->u.text.bounds.x == OL_CSSPX(24) && ops[5]->u.text.bounds.x == OL_CSSPX(144));
+        CHECK(ops[5]->u.text.bounds.y == ops[0]->u.text.bounds.y);
+        CHECK(ops[6]->u.text.bounds.y > ops[0]->u.text.bounds.y && ops[6]->u.text.bounds.x == 0);
+    }
+    n = text_ops(doc, ol_node_id(just), ops, 16);
+    CHECK(n >= 4 && ops[0]->u.text.bounds.x == 0 && ops[1]->u.text.bounds.x == OL_CSSPX(24));
+    CHECK(n >= 4 && ops[3]->u.text.bounds.x == OL_CSSPX(144));
+
+    n = text_ops(doc, ol_node_id(left_past), ops, 16);
+    CHECK(n == 5 && ops[1]->u.text.bounds.x == OL_CSSPX(24) && ops[2]->u.text.bounds.x == OL_CSSPX(48));
+    CHECK(n == 5 && ops[3]->u.text.bounds.y > ops[0]->u.text.bounds.y);
+
+    /* the caret after a right-aligned tab is where its text starts */
+    pos.node_id = ol_node_id(toc);
+    pos.offset = 18;
+    CHECK(ol_caret_box(doc, &pos, measure, NULL, &pg, &caret));
+    CHECK(caret.x == OL_CSSPX(192));
+    ol_document_free(doc);
+}
+
 int main(void)
 {
     test_alignment();
@@ -789,6 +911,7 @@ int main(void)
     test_box_versions();
     test_scale();
     test_tabs();
+    test_aligned_tabs();
     if (failures) {
         printf("OPENLAYOUT DOCUMENT FAIL (%d)\n", failures);
         return 20;

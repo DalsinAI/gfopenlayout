@@ -302,13 +302,50 @@ const ol_box_style *ol_node_box(const ol_node *node);
 int ol_node_set_columns(ol_node *node, int count, const ol_unit *widths);
 
 /* A block's tab stops (at most OL_MAX_TABS), from its left edge, left
- * aligned. A tab in its text goes on to the next stop; past the last, to
+ * aligned (ol_node_set_tab_stops below sets them with their alignment). A tab in its text goes on to the next stop; past the last, to
  * the next of every OL_TAB_INTERVAL from the left edge. A first line that
  * hangs (text_indent below 0) stops at the left edge first, so a list's
  * number and tab line its text up with the lines under it. */
 #define OL_MAX_TABS 32
 #define OL_TAB_INTERVAL (OL_UNITS_PER_INCH / 2)
 int ol_node_set_tabs(ol_node *node, int count, const ol_unit *stops);
+
+/* 0.3: tab stops that align what follows them, and leaders. A right stop
+ * ends the text after its tab (up to the next tab or the line's end) at
+ * the stop, a centred one centres it there, a decimal one puts its first
+ * '.' there (its end, when it has none); text that has no room keeps to
+ * the left. A stop may be past the line's end (a contents page's page
+ * numbers at the right margin or beyond). A leader fills the tab's space:
+ * OpenLayout puts it in the tab's text op, in its style's text_flags
+ * (OL_TEXT_LEADER_OF), for the renderer to draw. */
+typedef enum {
+    OL_TAB_LEFT = 0,
+    OL_TAB_CENTER,
+    OL_TAB_RIGHT,
+    OL_TAB_DECIMAL
+} ol_tab_align;
+
+typedef enum {
+    OL_LEADER_NONE = 0,
+    OL_LEADER_DOT,            /* ....... */
+    OL_LEADER_HYPHEN,         /* ------- */
+    OL_LEADER_UNDERSCORE,     /* _______ */
+    OL_LEADER_MIDDLE_DOT,     /* · · · · */
+    OL_LEADER_HEAVY           /* a thick rule */
+} ol_tab_leader;
+
+typedef struct {
+    ol_unit position;         /* from the block's left edge */
+    int32_t align;            /* ol_tab_align */
+    int32_t leader;           /* ol_tab_leader */
+} ol_tab_stop;
+
+int ol_node_set_tab_stops(ol_node *node, int count, const ol_tab_stop *stops);
+
+/* A tab's leader, in its text op's style.text_flags (bits 8 to 10, which
+ * OL_TEXT_... leave free). */
+#define OL_TEXT_LEADER(leader) (((uint32_t)(leader) & 7u) << 8)
+#define OL_TEXT_LEADER_OF(flags) ((unsigned)(((flags) >> 8) & 7u))
 
 /* Pages. ol_layout_pages lays the document out at the page's width less
  * its margins, as a galley, then cuts the galley into pages: between
