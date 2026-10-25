@@ -213,6 +213,19 @@ int main(void)
             tabs_req.count = OL_MAX_TABS + 1;
             CHECK(!OL_NodeSetTabs(&tabs_req));
         }
+        if (OpenLayoutBase->lib_Version >= OPENLAYOUTLIB_TABSTOP_VERSION) {
+            struct OLNodeTabStops stops_req;
+            ol_tab_stop stop;
+            stop.position = OL_CSSPX(40);
+            stop.align = OL_TAB_RIGHT;
+            stop.leader = OL_LEADER_DOT;
+            stops_req.node = p;
+            stops_req.count = 1;
+            stops_req.stops = &stop;
+            CHECK(OL_NodeSetTabStops(&stops_req));
+            stops_req.count = OL_MAX_TABS + 1;
+            CHECK(!OL_NodeSetTabStops(&stops_req));
+        }
         printf("LAYOUTLIB PAGES %ld\n", (long)OL_PageCount(paged));
         OL_DocumentFree(paged);
     }

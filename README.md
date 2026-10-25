@@ -49,6 +49,17 @@ publishing need, on the same tree and display list:
 
 `tests/test_document.c` covers each of them.
 
+## Tab stops that align (0.3)
+
+`ol_node_set_tab_stops` gives a block's stops with their alignment and
+leader: a right stop ends the text after its tab at the stop, a centred
+one centres it there, a decimal one puts its first `.` there. A stop may
+be past the line's end, as a contents page's page numbers often are. The
+leader (dots, hyphens, underscores, middle dots or a heavy rule) is in the
+tab's text op, `OL_TEXT_LEADER_OF(op->u.text.style.text_flags)`, for the
+renderer to draw across the op's bounds. `ol_node_set_tabs` still sets
+left stops without leaders.
+
 ## Build and test
 
 Host:
@@ -69,7 +80,7 @@ Resident Amiga library and ABI test:
 ./build-library.sh
 ```
 
-The resident build produces `build-amiga/lib/openlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `openlayout.library` 3.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3).
+The resident build produces `build-amiga/lib/openlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `openlayout.library` 4.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), and one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4).
 
 The OS 3.2.3 / AC090 68040 qualification opens the library from `LIBS:` and runs both the normal ABI test and a 48-node stress test covering allocation growth, metadata, image nodes, layout and display-list access.
 

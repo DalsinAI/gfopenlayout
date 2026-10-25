@@ -55,4 +55,6 @@ LONG OL_UnscaleX(const ol_scale *scale, LONG px)(a0,d0)
 LONG OL_UnscaleY(const ol_scale *scale, LONG py)(a0,d0)
 ULONG OL_DrawPage(struct OLDrawPage *req)(a0)
 BOOL OL_NodeSetTabs(struct OLNodeTabs *req)(a0)
+* version 4: right, centred and decimal tab stops, and leaders (OpenLayout 0.3)
+BOOL OL_NodeSetTabStops(struct OLNodeTabStops *req)(a0)
 ==end
