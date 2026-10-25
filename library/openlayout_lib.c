@@ -1,5 +1,7 @@
-/* openlayout.library 3.0: version 3 adds pages, tables, frames and the
- * caret (OpenLayout 0.2) after version 2's calls, which are unchanged.
+/* openlayout.library 4.0: version 3 adds pages, tables, frames and the
+ * caret (OpenLayout 0.2) after version 2's calls, which are unchanged;
+ * version 4 adds tab stops that align and their leaders (OpenLayout 0.3).
+ * Programs built for 2 or 3 keep working.
  * Copyright (c) 2026 AmigaChrome Team. MIT.
  */
 #include <exec/types.h>
@@ -13,7 +15,7 @@
 #include "../include/libraries/openlayout.h"
 
 #define REG(r, decl) register decl __asm(#r)
-#define LIB_VERSION 3
+#define LIB_VERSION 4
 #define LIB_REVISION 0
 
 struct OpenLayoutLibBase {
@@ -27,10 +29,10 @@ int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "openlayout.library 3.0 (21.10.2026) OpenLayout 0.2, AmigaChrome Team\r\n";
+    "openlayout.library 4.0 (25.10.2026) OpenLayout 0.3, AmigaChrome Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: openlayout.library 3.0 (21.10.2026) OpenLayout 0.2, AmigaChrome Team";
+    "$VER: openlayout.library 4.0 (25.10.2026) OpenLayout 0.3, AmigaChrome Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),
@@ -87,6 +89,7 @@ static LONG OL_UnscaleX(REG(a0, const ol_scale *scale), REG(d0, LONG px), REG(a6
 static LONG OL_UnscaleY(REG(a0, const ol_scale *scale), REG(d0, LONG py), REG(a6, struct OpenLayoutLibBase *base));
 static ULONG OL_DrawPage(REG(a0, struct OLDrawPage *r), REG(a6, struct OpenLayoutLibBase *base));
 static BOOL OL_NodeSetTabs(REG(a0, struct OLNodeTabs *r), REG(a6, struct OpenLayoutLibBase *base));
+static BOOL OL_NodeSetTabStops(REG(a0, struct OLNodeTabStops *r), REG(a6, struct OpenLayoutLibBase *base));
 
 static const APTR lib_vectors[] = {
     (APTR)lib_open, (APTR)lib_close, (APTR)lib_expunge, (APTR)lib_null,
@@ -107,6 +110,8 @@ static const APTR lib_vectors[] = {
     (APTR)OL_HitTestPage, (APTR)OL_HitText, (APTR)OL_CaretBox, (APTR)OL_NodeBox,
     (APTR)OL_ScaleSet, (APTR)OL_ScaleDPI, (APTR)OL_ScaleFit,
     (APTR)OL_UnscaleX, (APTR)OL_UnscaleY, (APTR)OL_DrawPage, (APTR)OL_NodeSetTabs,
+    /* version 4 */
+    (APTR)OL_NodeSetTabStops,
     (APTR)-1
 };
 
@@ -467,4 +472,12 @@ static BOOL OL_NodeSetTabs(REG(a0, struct OLNodeTabs *r), REG(a6, struct OpenLay
 {
     (void)base;
     return r && ol_node_set_tabs(r->node, (int)r->count, r->stops) ? TRUE : FALSE;
+}
+
+/* ---- version 4 ------------------------------------------------------------ */
+
+static BOOL OL_NodeSetTabStops(REG(a0, struct OLNodeTabStops *r), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return r && ol_node_set_tab_stops(r->node, (int)r->count, r->stops) ? TRUE : FALSE;
 }

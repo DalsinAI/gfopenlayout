@@ -8,6 +8,7 @@
 #define OPENLAYOUTLIB_VERSION 2             /* the calls up to OL_NodeValue */
 #define OPENLAYOUTLIB_REVISION 0
 #define OPENLAYOUTLIB_DOCUMENT_VERSION 3    /* pages, tables, frames, caret: OL_BoxStyleInit on */
+#define OPENLAYOUTLIB_TABSTOP_VERSION 4     /* right, centred and decimal tab stops, leaders: OL_NodeSetTabStops */
 
 struct OLNodeAppend {
     ol_document *document;
@@ -124,6 +125,13 @@ struct OLNodeTabs {
     ol_node *node;
     LONG count;
     const ol_unit *stops;
+};
+
+/* version 4 */
+struct OLNodeTabStops {
+    ol_node *node;
+    LONG count;
+    const ol_tab_stop *stops;
 };
 
 #endif
