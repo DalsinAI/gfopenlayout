@@ -32,6 +32,10 @@ publishing need, on the same tree and display list:
 - grid tables: column widths, column spans, every cell as tall as its row,
   borders;
 - frames placed out of the flow (text boxes, pictures, slides' shapes);
+  in 0.3 a frame can be anchored to its page (`box.anchor`): placed from
+  the page's edge, its margins or its paragraph on the page the paragraph
+  starts on, behind the text or in front of it, without moving the page's
+  breaks (a cover's whole-page picture and its title boxes);
 - alignment (start, centre, end, justified) and one baseline a line, so
   mixed sizes and pictures line up;
 - tab stops: a block's own, then every half inch; a first line that

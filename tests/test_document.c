@@ -213,6 +213,170 @@ static void test_frames(void)
     ol_document_free(doc);
 }
 
+/* A frame anchored to its page, at x, y from anchor's corners, w x h. */
+static ol_node *anchored(ol_document *doc, ol_node *parent, uint32_t anchor, ol_unit x, ol_unit y,
+                         ol_unit w, ol_unit h)
+{
+    ol_node *f = block(doc, parent, OL_ROLE_BLOCK, OL_ALIGN_START);
+    ol_box_style box;
+    ol_box_style_init(&box);
+    box.flags = OL_BOX_ABSOLUTE;
+    box.frame.x = x;
+    box.frame.y = y;
+    box.frame.width = w;
+    box.frame.height = h;
+    box.anchor = anchor;
+    ol_node_set_box(f, &box);
+    return f;
+}
+
+static ol_node *picture(ol_document *doc, ol_node *parent, int id, ol_unit w, ol_unit h)
+{
+    ol_node *n = ol_node_append(doc, parent, OL_ROLE_IMAGE, NULL);
+    ol_node_set_image(n, id, w, h);
+    return n;
+}
+
+static const ol_display_op *first_text(const ol_document *doc, const ol_node *n)
+{
+    const ol_display_op *op[1];
+    return text_ops(doc, ol_node_id(n), op, 1) ? op[0] : NULL;
+}
+
+/* the first op of a type on a page, after its first from */
+static const ol_display_op *page_op(const ol_document *doc, int page, ol_op_type type, size_t from)
+{
+    size_t first, count, i;
+    if (!ol_display_page_range(doc, page, &first, &count)) return NULL;
+    for (i = first + from; i < first + count; ++i)
+        if (ol_display_get(doc, i)->type == type) return ol_display_get(doc, i);
+    return NULL;
+}
+
+/* 0.3: frames anchored to their pages, behind and in front of the text */
+static void test_anchored_frames(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_page page;
+    ol_node *cover, *after, *second, *f1, *f2, *f3, *f4, *t2, *t3, *last = NULL;
+    ol_style s;
+    ol_box_style box;
+    const ol_display_op *op, *ops[4];
+    size_t first, count, i;
+    ol_text_position pos;
+    char line[48];
+
+    memset(&page, 0, sizeof(page));
+    page.width = OL_CSSPX(400);
+    page.height = OL_CSSPX(310);       /* 270 px of body: 13 and a half lines */
+    page.margin_top = page.margin_bottom = OL_CSSPX(20);
+    page.margin_left = page.margin_right = OL_CSSPX(20);
+
+    /* the cover: a whole-page picture behind the text, a title box in front */
+    cover = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+    text(doc, cover, "cover", OL_CSSPX(16), 0);
+    f1 = anchored(doc, cover, OL_ANCHOR_X(OL_ANCHOR_PAGE) | OL_ANCHOR_Y(OL_ANCHOR_PAGE) | OL_ANCHOR_BEHIND,
+                  0, 0, OL_CSSPX(400), OL_CSSPX(300));
+    picture(doc, f1, 7, OL_CSSPX(400), OL_CSSPX(300));
+    f2 = anchored(doc, cover, OL_ANCHOR_X(OL_ANCHOR_MARGIN) | OL_ANCHOR_Y(OL_ANCHOR_MARGIN),
+                  OL_CSSPX(10), OL_CSSPX(30), OL_CSSPX(200), OL_CSSPX(60));
+    s = *ol_node_style(f2);
+    s.background = 0xff336699u;
+    s.padding_left = OL_CSSPX(4);
+    ol_node_set_style(f2, &s);
+    t2 = text(doc, f2, "Title text", OL_CSSPX(16), 0);
+    /* the frames move nothing: the next paragraph follows the cover's line */
+    after = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+    text(doc, after, "after the cover", OL_CSSPX(16), 0);
+    for (i = 0; i < 13; ++i) {
+        ol_node *p = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+        snprintf(line, sizeof line, "filler %u", (unsigned)i);
+        text(doc, p, line, OL_CSSPX(16), 0);
+    }
+    /* page 3: frames from the paragraph, one in front, one behind from the page's edge */
+    second = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+    s = *ol_node_style(second);
+    s.margin_left = OL_CSSPX(30);
+    ol_node_set_style(second, &s);
+    ol_box_style_init(&box);
+    box.flags = OL_BOX_PAGE_BREAK_BEFORE;
+    ol_node_set_box(second, &box);
+    text(doc, second, "second page", OL_CSSPX(16), 0);
+    f3 = anchored(doc, second, OL_ANCHOR_ON, OL_CSSPX(5), OL_CSSPX(7), OL_CSSPX(50), OL_CSSPX(20));
+    t3 = text(doc, f3, "pb", OL_CSSPX(16), 0);
+    f4 = anchored(doc, second, OL_ANCHOR_X(OL_ANCHOR_PAGE) | OL_ANCHOR_BEHIND,
+                  OL_CSSPX(100), -OL_CSSPX(10), OL_CSSPX(30), OL_CSSPX(30));
+    picture(doc, f4, 9, OL_CSSPX(30), OL_CSSPX(30));
+    /* enough lines for a third page */
+    for (i = 0; i < 14; ++i) {
+        ol_node *p = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+        snprintf(line, sizeof line, "line %u", (unsigned)i);
+        last = text(doc, p, line, OL_CSSPX(16), 0);
+    }
+
+    CHECK(ol_layout_pages(doc, &page, measure, NULL));
+    CHECK(ol_page_count(doc) == 4);
+    /* the frames moved no page break: no line of the body crosses a page's bottom margin */
+    for (i = 0; i < ol_display_count(doc); ++i) {
+        op = ol_display_get(doc, i);
+        if (op->type == OL_OP_TEXT && op->u.text.node_id != ol_node_id(t2))
+            CHECK(op->u.text.bounds.y + op->u.text.bounds.height <= OL_CSSPX(290));
+    }
+
+    /* page 1: the picture first, at the page's corner, as big as the page */
+    CHECK(ol_display_page_range(doc, 0, &first, &count));
+    op = ol_display_get(doc, first);
+    CHECK(op->type == OL_OP_IMAGE && op->u.image.image_id == 7 && op->page == 0);
+    CHECK(op->u.image.bounds.x == 0 && op->u.image.bounds.y == 0);
+    CHECK(op->u.image.bounds.width == OL_CSSPX(400) && op->u.image.bounds.height == OL_CSSPX(300));
+    /* the body's text where it would be without the frames */
+    op = first_text(doc, ol_node_by_id(doc, ol_node_id(after) + 1));
+    CHECK(op && op->page == 0 && op->u.text.bounds.x == OL_CSSPX(20) && op->u.text.bounds.y == OL_CSSPX(40));
+    /* the title box last, its fill and text from the margins */
+    op = ol_display_get(doc, first + count - 1);
+    CHECK(op->type == OL_OP_TEXT && op->u.text.node_id == ol_node_id(t2));
+    CHECK(text_ops(doc, ol_node_id(t2), ops, 4) == 2 && ops[0]->u.text.bounds.x == OL_CSSPX(34) &&
+          ops[0]->u.text.bounds.y == OL_CSSPX(50) && ops[0]->page == 0);
+    op = page_op(doc, 0, OL_OP_FILL_RECT, 0);
+    CHECK(op && op->u.fill_rect.argb == 0xff336699u && op->u.fill_rect.bounds.x == OL_CSSPX(30) &&
+          op->u.fill_rect.bounds.y == OL_CSSPX(50) && op->u.fill_rect.bounds.width == OL_CSSPX(200) &&
+          op->u.fill_rect.bounds.height == OL_CSSPX(60));
+
+    /* page 3: behind from the page's left and the paragraph's top; in front from the paragraph's corner */
+    CHECK(ol_display_page_range(doc, 2, &first, &count));
+    op = ol_display_get(doc, first);
+    CHECK(op->type == OL_OP_IMAGE && op->u.image.image_id == 9 && op->page == 2);
+    CHECK(op->u.image.bounds.x == OL_CSSPX(100) && op->u.image.bounds.y == OL_CSSPX(10));
+    CHECK(text_ops(doc, ol_node_id(t3), ops, 4) == 1 && ops[0]->page == 2 &&
+          ops[0]->u.text.bounds.x == OL_CSSPX(55) && ops[0]->u.text.bounds.y == OL_CSSPX(27));
+    op = ol_display_get(doc, first + count - 1);
+    CHECK(op->type == OL_OP_TEXT && op->u.text.node_id == ol_node_id(t3));
+    op = first_text(doc, last);
+    CHECK(op && op->page == 3);
+
+    /* the pointer finds the body under a frame */
+    CHECK(ol_hit_test_page(doc, 0, OL_CSSPX(40), OL_CSSPX(60)) != t2);
+    CHECK(ol_hit_text(doc, 0, OL_CSSPX(40), OL_CSSPX(60), measure, NULL, &pos));
+    CHECK(pos.node_id != ol_node_id(t2));
+
+    /* without pages: the frames in the galley, from its corner */
+    CHECK(ol_layout(doc, OL_CSSPX(360), measure, NULL));
+    op = ol_display_get(doc, 0);
+    CHECK(op->type == OL_OP_IMAGE && op->u.image.image_id == 7 && op->u.image.bounds.x == 0);
+    CHECK(text_ops(doc, ol_node_id(t2), ops, 4) == 2 && ops[0]->u.text.bounds.x == OL_CSSPX(14) &&
+          ops[0]->u.text.bounds.y == OL_CSSPX(30));
+    CHECK(ol_display_get(doc, ol_display_count(doc) - 1)->u.text.node_id == ol_node_id(t3));
+
+    /* a program that knows 0.2's ol_box_style: its frames are not anchored */
+    ol_box_style_init(&box);
+    box.flags = OL_BOX_ABSOLUTE;
+    box.anchor = OL_ANCHOR_BEHIND;
+    box.size = (uint32_t)((char *)&box.anchor - (char *)&box);
+    ol_node_set_box(f4, &box);
+    CHECK(ol_node_box(f4)->anchor == 0);
+    ol_document_free(doc);
+}
+
 /* An A5-ish page: 400 x 300 px, 20 px margins: 260 px of body, 13 lines. */
 static void test_pages(void)
 {
@@ -618,6 +782,7 @@ int main(void)
     test_baseline_and_fonts();
     test_table();
     test_frames();
+    test_anchored_frames();
     test_pages();
     test_page_backgrounds_and_rows();
     test_editing();

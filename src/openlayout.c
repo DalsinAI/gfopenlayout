@@ -40,6 +40,15 @@ typedef struct {
     ol_unit bottom;
 } ol_span;
 
+/* A frame anchored to its page (box.anchor): its ops, first to end, in the
+ * frame's own coordinates until they are placed on their page. */
+typedef struct {
+    size_t first, end;
+    ol_unit x, y;             /* its containing block's content corner, in the galley */
+    ol_rect frame;
+    uint32_t anchor;
+} ol_anchor;
+
 struct ol_document {
     ol_node *root;
     ol_node **nodes;
@@ -62,6 +71,10 @@ struct ol_document {
     ol_unit *breaks;
     size_t break_count;
     size_t break_capacity;
+    ol_anchor *anchors;
+    size_t anchor_count;
+    size_t anchor_capacity;
+    int anchor_depth;         /* laying out an anchored frame */
 
     /* pages: one after ol_layout, page 0 being the whole galley */
     int paged;
@@ -265,6 +278,7 @@ void ol_document_free(ol_document *doc)
     free(doc->ops);
     free(doc->keeps);
     free(doc->breaks);
+    free(doc->anchors);
     free(doc->page_start);
     free(doc->page_end);
     free(doc->page_first);
@@ -473,6 +487,14 @@ const ol_node *ol_find_role_name(const ol_document *doc, ol_role role,
     return NULL;
 }
 
+/* In a frame anchored to its page: its bounds are not the galley's. */
+static int in_anchored_frame(const ol_node *n)
+{
+    for (; n; n = n->parent)
+        if ((n->box.flags & OL_BOX_ABSOLUTE) && n->box.anchor) return 1;
+    return 0;
+}
+
 const ol_node *ol_hit_test(const ol_document *doc, ol_unit x, ol_unit y)
 {
     const ol_node *best = NULL;
@@ -482,7 +504,8 @@ const ol_node *ol_hit_test(const ol_document *doc, ol_unit x, ol_unit y)
     for (i = 0; i < doc->node_count; ++i) {
         const ol_node *n = doc->nodes[i];
         int d;
-        if (n->style.display == OL_DISPLAY_NONE || !point_in_rect(n->bounds, x, y))
+        if (n->style.display == OL_DISPLAY_NONE || !point_in_rect(n->bounds, x, y) ||
+            in_anchored_frame(n))
             continue;
         d = node_depth(n);
         if (d >= best_depth) {
@@ -932,13 +955,45 @@ static int is_frame(const ol_node *node)
     return (node->box.flags & OL_BOX_ABSOLUTE) != 0;
 }
 
+/* A frame: at its place from origin (its containing block's content
+ * corner); anchored to its page, at 0, 0 on its own, to be placed when the
+ * pages are known, and leaving no keeps or breaks behind (one inside
+ * another is laid out where the outer one is). */
 static int layout_frame(ol_document *doc, ol_node *node, ol_unit origin_x, ol_unit origin_y,
                         ol_measure_text_fn measure, void *measure_userdata)
 {
     ol_unit bottom;
     ol_unit w = node->box.frame.width > 0 ? node->box.frame.width : OL_CSSPX(1);
-    return layout_block(doc, node, origin_x + node->box.frame.x, origin_y + node->box.frame.y,
-                        w, measure, measure_userdata, &bottom);
+    size_t keeps, breaks, first;
+    ol_anchor *a;
+    int ok;
+    if (!node->box.anchor || doc->anchor_depth)
+        return layout_block(doc, node, origin_x + node->box.frame.x, origin_y + node->box.frame.y,
+                            w, measure, measure_userdata, &bottom);
+    if (doc->anchor_count == doc->anchor_capacity) {
+        size_t cap = doc->anchor_capacity ? doc->anchor_capacity * 2 : 8;
+        ol_anchor *p = (ol_anchor *)realloc(doc->anchors, cap * sizeof(*p));
+        if (!p) return 0;
+        doc->anchors = p;
+        doc->anchor_capacity = cap;
+    }
+    keeps = doc->keep_count;
+    breaks = doc->break_count;
+    first = doc->op_count;
+    ++doc->anchor_depth;
+    ok = layout_block(doc, node, 0, 0, w, measure, measure_userdata, &bottom);
+    --doc->anchor_depth;
+    doc->keep_count = keeps;
+    doc->break_count = breaks;
+    if (!ok) return 0;
+    a = &doc->anchors[doc->anchor_count++];
+    a->first = first;
+    a->end = doc->op_count;
+    a->x = origin_x;
+    a->y = origin_y;
+    a->frame = node->box.frame;
+    a->anchor = node->box.anchor;
+    return 1;
 }
 
 /* A table's rows, as a grid: each cell at its column, every cell in a row
@@ -1215,6 +1270,8 @@ static void reset_layout(ol_document *doc)
     doc->op_count = 0;
     doc->keep_count = 0;
     doc->break_count = 0;
+    doc->anchor_count = 0;
+    doc->anchor_depth = 0;
     doc->paged = 0;
     doc->page_count = 0;
     for (i = 0; i < doc->node_count; ++i)
@@ -1421,16 +1478,69 @@ static int place_op(const ol_document *doc, ol_display_op *op, int p, int split)
     return 1;
 }
 
-/* The galley's ops sorted onto their pages, each page's together. */
+/* The anchored frame op i is in, or NULL; *k follows the anchors, which
+ * are in op order and apart, as i grows. */
+static const ol_anchor *anchor_of(const ol_document *doc, size_t i, size_t *k)
+{
+    while (*k < doc->anchor_count && doc->anchors[*k].end <= i) ++*k;
+    return *k < doc->anchor_count && doc->anchors[*k].first <= i ? &doc->anchors[*k] : NULL;
+}
+
+/* An anchored frame's page, and where its top left corner goes on it. */
+static int anchor_place(const ol_document *doc, const ol_anchor *a, int paged, ol_unit *ox, ol_unit *oy)
+{
+    int p = paged ? page_holding(doc, a->y) : 0;
+    ol_unit ml = paged ? doc->page.margin_left : 0, mt = paged ? doc->page.margin_top : 0;
+    ol_unit start = paged ? doc->page_start[p] : 0;
+    switch (OL_ANCHOR_X_OF(a->anchor)) {
+    case OL_ANCHOR_PAGE: *ox = a->frame.x; break;
+    case OL_ANCHOR_MARGIN: *ox = ml + a->frame.x; break;
+    default: *ox = ml + a->x + a->frame.x; break;
+    }
+    switch (OL_ANCHOR_Y_OF(a->anchor)) {
+    case OL_ANCHOR_PAGE: *oy = a->frame.y; break;
+    case OL_ANCHOR_MARGIN: *oy = mt + a->frame.y; break;
+    default: *oy = mt + a->y - start + a->frame.y; break;
+    }
+    return p;
+}
+
+static void move_op(ol_display_op *op, ol_unit dx, ol_unit dy)
+{
+    shift_op_x(op, dx);
+    switch (op->type) {
+    case OL_OP_TEXT: op->u.text.bounds.y += dy; op->u.text.baseline += dy; break;
+    case OL_OP_IMAGE: op->u.image.bounds.y += dy; break;
+    case OL_OP_FILL_RECT: op->u.fill_rect.bounds.y += dy; break;
+    case OL_OP_RULE: op->u.rule.y1 += dy; op->u.rule.y2 += dy; break;
+    }
+}
+
+/* Under the text (0), the text (1), over it (2). */
+static int op_layer(const ol_anchor *a)
+{
+    if (!a) return 1;
+    return (a->anchor & OL_ANCHOR_BEHIND) ? 0 : 2;
+}
+
+/* The galley's ops sorted onto their pages, each page's together: on each
+ * page the anchored frames behind the text, the text, the frames in front. */
 static int sort_ops_into_pages(ol_document *doc)
 {
-    size_t i, total = 0;
+    size_t i, k, total = 0;
     size_t *next;
     ol_display_op *ops;
-    int p;
+    int p, layer;
 
-    for (i = 0; i < doc->op_count; ++i) {
+    for (i = 0, k = 0; i < doc->op_count; ++i) {
+        const ol_anchor *a = anchor_of(doc, i, &k);
         int first, last, split;
+        if (a) {
+            ol_unit ox, oy;
+            ++doc->page_ops[anchor_place(doc, a, 1, &ox, &oy)];
+            ++total;
+            continue;
+        }
         op_pages(doc, &doc->ops[i], &first, &last, &split);
         for (p = first; p <= last; ++p) {
             ol_display_op tmp = doc->ops[i];
@@ -1452,19 +1562,59 @@ static int sort_ops_into_pages(ol_document *doc)
         next[p] = i;
         i += doc->page_ops[p];
     }
-    for (i = 0; i < doc->op_count; ++i) {
-        int first, last, split;
-        op_pages(doc, &doc->ops[i], &first, &last, &split);
-        for (p = first; p <= last; ++p) {
-            ol_display_op tmp = doc->ops[i];
-            if (place_op(doc, &tmp, p, split)) ops[next[p]++] = tmp;
+    for (layer = 0; layer < 3; ++layer)
+        for (i = 0, k = 0; i < doc->op_count; ++i) {
+            const ol_anchor *a = anchor_of(doc, i, &k);
+            int first, last, split;
+            if (op_layer(a) != layer) continue;
+            if (a) {
+                ol_unit ox, oy;
+                ol_display_op tmp = doc->ops[i];
+                p = anchor_place(doc, a, 1, &ox, &oy);
+                move_op(&tmp, ox, oy);
+                tmp.page = p;
+                ops[next[p]++] = tmp;
+                continue;
+            }
+            op_pages(doc, &doc->ops[i], &first, &last, &split);
+            for (p = first; p <= last; ++p) {
+                ol_display_op tmp = doc->ops[i];
+                if (place_op(doc, &tmp, p, split)) ops[next[p]++] = tmp;
+            }
         }
-    }
     free(next);
     free(doc->ops);
     doc->ops = ops;
     doc->op_count = total;
     doc->op_capacity = total ? total : 1;
+    return 1;
+}
+
+/* Without pages (ol_layout): the anchored frames placed in the galley, the
+ * ones behind first and the ones in front last. */
+static int place_anchors_flat(ol_document *doc)
+{
+    size_t i, k, n = 0;
+    ol_display_op *ops;
+    int layer;
+    if (!doc->anchor_count) return 1;
+    ops = (ol_display_op *)malloc((doc->op_count ? doc->op_count : 1) * sizeof(*ops));
+    if (!ops) return 0;
+    for (layer = 0; layer < 3; ++layer)
+        for (i = 0, k = 0; i < doc->op_count; ++i) {
+            const ol_anchor *a = anchor_of(doc, i, &k);
+            if (op_layer(a) != layer) continue;
+            ops[n] = doc->ops[i];
+            if (a) {
+                ol_unit ox, oy;
+                anchor_place(doc, a, 0, &ox, &oy);
+                move_op(&ops[n], ox, oy);
+            }
+            ++n;
+        }
+    free(doc->ops);
+    doc->ops = ops;
+    doc->op_capacity = doc->op_count ? doc->op_count : 1;
     return 1;
 }
 
@@ -1475,6 +1625,7 @@ int ol_layout(ol_document *doc, ol_unit viewport_width,
     reset_layout(doc);
     doc->viewport_width = viewport_width;
     if (!layout_galley(doc, viewport_width, measure, measure_userdata)) return 0;
+    if (!place_anchors_flat(doc)) return 0;
     if (!add_page(doc, 0, doc->content_height)) return 0;
     doc->page_ops[0] = doc->op_count;
     ++doc->generation;
@@ -1547,7 +1698,7 @@ int ol_hit_text(const ol_document *doc, int page, ol_unit x, ol_unit y,
     for (i = first; i < first + count; ++i) {
         ol_unit dy, dx;
         op = &doc->ops[i];
-        if (op->type != OL_OP_TEXT) continue;
+        if (op->type != OL_OP_TEXT || in_anchored_frame(node_for_id(doc, op->u.text.node_id))) continue;
         dy = distance(y, op->u.text.bounds.y, op->u.text.bounds.height);
         dx = distance(x, op->u.text.bounds.x, op->u.text.bounds.width);
         if (best == (size_t)-1 || dy < best_dy || (dy == best_dy && dx < best_dx)) {
