@@ -9,6 +9,8 @@
 #define OPENLAYOUTLIB_REVISION 0
 #define OPENLAYOUTLIB_DOCUMENT_VERSION 3    /* pages, tables, frames, caret: OL_BoxStyleInit on */
 #define OPENLAYOUTLIB_TABSTOP_VERSION 4     /* right, centred and decimal tab stops, leaders: OL_NodeSetTabStops */
+#define OPENLAYOUTLIB_ANCHOR_VERSION 5      /* frames anchored to their pages: ol_box_style's anchor, whose size
+                                               the program sets (OL_BoxStyleInit stops before it) */
 
 struct OLNodeAppend {
     ol_document *document;

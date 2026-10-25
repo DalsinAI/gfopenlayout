@@ -37,7 +37,7 @@ int main(void)
     OpenLayoutBase = OpenLibrary((CONST_STRPTR)OPENLAYOUTLIB_NAME, OPENLAYOUTLIB_VERSION);
     CHECK(OpenLayoutBase != NULL);
     CHECK(OL_Version() == 1);
-    CHECK(!strcmp((const char *)OL_VersionString(), "0.2"));
+    CHECK(!strcmp((const char *)OL_VersionString(), OL_VERSION));
     CHECK(OpenLayoutBase->lib_Version >= OPENLAYOUTLIB_DOCUMENT_VERSION);
 
     doc = OL_DocumentNew();
@@ -225,6 +225,45 @@ int main(void)
             CHECK(OL_NodeSetTabStops(&stops_req));
             stops_req.count = OL_MAX_TABS + 1;
             CHECK(!OL_NodeSetTabStops(&stops_req));
+        }
+        if (OpenLayoutBase->lib_Version >= OPENLAYOUTLIB_ANCHOR_VERSION) {
+            /* OL_BoxStyleInit fills a 4.0 program's box style and no more; a frame anchored to its page
+             * behind the text then leaves the pages as they were */
+            union { ol_box_style box; unsigned char raw[sizeof(ol_box_style)]; } u;
+            const ol_box_style *back_box;
+            LONG pages = OL_PageCount(paged);
+            ol_node *frame, *frame_text;
+            memset(u.raw, 0xA5, sizeof u.raw);
+            OL_BoxStyleInit(&u.box);
+            CHECK(u.box.size == OL_BOX_STYLE_SIZE_0_3);
+            CHECK(u.raw[sizeof u.raw - 1] == 0xA5);
+            u.box.size = sizeof(ol_box_style);
+            u.box.flags = OL_BOX_ABSOLUTE;
+            u.box.frame.x = 0;
+            u.box.frame.y = 0;
+            u.box.frame.width = page.width;
+            u.box.frame.height = page.height;
+            u.box.anchor = OL_ANCHOR_X(OL_ANCHOR_PAGE) | OL_ANCHOR_Y(OL_ANCHOR_PAGE) | OL_ANCHOR_BEHIND;
+            append.parent = OL_DocumentRoot(paged);
+            append.role = OL_ROLE_PARAGRAPH;
+            append.text = NULL;
+            frame = OL_NodeAppend(&append);
+            CHECK(frame != NULL);
+            box_req.node = frame;
+            box_req.box = &u.box;
+            OL_NodeSetBox(&box_req);
+            back_box = OL_NodeBox(frame);
+            CHECK(back_box != NULL && back_box->anchor == u.box.anchor);
+            append.parent = frame;
+            append.role = OL_ROLE_TEXT;
+            append.text = (CONST_STRPTR)"A cover's title, over its picture.";
+            frame_text = OL_NodeAppend(&append);
+            CHECK(frame_text != NULL);
+            style_req.node = frame_text;
+            style_req.style = &style;
+            OL_NodeSetStyle(&style_req);
+            CHECK(OL_LayoutPages(&pages_req));
+            CHECK(OL_PageCount(paged) == pages);
         }
         printf("LAYOUTLIB PAGES %ld\n", (long)OL_PageCount(paged));
         OL_DocumentFree(paged);

@@ -32,7 +32,7 @@ publishing need, on the same tree and display list:
 - grid tables: column widths, column spans, every cell as tall as its row,
   borders;
 - frames placed out of the flow (text boxes, pictures, slides' shapes);
-  in 0.3 a frame can be anchored to its page (`box.anchor`): placed from
+  in 0.4 a frame can be anchored to its page (`box.anchor`): placed from
   the page's edge, its margins or its paragraph on the page the paragraph
   starts on, behind the text or in front of it, without moving the page's
   breaks (a cover's whole-page picture and its title boxes);
@@ -84,7 +84,7 @@ Resident Amiga library and ABI test:
 ./build-library.sh
 ```
 
-The resident build produces `build-amiga/lib/openlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `openlayout.library` 4.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), and one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4).
+The resident build produces `build-amiga/lib/openlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `openlayout.library` 5.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those; version 5 places frames anchored to their pages (`box.anchor`, OpenLayout 0.4) with no new calls. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4), and one that anchors frames `OPENLAYOUTLIB_ANCHOR_VERSION` (5). The library's `OL_BoxStyleInit` fills only the `ol_box_style` that programs built for 3 and 4 have (`OL_BOX_STYLE_SIZE_0_3` bytes), so it never writes past theirs; a program that anchors a frame then sets `size` to `sizeof(ol_box_style)` and `anchor`.
 
 The OS 3.2.3 / AC090 68040 qualification opens the library from `LIBS:` and runs both the normal ABI test and a 48-node stress test covering allocation growth, metadata, image nodes, layout and display-list access.
 

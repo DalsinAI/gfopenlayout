@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define OL_VERSION "0.3"
+#define OL_VERSION "0.4"
 
 /*
  * OpenLayout logical units are exact across the three worlds we care about:
@@ -261,10 +261,13 @@ typedef struct {
     uint32_t border_argb;
     uint32_t border_sides;    /* OL_BORDER_... */
     int32_t column_span;      /* a table cell's columns; 0 or 1: one */
-    /* 0.3: an OL_BOX_ABSOLUTE frame anchored to its page: where frame.x
+    /* 0.4: an OL_BOX_ABSOLUTE frame anchored to its page: where frame.x
      * and frame.y are measured from (OL_ANCHOR_X and OL_ANCHOR_Y), and
      * whether it is under the text (OL_ANCHOR_BEHIND) or over it. 0: a
-     * 0.2 frame, from its containing block, in the flow's order. */
+     * 0.2 frame, from its containing block, in the flow's order. Through
+     * openlayout.library, OL_BoxStyleInit stops before this field (size
+     * OL_BOX_STYLE_SIZE_0_3): a program that anchors frames sets size to
+     * sizeof(ol_box_style) and anchor itself, and opens version 5. */
     uint32_t anchor;
 } ol_box_style;
 
@@ -289,6 +292,10 @@ enum {
 #define OL_ANCHOR_Y_OF(anchor) (((anchor) >> 2) & 3u)
 #define OL_ANCHOR_BEHIND (1u << 4)
 #define OL_ANCHOR_ON (1u << 5)      /* anchored even with both from the block and in front */
+
+/* The size of an ol_box_style before 0.4's anchor, as programs built for
+ * openlayout.library 3 and 4 have it */
+#define OL_BOX_STYLE_SIZE_0_3 offsetof(ol_box_style, anchor)
 
 void ol_box_style_init(ol_box_style *box);
 /* Copies box->size bytes at most, so a smaller older ol_box_style works. */

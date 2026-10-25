@@ -1,7 +1,9 @@
-/* openlayout.library 4.0: version 3 adds pages, tables, frames and the
+/* openlayout.library 5.0: version 3 adds pages, tables, frames and the
  * caret (OpenLayout 0.2) after version 2's calls, which are unchanged;
- * version 4 adds tab stops that align and their leaders (OpenLayout 0.3).
- * Programs built for 2 or 3 keep working.
+ * version 4 adds tab stops that align and their leaders (OpenLayout 0.3);
+ * version 5 places frames anchored to their pages (OpenLayout 0.4, the
+ * box style's anchor), with no new calls. Programs built for 2, 3 or 4
+ * keep working.
  * Copyright (c) 2026 AmigaChrome Team. MIT.
  */
 #include <exec/types.h>
@@ -15,7 +17,7 @@
 #include "../include/libraries/openlayout.h"
 
 #define REG(r, decl) register decl __asm(#r)
-#define LIB_VERSION 4
+#define LIB_VERSION 5
 #define LIB_REVISION 0
 
 struct OpenLayoutLibBase {
@@ -29,10 +31,10 @@ int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "openlayout.library 4.0 (25.10.2026) OpenLayout 0.3, AmigaChrome Team\r\n";
+    "openlayout.library 5.0 (25.10.2026) OpenLayout 0.4, AmigaChrome Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: openlayout.library 4.0 (25.10.2026) OpenLayout 0.3, AmigaChrome Team";
+    "$VER: openlayout.library 5.0 (25.10.2026) OpenLayout 0.4, AmigaChrome Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),
@@ -360,10 +362,16 @@ static CONST_STRPTR OL_NodeValue(REG(a0, const ol_node *node), REG(a6, struct Op
 
 /* ---- version 3 ------------------------------------------------------------ */
 
+/* 5.0: only the box style programs built for 3 and 4 have, so this never writes past theirs; a program
+ * that anchors a frame sets size to sizeof(ol_box_style) and anchor after it */
 static void OL_BoxStyleInit(REG(a0, ol_box_style *box), REG(a6, struct OpenLayoutLibBase *base))
 {
+    ol_box_style full;
     (void)base;
-    ol_box_style_init(box);
+    if (!box) return;
+    ol_box_style_init(&full);
+    full.size = (uint32_t)OL_BOX_STYLE_SIZE_0_3;
+    CopyMem(&full, box, (ULONG)OL_BOX_STYLE_SIZE_0_3);
 }
 
 static void OL_NodeSetBox(REG(a0, struct OLNodeBox *r), REG(a6, struct OpenLayoutLibBase *base))

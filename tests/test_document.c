@@ -253,7 +253,7 @@ static const ol_display_op *page_op(const ol_document *doc, int page, ol_op_type
     return NULL;
 }
 
-/* 0.3: frames anchored to their pages, behind and in front of the text */
+/* 0.4: frames anchored to their pages, behind and in front of the text */
 static void test_anchored_frames(void)
 {
     ol_document *doc = ol_document_new();
@@ -367,11 +367,11 @@ static void test_anchored_frames(void)
           ops[0]->u.text.bounds.y == OL_CSSPX(30));
     CHECK(ol_display_get(doc, ol_display_count(doc) - 1)->u.text.node_id == ol_node_id(t3));
 
-    /* a program that knows 0.2's ol_box_style: its frames are not anchored */
+    /* a program that knows 0.3's ol_box_style (openlayout.library 3 or 4): its frames are not anchored */
     ol_box_style_init(&box);
     box.flags = OL_BOX_ABSOLUTE;
     box.anchor = OL_ANCHOR_BEHIND;
-    box.size = (uint32_t)((char *)&box.anchor - (char *)&box);
+    box.size = (uint32_t)OL_BOX_STYLE_SIZE_0_3;
     ol_node_set_box(f4, &box);
     CHECK(ol_node_box(f4)->anchor == 0);
     ol_document_free(doc);
