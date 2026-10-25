@@ -883,7 +883,9 @@ static int emit_tab(ol_inline_flow *flow, ol_node *node, size_t offset)
     align = (int)(info & 15u);
     if (align == OL_TAB_LEFT) {
         if (to > flow->right && flow->has_content) {
-            if (!flow_newline(flow, 0)) return 0;
+            /* the line ends here as at a line break: not widened to the edge (a justified contents line
+             * whose stop is past the edge was spread across the line before its page number) */
+            if (!flow_newline(flow, 1)) return 0;
             to = next_tab(flow, &info);
             align = (int)(info & 15u);
         }

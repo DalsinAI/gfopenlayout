@@ -626,7 +626,7 @@ static void test_aligned_tabs(void)
 {
     ol_document *doc = ol_document_new();
     ol_tab_stop st[3];
-    ol_node *toc, *edge, *centre, *dec, *dec_none, *no_room, *two, *wrap, *just, *p;
+    ol_node *toc, *edge, *centre, *dec, *dec_none, *no_room, *two, *wrap, *just, *left_past, *p;
     const ol_display_op *ops[16];
     ol_text_position pos;
     ol_rect caret;
@@ -672,6 +672,12 @@ static void test_aligned_tabs(void)
     p = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_JUSTIFY);
     CHECK(ol_node_set_tab_stops(p, 1, st));
     just = text(doc, p, "aa bb\tcc\nnext", OL_CSSPX(16), 0);
+    /* a justified line that a left stop past its end breaks is not widened */
+    st[0].position = OL_CSSPX(400);
+    st[0].align = OL_TAB_LEFT;
+    p = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_JUSTIFY);
+    CHECK(ol_node_set_tab_stops(p, 1, st));
+    left_past = text(doc, p, "aa bb cc\t9", OL_CSSPX(16), 0);
     /* bad calls */
     CHECK(!ol_node_set_tab_stops(p, OL_MAX_TABS + 1, st));
     CHECK(!ol_node_set_tab_stops(p, 1, NULL));
@@ -715,6 +721,10 @@ static void test_aligned_tabs(void)
     n = text_ops(doc, ol_node_id(just), ops, 16);
     CHECK(n >= 4 && ops[0]->u.text.bounds.x == 0 && ops[1]->u.text.bounds.x == OL_CSSPX(24));
     CHECK(n >= 4 && ops[3]->u.text.bounds.x == OL_CSSPX(144));
+
+    n = text_ops(doc, ol_node_id(left_past), ops, 16);
+    CHECK(n == 5 && ops[1]->u.text.bounds.x == OL_CSSPX(24) && ops[2]->u.text.bounds.x == OL_CSSPX(48));
+    CHECK(n == 5 && ops[3]->u.text.bounds.y > ops[0]->u.text.bounds.y);
 
     /* the caret after a right-aligned tab is where its text starts */
     pos.node_id = ol_node_id(toc);
