@@ -731,9 +731,9 @@ static int relayout(olui *ui)
         for (i = 0; i < ui->map_count; ++i)
             if (ui->map[i] && scrolls(ui->map[i])) clamp_scroll(ui, ui->map[i]);
     }
-    /* a pop-up goes with its select, or closes when that went; a tip goes */
+    /* a pop-up goes with its select, or closes when that went (or was disabled); a tip goes */
     if (ui->popup) {
-        if (visible(ui->popup) && option_count(ui->popup)) {
+        if (visible(ui->popup) && enabled(ui->popup) && option_count(ui->popup)) {
             popup_place(ui);
             popup_reveal(ui);
         } else {

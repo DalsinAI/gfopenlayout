@@ -1022,6 +1022,12 @@ static int widgets(void)
         CHECK(l2.found);                                /* scrolled to it */
         olui_select_open(u2, big, 0);
         CHECK(!olui_select_is_open(u2, big) && olui_select_index(big) == 28);
+        olui_select_open(u2, big, 1);
+        olui_set_disabled(u2, big, 1);                  /* disabled while open: it closes */
+        CHECK(olui_layout(u2, 300, 400) && !olui_select_is_open(u2, big));
+        olui_select_open(u2, big, 1);
+        CHECK(!olui_select_is_open(u2, big));
+        olui_set_disabled(u2, big, 0);
         /* overflow hidden: cut to the box, no bar, scrolled by the program only */
         olui_mouse(u2, 10, pr.y + pr.h + 16, OLUI_WHEEL_DOWN);
         CHECK(olui_get_scroll(hid) == 0);
