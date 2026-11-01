@@ -21,7 +21,28 @@ enum {
     K_TABBTN,       /* a tab button in the strip (made) */
     K_PROGRESS,
     K_IMAGE,
-    K_SLIDER        /* a value from min to max, dragged or keyed */
+    K_SLIDER,       /* a value from min to max, dragged or keyed */
+    K_SELECT,       /* a drop-down (or with size, a list box) of options */
+    K_OPTION,       /* one of a select's choices */
+    K_OPTGROUP,     /* a labelled group of a select's options */
+    K_TEXTAREA      /* text of many lines, wrapped, edited and scrolled */
+};
+
+/* What else an element is (olui_el.flags) */
+enum {
+    F_PASSWORD = 1u << 0,    /* input type=password: drawn a bullet a character */
+    F_NUMBER = 1u << 1,      /* input type=number, spinner: a number with arrow buttons */
+    F_READONLY = 1u << 2,    /* readonly: the caret moves and text is copied, not changed */
+    F_NOWRAP = 1u << 3,      /* textarea wrap=off: lines break only at newlines */
+    F_COLS = 1u << 4         /* cols was given */
+};
+
+/* overflow (olui_cs.overflow) */
+enum {
+    O_VISIBLE = 0,
+    O_AUTO,                 /* scrolls what it holds, a bar when it is taller */
+    O_SCROLL,               /* the same */
+    O_HIDDEN                /* cut to the box, scrolled only by the program */
 };
 
 /* States: what the :pseudo-classes match */
@@ -51,6 +72,7 @@ typedef struct {
     uint32_t mark_border;       /* and its edge: mark-border-color */
     uint32_t muted;             /* a field's placeholder: placeholder-color */
     int column;                 /* flex-direction column (the default for a block) */
+    int overflow;               /* O_...: a box with a height scrolls what it holds */
 } olui_cs;
 
 struct olui_el {
@@ -72,6 +94,23 @@ struct olui_el {
     unsigned styled_gen;        /* cs is from this stylesheet generation */
     unsigned styled_state;      /* and these states */
     void *user;
+    /* 0.3 */
+    unsigned flags;             /* F_... */
+    char *for_id;               /* a label's for */
+    char *num_attr[3];          /* a number field's min, max and step as written (fixed point) */
+    int tabindex;               /* Tab's order: above 0 first, 0 in the document's order, below 0 never */
+    int rows, cols;             /* a textarea's size in lines and characters; a select's size */
+    int maxlength;              /* characters a field or textarea takes, 0: any number */
+    int decimals;               /* a number field's places after the point: ivalue is the value times 10^decimals */
+    int step;                   /* and its step, in the same units */
+    size_t anchor;              /* a textarea's selection: from anchor to caret */
+    int32_t want_x;             /* the caret's x that Up and Down keep to (-1: where it is) */
+    size_t *lines;              /* a textarea's lines as wrapped: where each starts */
+    int nlines, lines_cap;
+    unsigned text_rev;          /* moves on with each change to text */
+    unsigned wrap_rev;          /* lines are of text_rev's text */
+    int32_t wrap_room;          /* at this width (pixels) */
+    ol_unit wrap_font;          /* and font size */
 };
 
 /* ---- CSS (olui_css.c) ---- */

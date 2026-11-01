@@ -1,7 +1,8 @@
 /* GFOpenLayout UI on the host: markup and CSS to a laid out window, the
  * widgets' events through C callbacks, the keyboard, the theme as CSS.
  * With an argument, writes the window's draw ops there as lines of text
- * (tests/ui_render.py draws them as a picture).
+ * (tests/ui_render.py draws them as a picture); a second, the window as it
+ * opens; a third, 0.3's widgets' window.
  * MIT, Copyright (c) 2026 AmigaChrome Team. */
 #include "gfopenlayout_ui.h"
 
@@ -504,6 +505,505 @@ static int frames(void)
     return 0;
 }
 
+/* ---- 0.3's widgets: select, textarea, password, number, fieldset, label,
+ * Tab's order, a box that scrolls, tooltips; each step drawn only where it
+ * damaged, and that the same as drawing it all ---- */
+
+static const char widget_markup[] =
+    "<row style='align-items:start'>\n"
+    "  <label for=fruit id=lfruit style='width:50px'>Fruit</label>\n"
+    "  <select id=fruit title='Pick one'><option value=a>Apple</option>\n"
+    "    <optgroup label=Citrus><option value=o selected>Orange<option>Lemon</optgroup>\n"
+    "    <option disabled>Mango</option><option value=p>Pear</option></select>\n"
+    "  <select id=lb size=3><option>One<option>Two<option selected>Three<option>Four<option>Five</select>\n"
+    "  <input type=password id=pw maxlength=6>\n"
+    "  <spinner id=num min=-1 max=2.5 step=0.5 value=1>\n"
+    "</row>\n"
+    "<row><textarea id=ta rows=3 cols=10 placeholder=Notes></textarea>\n"
+    "  <textarea id=ro readonly rows=2 cols=8>Fixed text</textarea>\n"
+    "  <textarea id=nw wrap=off rows=2 cols=6 maxlength=12></textarea>\n"
+    "  <input type=number id=whole value=5></row>\n"
+    "<fieldset id=fs><legend id=lg>Options</legend>\n"
+    "  <label id=lw>Wrap <checkbox id=cb>Bold</checkbox></label>\n"
+    "  <row><label for=cb2 id=l2>Italic too</label><checkbox id=cb2 tabindex=-1>It</checkbox></row>\n"
+    "</fieldset>\n"
+    "<fieldset id=plain><label id=nolg>No legend</label></fieldset>\n"
+    "<div id=sb style='height:40px;overflow:auto'><button id=b1>One</button><button id=b2>Two</button>"
+    "<button id=b3 tabindex=1>Three</button></div>\n";
+
+static int w_events, w_last_type, w_last_index, w_paste_ok;
+static char w_last_value[64];
+static const char *w_last_id = "";
+
+static void on_widget(olui *ui, const olui_event *ev, void *userdata)
+{
+    (void)userdata;
+    if (ev->type == OLUI_FOCUS) return;
+    ++w_events;
+    w_last_type = ev->type;
+    w_last_index = ev->index;
+    w_last_id = ev->id;
+    if (ev->value) {
+        strncpy(w_last_value, ev->value, sizeof(w_last_value) - 1);
+        w_last_value[sizeof(w_last_value) - 1] = 0;
+    } else {
+        strcpy(w_last_value, "(none)");
+    }
+    if (ev->type == OLUI_PASTE) w_paste_ok = olui_insert_text(ui, ev->el, "PASTED");
+}
+
+/* What draw ops say: a text drawn, a box of an element's, the last op's element */
+typedef struct {
+    const char *want;
+    int found;
+    const olui_el *el_of_want;
+    const olui_el *box_el;
+    int boxes;
+    const olui_el *last_el;
+    int bullets;
+} looker;
+
+static void look(void *userdata, const olui_draw_op *op)
+{
+    looker *l = (looker *)userdata;
+    if (op->kind == OLUI_DRAW_TEXT) {
+        size_t n = strlen(l->want);
+        if (op->length == n && !memcmp(op->text, l->want, n)) {
+            l->found = 1;
+            l->el_of_want = op->el;
+        }
+        if (op->length >= 3 && !memcmp(op->text, "\xe2\x80\xa2", 3)) l->bullets = (int)op->length / 3;
+    }
+    if (op->kind == OLUI_DRAW_BOX && l->box_el && op->el == l->box_el) ++l->boxes;
+    if (op->kind != OLUI_DRAW_CLIP) l->last_el = op->el;
+}
+
+static uint32_t *w_screen;     /* the frame drawn only where damaged */
+static const char *w_ops_path; /* where to write the widgets' window as ops (argv[3]) */
+
+/* Draws the window to see what it shows: what was damaged is drawn on
+ * w_screen first, as the window's loop would have */
+static looker seek(olui *ui, const char *text, const olui_el *box_el)
+{
+    looker l;
+    olui_rect r;
+    if (w_screen && olui_damaged(ui, &r)) frame_draw(ui, w_screen, &r);
+    memset(&l, 0, sizeof(l));
+    l.want = text;
+    l.box_el = box_el;
+    olui_draw(ui, NULL, look, &l);
+    return l;
+}
+
+/* Draws what is damaged onto screen, all of it onto full: 1 when they are the same */
+static int same_as_full(olui *ui, uint32_t *screen, uint32_t *full, int may_be_all)
+{
+    olui_rect r;
+    if (olui_damaged(ui, &r)) {
+        if (!may_be_all && r.w == FW && r.h == FH) {
+            printf("widgets: the whole window damaged\n");
+            return 0;
+        }
+        if (getenv("OLUI_DEBUG")) printf("widgets: damage %ld %ld %ld %ld\n", (long)r.x, (long)r.y, (long)r.w, (long)r.h);
+        frame_draw(ui, screen, &r);
+    }
+    frame_draw(ui, full, NULL);
+    if (memcmp(screen, full, FW * FH * sizeof(uint32_t)) && getenv("OLUI_DEBUG")) {
+        int i, x0 = FW, y0 = FH, x1 = -1, y1 = -1;
+        for (i = 0; i < FW * FH; ++i)
+            if (screen[i] != full[i]) {
+                if (i % FW < x0) x0 = i % FW;
+                if (i % FW > x1) x1 = i % FW;
+                if (i / FW < y0) y0 = i / FW;
+                if (i / FW > y1) y1 = i / FW;
+            }
+        printf("widgets: differs from %d,%d to %d,%d\n", x0, y0, x1, y1);
+    }
+    return !memcmp(screen, full, FW * FH * sizeof(uint32_t));
+}
+
+static void press_at(olui *ui, int x, int y)
+{
+    olui_mouse(ui, x, y, OLUI_MOUSE_MOVE);
+    olui_mouse(ui, x, y, OLUI_MOUSE_DOWN);
+    olui_mouse(ui, x, y, OLUI_MOUSE_UP);
+}
+
+#define SAME(all) CHECK(same_as_full(ui, screen, full, all))
+
+static int widgets(void)
+{
+    olui *ui = olui_new();
+    uint32_t *screen = (uint32_t *)malloc(FW * FH * sizeof(uint32_t));
+    uint32_t *full = (uint32_t *)malloc(FW * FH * sizeof(uint32_t));
+    olui_el *fruit, *lb, *pw, *num, *ta, *ro, *nw, *whole, *cb, *cb2, *sb, *b1, *b2, *b3;
+    olui_rect r, d;
+    char err[128];
+    size_t a, b;
+    int i, was;
+    looker l;
+
+    if (!screen || !full) {
+        printf("widgets: no memory for two frames, left out\n");
+        free(screen);
+        free(full);
+        olui_free(ui);
+        return 0;
+    }
+    CHECK(ui);
+    olui_set_measure(ui, measure, NULL);
+    if (!olui_load(ui, widget_markup, NULL, err, sizeof(err))) printf("widgets: %s\n", err);
+    CHECK(olui_load(ui, widget_markup, "option{padding:1px 4px}", err, sizeof(err)));
+    CHECK(olui_on(ui, NULL, 0, on_widget, NULL));
+    CHECK(olui_layout(ui, FW, FH));
+    frame_draw(ui, screen, NULL);
+    w_screen = screen;
+    fruit = olui_find(ui, "fruit"); lb = olui_find(ui, "lb"); pw = olui_find(ui, "pw");
+    num = olui_find(ui, "num"); ta = olui_find(ui, "ta"); ro = olui_find(ui, "ro"); nw = olui_find(ui, "nw");
+    whole = olui_find(ui, "whole"); cb = olui_find(ui, "cb"); cb2 = olui_find(ui, "cb2"); sb = olui_find(ui, "sb");
+    b1 = olui_find(ui, "b1"); b2 = olui_find(ui, "b2"); b3 = olui_find(ui, "b3");
+    CHECK(fruit && lb && pw && num && ta && ro && nw && whole && cb && cb2 && sb && b1 && b2 && b3);
+
+    /* ---- select: parsed (an option left open, optgroups), sized to its widest option ---- */
+    CHECK(!strcmp(olui_tag(fruit), "select") && olui_select_count(fruit) == 5);
+    CHECK(olui_select_index(fruit) == 1 && !strcmp(olui_get_text(fruit), "Orange"));
+    CHECK(!strcmp(olui_select_option_value(fruit, 0), "a") && !strcmp(olui_select_option_value(fruit, 2), "Lemon"));
+    CHECK(!strcmp(olui_select_option_text(fruit, 4), "Pear") && !olui_select_option_value(fruit, 5));
+    CHECK(olui_box(ui, fruit, &r));
+    /* "Citrus", the group's label in bold: 6 characters of 8 px; padding 6 + 6, border 1 + 1, the mark a line and 4 */
+    CHECK(r.w == 48 + 12 + 2 + 16 + 4 && r.h == 16 + 6);
+    CHECK(olui_select_count(lb) == 5 && olui_select_index(lb) == 2);
+    CHECK(olui_box(ui, lb, &r) && r.h == 3 * (16 + 2) + 2 + 2);
+    l = seek(ui, "Orange", NULL);
+    CHECK(l.found && l.el_of_want == fruit);
+    l = seek(ui, "Lemon", NULL);
+    CHECK(!l.found);                                    /* closed: only the chosen one shows */
+
+    /* the pop-up: opened by a click, over everything, the keyboard in it */
+    w_events = 0;
+    CHECK(olui_box(ui, fruit, &r));
+    olui_mouse(ui, r.x + 5, r.y + 5, OLUI_MOUSE_DOWN);
+    CHECK(olui_select_is_open(ui, fruit) && olui_focused(ui) == fruit);
+    CHECK(olui_damaged(ui, &d) && d.w < FW);
+    SAME(0);
+    olui_mouse(ui, r.x + 5, r.y + 5, OLUI_MOUSE_UP);      /* the release of the press that opened it */
+    CHECK(olui_select_is_open(ui, fruit) && w_events == 0);
+    l = seek(ui, "Lemon", NULL);
+    CHECK(l.found && l.last_el && l.last_el != fruit);  /* drawn over the rest, last */
+    l = seek(ui, "Citrus", NULL);
+    CHECK(l.found);                                     /* the group's label row */
+    CHECK(olui_key(ui, OLUI_KEY_DOWN, 0) && olui_select_index(fruit) == 1 && w_events == 0);
+    SAME(0);
+    CHECK(olui_key(ui, OLUI_KEY_DOWN, 0));             /* past Mango, disabled, to Pear */
+    CHECK(olui_key(ui, OLUI_KEY_RETURN, 0) && !olui_select_is_open(ui, fruit));
+    CHECK(w_events == 1 && w_last_type == OLUI_CHANGE && w_last_index == 4 && !strcmp(w_last_value, "p"));
+    CHECK(olui_select_index(fruit) == 4 && !strcmp(olui_get_text(fruit), "Pear"));
+    SAME(0);
+    /* Return opens it, Escape closes it with nothing chosen */
+    CHECK(olui_key(ui, OLUI_KEY_RETURN, 0) && olui_select_is_open(ui, fruit));
+    CHECK(olui_key(ui, OLUI_KEY_HOME, 0) && olui_key(ui, OLUI_KEY_ESCAPE, 0));
+    CHECK(!olui_select_is_open(ui, fruit) && olui_select_index(fruit) == 4 && w_events == 1);
+    SAME(0);
+    /* the first letter, closed: chosen at once */
+    CHECK(olui_key(ui, 'l', 0) && olui_select_index(fruit) == 2 && w_last_index == 2 && w_events == 2);
+    CHECK(olui_key(ui, OLUI_KEY_UP, 0) && olui_select_index(fruit) == 1);
+    SAME(0);
+    /* a click on a row chooses it; a click elsewhere closes it */
+    CHECK(olui_box(ui, fruit, &r));
+    press_at(ui, r.x + 5, r.y + 5);
+    CHECK(olui_select_is_open(ui, fruit));
+    SAME(0);
+    {
+        /* Apple is the first row, under the select */
+        olui_mouse(ui, r.x + 10, r.y + r.h + 2 + 9, OLUI_MOUSE_MOVE);
+        olui_mouse(ui, r.x + 10, r.y + r.h + 2 + 9, OLUI_MOUSE_DOWN);
+        olui_mouse(ui, r.x + 10, r.y + r.h + 2 + 9, OLUI_MOUSE_UP);
+        CHECK(!olui_select_is_open(ui, fruit) && olui_select_index(fruit) == 0 && w_last_index == 0);
+        CHECK(!strcmp(w_last_value, "a"));
+    }
+    SAME(0);
+    press_at(ui, r.x + 5, r.y + 5);
+    CHECK(olui_select_is_open(ui, fruit));
+    was = w_events;
+    olui_mouse(ui, FW - 3, FH - 3, OLUI_MOUSE_DOWN);
+    olui_mouse(ui, FW - 3, FH - 3, OLUI_MOUSE_UP);
+    CHECK(!olui_select_is_open(ui, fruit) && w_events == was && olui_select_index(fruit) == 0);
+    SAME(0);
+    olui_select_set(ui, fruit, 3);
+    CHECK(olui_select_index(fruit) == 3 && w_events == was);
+    SAME(0);
+
+    /* the list box: in place, the keys move its choice, it scrolls */
+    olui_focus(ui, lb);
+    CHECK(olui_key(ui, OLUI_KEY_DOWN, 0) && olui_select_index(lb) == 3 && w_last_index == 3);
+    CHECK(!strcmp(w_last_value, "Four"));
+    CHECK(olui_key(ui, OLUI_KEY_END, 0) && olui_select_index(lb) == 4 && olui_get_scroll(lb) > 0);
+    SAME(0);
+    CHECK(olui_key(ui, OLUI_KEY_HOME, 0) && olui_select_index(lb) == 0 && olui_get_scroll(lb) == 0);
+    CHECK(olui_box(ui, lb, &r));
+    olui_mouse(ui, r.x + 8, r.y + r.h / 2, OLUI_WHEEL_DOWN);
+    CHECK(olui_get_scroll(lb) == 5 * 18 - 3 * 18);
+    SAME(0);
+    press_at(ui, r.x + 8, r.y + 2 + 9);                 /* the top row shown: Three */
+    CHECK(olui_select_index(lb) == 2);
+    SAME(0);
+    {
+        olui_el *o = olui_select_add(ui, lb, "Six", "6");
+        CHECK(o && olui_select_count(lb) == 6 && !strcmp(olui_select_option_value(lb, 5), "6"));
+        olui_select_clear(ui, lb);
+        CHECK(olui_select_count(lb) == 0 && olui_select_index(lb) == -1);
+        SAME(1);
+    }
+
+    /* ---- password: masked, maxlength, its value the program's ---- */
+    olui_focus(ui, pw);
+    w_events = 0;
+    for (i = 0; "secret!"[i]; ++i) olui_key(ui, (unsigned)"secret!"[i], 0);
+    CHECK(!strcmp(olui_get_text(pw), "secret") && w_events == 6 && !strcmp(w_last_value, "(none)"));
+    SAME(0);
+    l = seek(ui, "secret", NULL);
+    CHECK(!l.found && l.bullets == 6);
+    olui_focus(ui, pw);
+    CHECK(!olui_edit(ui, OLUI_COPY));                   /* never copied */
+
+    /* ---- number: fixed point, the arrows, typed, held to min and max ---- */
+    CHECK(olui_number_decimals(num) == 1 && olui_number_value(num) == 10 && !strcmp(olui_get_text(num), "1.0"));
+    CHECK(olui_number_value(whole) == 5 && olui_number_decimals(whole) == 0);
+    olui_focus(ui, num);
+    w_events = 0;
+    CHECK(olui_key(ui, OLUI_KEY_UP, 0) && olui_number_value(num) == 15 && !strcmp(olui_get_text(num), "1.5"));
+    CHECK(w_last_type == OLUI_CHANGE && w_last_index == 15 && !strcmp(w_last_value, "1.5"));
+    SAME(0);
+    for (i = 0; i < 4; ++i) olui_key(ui, OLUI_KEY_UP, 0);
+    CHECK(olui_number_value(num) == 25 && !strcmp(olui_get_text(num), "2.5"));
+    CHECK(olui_key(ui, OLUI_KEY_PAGEDOWN, 0) && olui_number_value(num) == -10 && !strcmp(olui_get_text(num), "-1.0"));
+    olui_set_text(ui, num, "");
+    CHECK(olui_key(ui, 'x', 0) && !strcmp(olui_get_text(num), ""));     /* not a number's */
+    CHECK(olui_key(ui, '7', 0) && olui_number_value(num) == 70);
+    CHECK(olui_key(ui, OLUI_KEY_RETURN, 0) && olui_number_value(num) == 25 && !strcmp(olui_get_text(num), "2.5"));
+    SAME(1);
+    CHECK(olui_key(ui, OLUI_KEY_BACKSPACE, 0) && olui_key(ui, OLUI_KEY_BACKSPACE, 0) && olui_key(ui, '.', 0) &&
+          olui_key(ui, '2', 0) && olui_key(ui, '5', 0) && !strcmp(olui_get_text(num), "2.25"));
+    CHECK(olui_number_value(num) == 22);                /* places past its own: left out */
+    olui_focus(ui, pw);                                 /* the keyboard going elsewhere: made its value's */
+    CHECK(!strcmp(olui_get_text(num), "2.2") && w_last_index == 22);
+    olui_set_number(ui, num, 0);
+    CHECK(olui_number_value(num) == 0 && !strcmp(olui_get_text(num), "0.0"));
+    SAME(0);
+    /* the arrow buttons: a step on the press, more while held */
+    CHECK(olui_box(ui, num, &r));
+    olui_mouse(ui, r.x + r.w - 4, r.y + 3, OLUI_MOUSE_DOWN);
+    CHECK(olui_number_value(num) == 5 && olui_focused(ui) == num);
+    SAME(0);
+    CHECK(!olui_tick(ui, 300) && olui_number_value(num) == 5);
+    CHECK(olui_tick(ui, 150) && olui_number_value(num) == 10);      /* at 400 ms, then each 80 */
+    CHECK(olui_tick(ui, 80) && olui_number_value(num) == 15);
+    SAME(0);
+    olui_mouse(ui, r.x + r.w - 4, r.y + 3, OLUI_MOUSE_UP);
+    CHECK(!olui_tick(ui, 1000) && olui_number_value(num) == 15);
+    olui_mouse(ui, r.x + r.w - 4, r.y + r.h - 3, OLUI_MOUSE_DOWN);
+    olui_mouse(ui, r.x + r.w - 4, r.y + r.h - 3, OLUI_MOUSE_UP);
+    CHECK(olui_number_value(num) == 10);
+    SAME(0);
+
+    /* ---- textarea: sized by rows and cols, wrapped at words, edited, selected, scrolled ---- */
+    CHECK(olui_box(ui, ta, &r) && r.w == 10 * 7 + 8 + 2 && r.h == 3 * 16 + 6 + 2);
+    l = seek(ui, "Notes", NULL);
+    CHECK(l.found && l.el_of_want == ta);
+    press_at(ui, r.x + 10, r.y + 10);
+    CHECK(olui_focused(ui) == ta);
+    w_events = 0;
+    for (i = 0; "hello world foo bar"[i]; ++i) olui_key(ui, (unsigned)"hello world foo bar"[i], 0);
+    CHECK(!strcmp(olui_get_text(ta), "hello world foo bar") && w_events == 19 && !strcmp(w_last_id, "ta"));
+    SAME(0);
+    l = seek(ui, "world foo ", NULL);                   /* its second line, as wrapped */
+    CHECK(l.found && l.el_of_want == ta);
+    l = seek(ui, "bar", NULL);
+    CHECK(l.found);
+    /* Up keeps to the caret's x: from the end of "bar" to "wor|ld" */
+    CHECK(olui_key(ui, OLUI_KEY_UP, 0) && olui_get_selection(ta, &a, &b) == 0 && a == 9);
+    CHECK(olui_key(ui, OLUI_KEY_HOME, 0) && olui_get_selection(ta, &a, &b) == 0 && a == 6);
+    CHECK(olui_key(ui, OLUI_KEY_END, 0) && olui_get_selection(ta, &a, &b) == 0 && a == 15);
+    CHECK(olui_key(ui, OLUI_KEY_DOWN, 0) && olui_get_selection(ta, &a, &b) == 0 && a == 19);
+    /* Shift with the arrows selects; typing takes the selection's place */
+    CHECK(olui_key(ui, OLUI_KEY_LEFT, OLUI_QUAL_SHIFT) && olui_key(ui, OLUI_KEY_LEFT, OLUI_QUAL_SHIFT) &&
+          olui_key(ui, OLUI_KEY_LEFT, OLUI_QUAL_SHIFT));
+    CHECK(olui_get_selection(ta, &a, &b) && a == 16 && b == 19);
+    SAME(0);
+    CHECK(olui_edit(ui, OLUI_COPY) && w_last_type == OLUI_COPY && !strcmp(w_last_value, "bar"));
+    CHECK(olui_key(ui, 'c', OLUI_QUAL_COMMAND) && w_last_type == OLUI_COPY);
+    CHECK(olui_key(ui, 'B', 0) && !strcmp(olui_get_text(ta), "hello world foo B"));
+    SAME(0);
+    /* Return a new line; Backspace; a selection dragged with the pointer */
+    CHECK(olui_key(ui, OLUI_KEY_RETURN, 0) && !strcmp(olui_get_text(ta), "hello world foo B\n"));
+    CHECK(olui_key(ui, OLUI_KEY_BACKSPACE, 0) && !strcmp(olui_get_text(ta), "hello world foo B"));
+    CHECK(olui_box(ui, ta, &r));
+    olui_mouse(ui, r.x + 5, r.y + 4 + 8, OLUI_MOUSE_DOWN);
+    olui_mouse(ui, r.x + 5 + 5 * 7, r.y + 4 + 8, OLUI_MOUSE_MOVE);
+    olui_mouse(ui, r.x + 5 + 5 * 7, r.y + 4 + 8, OLUI_MOUSE_UP);
+    CHECK(olui_get_selection(ta, &a, &b) && a == 0 && b == 5);
+    SAME(0);
+    CHECK(olui_key(ui, 'x', OLUI_QUAL_COMMAND) && w_last_type == OLUI_CHANGE && !strcmp(olui_get_text(ta), " world foo B"));
+    w_paste_ok = 0;
+    CHECK(olui_edit(ui, OLUI_PASTE) && w_paste_ok && !strcmp(olui_get_text(ta), "PASTED world foo B"));
+    SAME(0);
+    /* a double-click selects a word: "world", on the second line */
+    olui_mouse(ui, r.x + 5 + 2 * 7, r.y + 4 + 16 + 8, OLUI_MOUSE_DOUBLE);
+    olui_mouse(ui, r.x + 5 + 2 * 7, r.y + 4 + 16 + 8, OLUI_MOUSE_UP);
+    CHECK(olui_get_selection(ta, &a, &b) && a == 7 && b == 12);
+    /* taller than its box: it scrolls, the caret kept in view, a bar shown */
+    olui_set_selection(ui, ta, 100, 100);
+    for (i = 0; i < 6; ++i) {
+        olui_key(ui, OLUI_KEY_RETURN, 0);
+        olui_key(ui, 'a' + i, 0);
+    }
+    /* nine lines of 16 px in a view of three: scrolled to the last */
+    CHECK(olui_get_scroll(ta) == 9 * 16 - 3 * 16);
+    SAME(0);
+    l = seek(ui, "f", NULL);
+    CHECK(l.found);                                     /* the last line shows */
+    CHECK(olui_key(ui, OLUI_KEY_PAGEUP, 0) && olui_get_scroll(ta) < 7 * 16);
+    CHECK(olui_key(ui, 'a', OLUI_QUAL_COMMAND) && olui_get_selection(ta, &a, &b) && a == 0 &&
+          b == strlen(olui_get_text(ta)));
+    olui_mouse(ui, r.x + 10, r.y + 10, OLUI_WHEEL_DOWN);
+    SAME(0);
+    olui_set_scroll(ui, ta, 0);
+    CHECK(olui_get_scroll(ta) == 0);
+    SAME(0);
+    /* readonly: the caret moves and text is copied, nothing changes */
+    olui_focus(ui, ro);
+    was = w_events;
+    CHECK(olui_key(ui, 'z', 0) && !strcmp(olui_get_text(ro), "Fixed text") && w_events == was);
+    CHECK(olui_key(ui, OLUI_KEY_END, OLUI_QUAL_SHIFT) && olui_edit(ui, OLUI_COPY) && !strcmp(w_last_value, "Fixed"));
+    CHECK(!olui_edit(ui, OLUI_CUT) && !olui_edit(ui, OLUI_PASTE));
+    /* wrap=off: one line until a newline, maxlength held */
+    olui_focus(ui, nw);
+    for (i = 0; i < 20; ++i) olui_key(ui, 'm', 0);
+    CHECK(strlen(olui_get_text(nw)) == 12);
+    l = seek(ui, "mmmmmmmmmmmm", NULL);
+    CHECK(l.found);
+    SAME(0);
+
+    /* ---- fieldset: its legend breaks its top edge ---- */
+    {
+        olui_rect fs, lg;
+        olui_el *fse = olui_find(ui, "fs");
+        CHECK(olui_box(ui, fse, &fs) && olui_box(ui, olui_find(ui, "lg"), &lg));
+        CHECK(lg.y == fs.y && lg.h == 16);
+        l = seek(ui, "Options", fse);
+        CHECK(l.found && l.boxes == 5);                 /* no fill: three sides, and the top either side of it */
+        l = seek(ui, "Options", olui_find(ui, "plain"));
+        CHECK(l.boxes == 1);                            /* no legend: its box whole */
+        CHECK(olui_box(ui, olui_find(ui, "plain"), &fs) && olui_box(ui, olui_find(ui, "nolg"), &lg));
+        CHECK(lg.y == fs.y + 6);                        /* with no legend, room above as below */
+    }
+
+    /* ---- label: for, and around its control ---- */
+    CHECK(!olui_get_checked(cb2));
+    CHECK(olui_box(ui, olui_find(ui, "l2"), &r));
+    press_at(ui, r.x + 3, r.y + r.h / 2);
+    CHECK(olui_get_checked(cb2) && olui_focused(ui) == cb2 && w_last_type == OLUI_CHANGE && !strcmp(w_last_id, "cb2"));
+    SAME(0);
+    CHECK(olui_box(ui, olui_find(ui, "lw"), &r));
+    press_at(ui, r.x + 3, r.y + r.h / 2);               /* "Wrap", before the checkbox */
+    CHECK(olui_get_checked(cb) && olui_focused(ui) == cb);
+    SAME(0);
+    CHECK(olui_box(ui, olui_find(ui, "lfruit"), &r));
+    press_at(ui, r.x + 3, r.y + r.h / 2);
+    CHECK(olui_focused(ui) == fruit && !olui_select_is_open(ui, fruit));
+
+    /* ---- Tab's order: tabindex 1 first, then the document's, -1 never ---- */
+    olui_focus(ui, NULL);
+    CHECK(olui_key(ui, OLUI_KEY_TAB, 0) && olui_focused(ui) == b3);
+    CHECK(olui_key(ui, OLUI_KEY_TAB, 0) && olui_focused(ui) == fruit);
+    CHECK(olui_key(ui, OLUI_KEY_TAB, 0) && olui_focused(ui) == lb);
+    CHECK(olui_key(ui, OLUI_KEY_TAB, OLUI_QUAL_SHIFT) && olui_focused(ui) == fruit);
+    CHECK(olui_key(ui, OLUI_KEY_TAB, OLUI_QUAL_SHIFT) && olui_focused(ui) == b3);
+    CHECK(olui_key(ui, OLUI_KEY_TAB, OLUI_QUAL_SHIFT) && olui_focused(ui) == b2);
+    for (i = 0; i < 20 && olui_focused(ui) != cb; ++i) olui_key(ui, OLUI_KEY_TAB, 0);
+    CHECK(olui_focused(ui) == cb);
+    CHECK(olui_key(ui, OLUI_KEY_TAB, 0) && olui_focused(ui) == b1);     /* past cb2, tabindex -1 */
+    SAME(1);
+
+    /* ---- a box with overflow: scrolled by the wheel and the program, cut to itself ---- */
+    CHECK(olui_box(ui, sb, &r) && r.h == 40);
+    olui_set_scroll(ui, sb, 0);
+    SAME(0);
+    {
+        olui_rect r3;
+        int32_t most;
+        CHECK(olui_box(ui, b3, &r3) && r3.y + r3.h > r.y + r.h);  /* Three is below its bottom */
+        was = w_events;
+        olui_mouse(ui, r3.x + 3, r3.y + r3.h - 2, OLUI_MOUSE_DOWN);
+        olui_mouse(ui, r3.x + 3, r3.y + r3.h - 2, OLUI_MOUSE_UP);
+        CHECK(w_events == was);                         /* not where it is cut off */
+        olui_mouse(ui, r.x + 3, r.y + 3, OLUI_WHEEL_DOWN);
+        most = 3 * 22 - 40;
+        CHECK(olui_get_scroll(sb) == most);
+        SAME(0);
+        CHECK(olui_box(ui, b3, &r3) && r3.y + r3.h == r.y + r.h);
+        was = w_events;
+        click(ui, r3);
+        CHECK(w_events == was + 1 && w_last_type == OLUI_CLICK && !strcmp(w_last_id, "b3"));
+        olui_set_scroll(ui, sb, -5);
+        CHECK(olui_get_scroll(sb) == 0);
+        SAME(0);
+        olui_focus(ui, b2);
+        olui_key(ui, OLUI_KEY_TAB, OLUI_QUAL_SHIFT);    /* to b1: in view */
+        olui_set_scroll(ui, sb, most);
+        olui_focus(ui, cb);
+        CHECK(olui_key(ui, OLUI_KEY_TAB, 0) && olui_focused(ui) == b1 && olui_get_scroll(sb) == 0);
+        SAME(0);
+    }
+
+    /* ---- tooltips: after the pointer rests, through olui_tick ---- */
+    CHECK(olui_box(ui, fruit, &r));
+    olui_mouse(ui, r.x + 4, r.y + 4, OLUI_MOUSE_MOVE);
+    SAME(0);
+    CHECK(!olui_tick(ui, 300));
+    l = seek(ui, "Pick one", NULL);
+    CHECK(!l.found);
+    CHECK(olui_tick(ui, 500));
+    CHECK(olui_damaged(ui, &d) && d.w < FW && d.y >= r.y + 4);
+    SAME(0);
+    l = seek(ui, "Pick one", NULL);
+    CHECK(l.found && l.el_of_want && !strcmp(olui_tag(l.el_of_want), "tooltip"));
+    olui_mouse(ui, FW - 3, FH - 3, OLUI_MOUSE_MOVE);   /* off it: the tip goes */
+    l = seek(ui, "Pick one", NULL);
+    CHECK(!l.found);
+    SAME(0);
+    olui_mouse(ui, r.x + 4, r.y + 4, OLUI_MOUSE_MOVE);
+    olui_mouse(ui, r.x + 4, r.y + 4, OLUI_MOUSE_DOWN);   /* a press: no tip until it goes to another */
+    olui_mouse(ui, r.x + 4, r.y + 4, OLUI_MOUSE_UP);
+    olui_key(ui, OLUI_KEY_ESCAPE, 0);
+    CHECK(!olui_tick(ui, 2000));
+    SAME(0);
+
+    if (w_ops_path) {
+        /* the window with the select's pop-up open and a tooltip, to look at */
+        sink s;
+        memset(&s, 0, sizeof(s));
+        olui_focus(ui, ta);
+        olui_set_selection(ui, ta, 0, 6);
+        olui_mouse(ui, 3, FH - 3, OLUI_MOUSE_MOVE);
+        CHECK(olui_box(ui, olui_find(ui, "b1"), &r));
+        olui_mouse(ui, r.x + 4, r.y + 4, OLUI_MOUSE_MOVE);
+        olui_tick(ui, 1000);
+        olui_select_open(ui, fruit, 1);
+        s.out = fopen(w_ops_path, "w");
+        CHECK(s.out);
+        fprintf(s.out, "size %d %d\n", FW, FH);
+        olui_draw(ui, NULL, draw, &s);
+        fclose(s.out);
+    }
+    printf("widgets: select, list box, password, number, textarea, fieldset, label, Tab, overflow, tooltip\n");
+    w_screen = NULL;
+    free(screen);
+    free(full);
+    olui_free(ui);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     olui *ui = olui_new();
@@ -691,6 +1191,10 @@ int main(int argc, char **argv)
 
     /* a hover, press or focus drawn again where it changed, as a full draw would */
     CHECK(frames() == 0);
+
+    /* 0.3's widgets */
+    if (argc > 3) w_ops_path = argv[3];
+    CHECK(widgets() == 0);
 
     /* a bad markup says where */
     {

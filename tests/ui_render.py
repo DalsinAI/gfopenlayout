@@ -81,6 +81,10 @@ def main():
                 d.polygon([(x + 2, y + 1), (x + w - 2, y + h // 2), (x + 2, y + h - 2)], fill=col)
             elif mark == 5:
                 d.rectangle((x, y, x + w - 1, y + h - 1), fill=col)
+            elif mark in (6, 8):
+                d.polygon([(x, y + h // 4), (x + w - 1, y + h // 4), (x + w // 2, y + h - 1 - h // 4)], fill=col)
+            elif mark == 7:
+                d.polygon([(x, y + h - 1 - h // 4), (x + w - 1, y + h - 1 - h // 4), (x + w // 2, y + h // 4)], fill=col)
         if clip:
             m = Image.new("L", img.size, 0)
             ImageDraw.Draw(m).rectangle((clip[0], clip[1], clip[2] - 1, clip[3] - 1), fill=255)
