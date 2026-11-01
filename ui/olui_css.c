@@ -1,403 +1,244 @@
-/* GFOpenLayout UI's CSS: rules with type, class, id and state selectors,
- * descendant and child combinators, and the properties a program's window
- * needs (GFOpenLayout-UI.md lists them). Written for GFOpenLayout UI; the
- * selector parser follows GFOpenBrowser Lite's (ob_css_lite.c).
+/* GFOpenLayout UI's CSS, through GFCSS (gfopenlayout_css.h), the engine it
+ * shares with GFOpenBrowser Lite: an olui_sheet is a GFCSS engine with one
+ * sheet, every element is styled by it through the olui_el functions
+ * below, and its computed style is turned into what the UI draws and lays
+ * out (olui_cs). The UI's own properties (accent-color, mark-background,
+ * mark-border-color, placeholder-color) are GFCSS's caller's properties;
+ * :selected and :open are its caller's pseudo-classes; a
+ * linear-gradient() background comes from GFCSS as the function's text.
+ *
+ * What the UI did before GFCSS, it still does: a box is a block unless its
+ * CSS says otherwise, a row's children don't take its text-align (its
+ * justify-content is that), a line height follows a new font size in
+ * proportion, and a border is as wide as its top side.
  * MIT, Copyright (c) 2026 AmigaChrome Team. */
 #include "olui_internal.h"
+#include "gfopenlayout_css.h"
 
-#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_CLASSES 4
-#define MAX_PARTS 6
+/* The UI's own properties, and what they are with no rule */
+enum { X_ACCENT = 0, X_MARK_BG, X_MARK_BORDER, X_MUTED, X_COUNT };
 
-typedef struct {
-    char tag[16];
-    char id[40];
-    char cls[MAX_CLASSES][32];
-    int ncls;
-    unsigned states;
-    char comb;                  /* how it joins the part on its right: ' ' or '>' */
-} css_part;
+static const struct { const char *name; uint32_t initial; } own[X_COUNT] = {
+    { "accent-color", 0xff3366ccu }, { "mark-background", 0xffffffffu }, { "mark-border-color", 0xff808080u },
+    { "placeholder-color", 0xff909090u }
+};
 
-typedef struct {
-    css_part part[MAX_PARTS];
-    int nparts;
-    unsigned spec;
-    unsigned order;
-    char *decls;
-} css_rule;
+#define ST_SELECTED GFCSS_STATE_USER(0)
+#define ST_OPEN GFCSS_STATE_USER(1)
 
 struct olui_sheet {
-    css_rule *rules;
-    size_t count, capacity;
-    unsigned order;
-    unsigned states;            /* every state a selector names */
+    gfcss_engine *e;
+    gfcss_sheet *sheet;
+    int slot[X_COUNT];
+    gfcss_computed *parent, *cs;    /* olui_style_compute's, kept between calls */
 };
+
+static int own_colour(void *userdata, int slot, const char *value, size_t length, uint32_t *out)
+{
+    (void)userdata;
+    (void)slot;
+    return gfcss_parse_colour(value, length, out);
+}
+
+/* an engine with the UI's pseudo-classes and properties */
+static gfcss_engine *new_engine(int slot[X_COUNT])
+{
+    gfcss_engine *e = gfcss_new();
+    int i;
+    if (!e) return NULL;
+    if (!gfcss_add_state(e, "selected", ST_SELECTED) || !gfcss_add_state(e, "open", ST_OPEN)) {
+        gfcss_free(e);
+        return NULL;
+    }
+    for (i = 0; i < X_COUNT; ++i)
+        if ((slot[i] = gfcss_add_property(e, own[i].name, GFCSS_INHERITED, own[i].initial, own_colour, NULL)) < 0) {
+            gfcss_free(e);
+            return NULL;
+        }
+    return e;
+}
 
 olui_sheet *olui_sheet_new(void)
 {
-    return (olui_sheet *)calloc(1, sizeof(olui_sheet));
+    olui_sheet *s = (olui_sheet *)calloc(1, sizeof(olui_sheet));
+    if (!s) return NULL;
+    s->parent = (gfcss_computed *)malloc(2 * sizeof(gfcss_computed));
+    if (!s->parent || !(s->e = new_engine(s->slot)) || !(s->sheet = gfcss_sheet_new(s->e, GFCSS_ORIGIN_AUTHOR))) {
+        olui_sheet_free(s);
+        return NULL;
+    }
+    s->cs = s->parent + 1;
+    return s;
 }
 
 void olui_sheet_free(olui_sheet *sheet)
 {
-    size_t i;
     if (!sheet) return;
-    for (i = 0; i < sheet->count; ++i) free(sheet->rules[i].decls);
-    free(sheet->rules);
+    gfcss_free(sheet->e);
+    free(sheet->parent);
     free(sheet);
-}
-
-static int ident(int c)
-{
-    return isalnum((unsigned char)c) || c == '-' || c == '_';
-}
-
-static const char *copy_ident(const char *p, char *dst, size_t size, int lower)
-{
-    size_t n = 0;
-    while (*p && ident(*p)) {
-        if (n + 1 < size) dst[n++] = (char)(lower ? tolower((unsigned char)*p) : *p);
-        ++p;
-    }
-    dst[n] = 0;
-    return p;
-}
-
-static unsigned state_of(const char *name)
-{
-    static const struct { const char *name; unsigned bit; } map[] = {
-        { "hover", S_HOVER }, { "active", S_ACTIVE }, { "focus", S_FOCUS },
-        { "checked", S_CHECKED }, { "disabled", S_DISABLED }, { "selected", S_SELECTED },
-        { "open", S_OPEN }
-    };
-    size_t i;
-    for (i = 0; i < sizeof(map) / sizeof(map[0]); ++i)
-        if (!strcmp(map[i].name, name)) return map[i].bit;
-    return 0;
-}
-
-/* One selector (no commas): 0 when it has what this CSS doesn't do. */
-static int parse_selector(const char *p, css_rule *r)
-{
-    char comb = 0;
-    memset(r->part, 0, sizeof(r->part));
-    r->nparts = 0;
-    r->spec = 0;
-    while (*p) {
-        css_part *part;
-        while (isspace((unsigned char)*p)) {
-            ++p;
-            if (!comb) comb = ' ';
-        }
-        if (*p == '>') {
-            comb = '>';
-            ++p;
-            continue;
-        }
-        if (!*p) break;
-        if (r->nparts == MAX_PARTS) return 0;
-        part = &r->part[r->nparts++];
-        part->comb = r->nparts > 1 ? (comb ? comb : ' ') : 0;
-        comb = 0;
-        if (*p == '*') {
-            ++p;
-        } else if (isalpha((unsigned char)*p)) {
-            p = copy_ident(p, part->tag, sizeof(part->tag), 1);
-            r->spec += 1;
-        }
-        while (*p && !isspace((unsigned char)*p) && *p != '>') {
-            char name[32];
-            if (*p == '#') {
-                p = copy_ident(p + 1, part->id, sizeof(part->id), 0);
-                if (!part->id[0]) return 0;
-                r->spec += 100;
-            } else if (*p == '.') {
-                p = copy_ident(p + 1, name, sizeof(name), 0);
-                if (!name[0]) return 0;
-                if (part->ncls < MAX_CLASSES) strcpy(part->cls[part->ncls++], name);
-                r->spec += 10;
-            } else if (*p == ':') {
-                unsigned s;
-                p = copy_ident(p + 1, name, sizeof(name), 1);
-                if (!(s = state_of(name))) return 0;
-                part->states |= s;
-                r->spec += 10;
-            } else {
-                return 0;
-            }
-        }
-    }
-    return r->nparts > 0;
-}
-
-static char *dup_range(const char *s, size_t n)
-{
-    char *p = (char *)malloc(n + 1);
-    if (!p) return NULL;
-    memcpy(p, s, n);
-    p[n] = 0;
-    return p;
-}
-
-static int add_rule(olui_sheet *sheet, const char *sel, size_t sel_len, const char *decls, size_t decl_len)
-{
-    css_rule r;
-    int i;
-    char *s = dup_range(sel, sel_len);
-    if (!s) return 0;
-    if (!parse_selector(s, &r)) {
-        free(s);
-        return 1;               /* a selector we don't do is left out, as a browser does */
-    }
-    free(s);
-    if (sheet->count == sheet->capacity) {
-        size_t cap = sheet->capacity ? sheet->capacity * 2 : 32;
-        css_rule *p = (css_rule *)realloc(sheet->rules, cap * sizeof(*p));
-        if (!p) return 0;
-        sheet->rules = p;
-        sheet->capacity = cap;
-    }
-    if (!(r.decls = dup_range(decls, decl_len))) return 0;
-    r.order = sheet->order++;
-    sheet->rules[sheet->count++] = r;
-    for (i = 0; i < r.nparts; ++i) sheet->states |= r.part[i].states;
-    return 1;
-}
-
-unsigned olui_sheet_states(const olui_sheet *sheet)
-{
-    return sheet ? sheet->states : 0;
 }
 
 int olui_sheet_add(olui_sheet *sheet, const char *css)
 {
-    const char *p = css;
     if (!sheet) return 0;
     if (!css) return 1;
-    while (*p) {
-        const char *sel, *open, *close;
-        /* comments */
-        if (p[0] == '/' && p[1] == '*') {
-            const char *e = strstr(p + 2, "*/");
-            p = e ? e + 2 : p + strlen(p);
-            continue;
-        }
-        if (isspace((unsigned char)*p)) {
-            ++p;
-            continue;
-        }
-        sel = p;
-        open = strchr(p, '{');
-        if (!open) break;
-        close = strchr(open, '}');
-        if (!close) close = open + strlen(open);
-        if (*sel == '@') {      /* @-rules are not ours: skip to the end of their block */
-            int depth = 0;
-            for (p = open; *p; ++p) {
-                if (*p == '{') ++depth;
-                else if (*p == '}' && --depth == 0) { ++p; break; }
-            }
-            continue;
-        }
-        /* each selector of a list, the same declarations */
-        {
-            const char *s = sel;
-            while (s < open) {
-                const char *e = s;
-                while (e < open && *e != ',') ++e;
-                if (!add_rule(sheet, s, (size_t)(e - s), open + 1, (size_t)(close - open - 1))) return 0;
-                s = e < open ? e + 1 : e;
-            }
-        }
-        p = *close ? close + 1 : close;
-    }
-    return 1;
+    return gfcss_sheet_parse(sheet->sheet, css, strlen(css));
 }
 
-/* ---- Matching ---------------------------------------------------------------- */
-
-static int has_class(const olui_el *el, const char *c)
+unsigned olui_sheet_states(const olui_sheet *sheet)
 {
-    const char *p = el->cls;
-    size_t n = strlen(c);
-    if (!p) return 0;
-    while (*p) {
-        while (*p == ' ') ++p;
-        if (!strncmp(p, c, n) && (p[n] == 0 || p[n] == ' ')) return 1;
-        while (*p && *p != ' ') ++p;
-    }
-    return 0;
-}
-
-static int part_matches(const css_part *part, const olui_el *el)
-{
-    int i;
-    if (part->tag[0] && strcmp(part->tag, el->tag)) return 0;
-    if (part->id[0] && (!el->id || strcmp(part->id, el->id))) return 0;
-    for (i = 0; i < part->ncls; ++i)
-        if (!has_class(el, part->cls[i])) return 0;
-    if ((el->state & part->states) != part->states) return 0;
-    return 1;
-}
-
-static int matches_from(const css_rule *r, int i, const olui_el *el)
-{
-    if (!part_matches(&r->part[i], el)) return 0;
-    if (i == 0) return 1;
-    if (r->part[i].comb == '>')
-        return el->parent && matches_from(r, i - 1, el->parent);
-    for (el = el->parent; el; el = el->parent)
-        if (matches_from(r, i - 1, el)) return 1;
-    return 0;
-}
-
-/* ---- Values ---------------------------------------------------------------------- */
-
-static const char *skip_ws(const char *p)
-{
-    while (isspace((unsigned char)*p)) ++p;
-    return p;
-}
-
-static int hexval(int c)
-{
-    if (c >= '0' && c <= '9') return c - '0';
-    c = tolower(c);
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    return -1;
-}
-
-/* A colour at p: #rgb, #rrggbb, #rrggbbaa, rgb(), rgba() or a name. *end after it. */
-static int colour_at(const char *p, uint32_t *argb, const char **end)
-{
-    static const struct { const char *name; uint32_t argb; } names[] = {
-        { "transparent", 0x00000000u }, { "black", 0xff000000u }, { "white", 0xffffffffu },
-        { "red", 0xffff0000u }, { "green", 0xff008000u }, { "blue", 0xff0000ffu },
-        { "gray", 0xff808080u }, { "grey", 0xff808080u }, { "silver", 0xffc0c0c0u },
-        { "yellow", 0xffffff00u }, { "orange", 0xffffa500u }, { "navy", 0xff000080u }
-    };
-    size_t i;
-    p = skip_ws(p);
-    if (*p == '#') {
-        int d[8], n = 0;
-        ++p;
-        while (n < 8 && hexval(p[n]) >= 0) { d[n] = hexval(p[n]); ++n; }
-        if (ident(p[n])) return 0;
-        if (n == 3) *argb = 0xff000000u | (uint32_t)(d[0] * 17) << 16 | (uint32_t)(d[1] * 17) << 8 | (uint32_t)(d[2] * 17);
-        else if (n == 6 || n == 8) {
-            uint32_t v = 0;
-            for (i = 0; i < 6; ++i) v = v << 4 | (uint32_t)d[i];
-            *argb = (n == 8 ? (uint32_t)(d[6] << 4 | d[7]) << 24 : 0xff000000u) | v;
-        } else return 0;
-        if (end) *end = p + n;
-        return 1;
-    }
-    if (!strncmp(p, "rgb", 3)) {
-        long c[4] = { 0, 0, 0, 255 };
-        int k;
-        char *e;
-        const char *q = strchr(p, '(');
-        if (!q) return 0;
-        ++q;
-        for (k = 0; k < 4; ++k) {
-            q = skip_ws(q);
-            if (*q == ')') break;
-            if (k == 3) {               /* alpha, 0 to 1 */
-                long whole = strtol(q, &e, 10), frac = 0;
-                if (*e == '.') { frac = (e[1] >= '0' && e[1] <= '9') ? (e[1] - '0') : 0; while (isdigit((unsigned char)*++e)); }
-                c[3] = whole >= 1 ? 255 : frac * 255 / 9;
-            } else {
-                c[k] = strtol(q, &e, 10);
-            }
-            if (e == q) return 0;
-            q = skip_ws(e);
-            if (*q == ',') ++q;
-        }
-        q = strchr(q, ')');
-        if (!q) return 0;
-        for (k = 0; k < 4; ++k) if (c[k] < 0) c[k] = 0; else if (c[k] > 255) c[k] = 255;
-        *argb = (uint32_t)c[3] << 24 | (uint32_t)c[0] << 16 | (uint32_t)c[1] << 8 | (uint32_t)c[2];
-        if (end) *end = q + 1;
-        return 1;
-    }
-    for (i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
-        size_t n = strlen(names[i].name);
-        if (!strncmp(p, names[i].name, n) && !ident(p[n])) {
-            *argb = names[i].argb;
-            if (end) *end = p + n;
-            return 1;
-        }
-    }
-    return 0;
+    uint32_t g;
+    unsigned s = 0;
+    if (!sheet) return 0;
+    g = gfcss_states(sheet->e);
+    if (g & GFCSS_STATE_HOVER) s |= S_HOVER;
+    if (g & GFCSS_STATE_ACTIVE) s |= S_ACTIVE;
+    if (g & GFCSS_STATE_FOCUS) s |= S_FOCUS;
+    if (g & GFCSS_STATE_CHECKED) s |= S_CHECKED;
+    if (g & (GFCSS_STATE_DISABLED | GFCSS_STATE_ENABLED)) s |= S_DISABLED;
+    if (g & ST_SELECTED) s |= S_SELECTED;
+    if (g & ST_OPEN) s |= S_OPEN;
+    return s;
 }
 
 int olui_parse_colour(const char *s, uint32_t *argb)
 {
-    return colour_at(s, argb, NULL);
+    return s && gfcss_parse_colour(s, strlen(s), argb);
 }
 
-/* A length at p in units: px (and a bare number), pt, em (of em_size). */
-static int length_at(const char *p, ol_unit em_size, ol_unit *out, const char **end)
+/* ---- The elements, as GFCSS sees them ------------------------------------------- */
+
+static void el_info(void *ud, const void *p, gfcss_info *in)
 {
-    long whole = 0, frac = 0, scale = 1;
-    int neg = 0, digits = 0;
-    int64_t v;
-    p = skip_ws(p);
-    if (*p == '-') { neg = 1; ++p; }
-    while (isdigit((unsigned char)*p)) { whole = whole * 10 + (*p++ - '0'); ++digits; }
-    if (*p == '.') {
-        ++p;
-        while (isdigit((unsigned char)*p)) {
-            if (scale < 1000) { frac = frac * 10 + (*p - '0'); scale *= 10; }
-            ++p;
-            ++digits;
-        }
+    const olui_el *el = (const olui_el *)p;
+    uint32_t st = 0;
+    (void)ud;
+    in->tag = el->tag;
+    in->id = el->id;
+    in->classes = el->cls;
+    in->style = el->style;
+    if (el->state & S_HOVER) st |= GFCSS_STATE_HOVER;
+    if (el->state & S_ACTIVE) st |= GFCSS_STATE_ACTIVE;
+    if (el->state & S_FOCUS) st |= GFCSS_STATE_FOCUS;
+    if (el->state & S_CHECKED) st |= GFCSS_STATE_CHECKED;
+    st |= (el->state & S_DISABLED) ? GFCSS_STATE_DISABLED : GFCSS_STATE_ENABLED;
+    if (el->state & S_SELECTED) st |= ST_SELECTED;
+    if (el->state & S_OPEN) st |= ST_OPEN;
+    in->state = st;
+    in->index = 0;              /* worked out from prev, only when a selector asks */
+    in->count = 0;
+    in->empty = !el->first && (!el->text || !el->text[0]);
+}
+
+static const void *el_parent(void *ud, const void *p)
+{
+    (void)ud;
+    return ((const olui_el *)p)->parent;
+}
+
+static const void *el_prev(void *ud, const void *p)
+{
+    const olui_el *el = (const olui_el *)p, *c, *before = NULL;
+    (void)ud;
+    if (!el->parent) return NULL;
+    for (c = el->parent->first; c && c != el; c = c->next) before = c;
+    return before;
+}
+
+static const void *el_next(void *ud, const void *p)
+{
+    (void)ud;
+    return ((const olui_el *)p)->next;
+}
+
+static const char *el_attr(void *ud, const void *p, const char *name)
+{
+    const olui_el *el = (const olui_el *)p;
+    (void)ud;
+    if (!strcmp(name, "id")) return el->id;
+    if (!strcmp(name, "class")) return el->cls;
+    if (!strcmp(name, "name")) return el->name;
+    if (!strcmp(name, "value")) return el->value;
+    if (!strcmp(name, "placeholder")) return el->placeholder;
+    if (!strcmp(name, "title")) return el->title;
+    if (!strcmp(name, "style")) return el->style;
+    if (!strcmp(name, "checked")) return (el->state & S_CHECKED) ? "" : NULL;
+    if (!strcmp(name, "disabled")) return (el->state & S_DISABLED) ? "" : NULL;
+    if (!strcmp(name, "selected")) return (el->state & S_SELECTED) ? "" : NULL;
+    if (!strcmp(name, "open")) return (el->state & S_OPEN) ? "" : NULL;
+    if (!strcmp(name, "hidden")) return (el->state & S_HIDDEN) ? "" : NULL;
+    return NULL;
+}
+
+static const gfcss_element_ops el_ops = { el_info, el_parent, el_prev, el_next, el_attr };
+
+/* ---- From the UI's style to GFCSS's, and back ------------------------------------- */
+
+/* What an element inherits from its parent's olui_cs (NULL: the window's defaults) */
+static void inherited_of(const olui_sheet *s, const olui_cs *p, gfcss_computed *pc)
+{
+    uint32_t flags = p ? p->ol.text_flags : 0;
+    int i;
+    gfcss_computed_init(pc);
+    pc->font_size = p ? p->ol.font_size : OL_CSSPX(13);
+    pc->line_height_kind = GFCSS_LINE_LENGTH;
+    pc->line_height = p ? p->ol.line_height : OL_CSSPX(16);
+    pc->color = p ? p->ol.foreground : 0xff000000u;
+    pc->font_weight = (flags & OL_TEXT_BOLD) ? 700 : 400;
+    pc->font_style = (flags & OL_TEXT_ITALIC) ? GFCSS_FONT_ITALIC : GFCSS_FONT_NORMAL;
+    pc->font_generic = (flags & OL_TEXT_MONO) ? GFCSS_FONT_MONOSPACE : GFCSS_FONT_DEFAULT;
+    /* a row's text-align is where its children go: they don't take it */
+    pc->text_align = GFCSS_ALIGN_START;
+    if (p && !(p->box.flags & OL_BOX_ROW)) {
+        if (p->ol.text_align == OL_ALIGN_CENTER) pc->text_align = GFCSS_ALIGN_CENTER;
+        else if (p->ol.text_align == OL_ALIGN_END) pc->text_align = GFCSS_ALIGN_END;
+        else if (p->ol.text_align == OL_ALIGN_JUSTIFY) pc->text_align = GFCSS_ALIGN_JUSTIFY;
     }
-    if (!digits) return 0;
-    /* in thousandths of the unit */
-    v = (int64_t)whole * 1000 + frac * (1000 / scale);
-    if (!strncmp(p, "px", 2)) { v = v * OL_CSSPX(1) / 1000; p += 2; }
-    else if (!strncmp(p, "pt", 2)) { v = v * OL_POINT(1) / 1000; p += 2; }
-    else if (!strncmp(p, "em", 2)) { v = v * em_size / 1000; p += 2; }
-    else v = v * OL_CSSPX(1) / 1000;
-    *out = (ol_unit)(neg ? -v : v);
-    if (end) *end = p;
-    return 1;
+    for (i = 0; i < X_COUNT; ++i) pc->ext[s->slot[i]] = own[i].initial;
+    if (p) {
+        pc->ext[s->slot[X_ACCENT]] = p->accent;
+        pc->ext[s->slot[X_MARK_BG]] = p->mark_bg;
+        pc->ext[s->slot[X_MARK_BORDER]] = p->mark_border;
+        pc->ext[s->slot[X_MUTED]] = p->muted;
+    }
 }
 
-static int number_at(const char *p, long *out)
+/* the end of a colour in a gradient's text: #hex, a name, or a function */
+static const char *colour_end(const char *p)
 {
-    char *e;
-    p = skip_ws(p);
-    *out = strtol(p, &e, 10);
-    return e != p;
+    if (*p == '#' || (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')) {
+        const char *q = p + 1;
+        while ((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z') || (*q >= '0' && *q <= '9') || *q == '-') ++q;
+        if (*q == '(') {
+            while (*q && *q != ')') ++q;
+            if (*q) ++q;
+        }
+        return q;
+    }
+    return p;
 }
 
-/* "a b c d" lengths as CSS's sides: top, right, bottom, left */
-static int sides(const char *p, ol_unit em, ol_unit out[4])
+static const char *skip_ws(const char *p)
 {
-    ol_unit v[4];
-    int n = 0;
-    while (n < 4 && length_at(p, em, &v[n], &p)) ++n;
-    if (n == 0) return 0;
-    out[0] = v[0];
-    out[1] = n > 1 ? v[1] : v[0];
-    out[2] = n > 2 ? v[2] : v[0];
-    out[3] = n > 3 ? v[3] : out[1];
-    return 1;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
+    return p;
 }
 
 /* linear-gradient(to bottom?, c1 [pos%], c2 [pos%], ...): down the box only */
-static int gradient(const char *p, olui_cs *cs)
+static int gradient(const gfcss_text *t, olui_cs *cs)
 {
-    const char *q = strchr(p, '(');
+    char text[512];
+    const char *q;
     int n = 0, k;
-    if (!q) return 0;
-    ++q;
-    q = skip_ws(q);
+    if (t->length >= sizeof(text)) return 0;
+    memcpy(text, t->text, t->length);
+    text[t->length] = 0;
+    if (strncmp(text, "linear-gradient(", 16)) return 0;
+    q = skip_ws(text + 16);
     if (!strncmp(q, "to ", 3) || !strncmp(q, "180deg", 6)) {
         q = strchr(q, ',');
         if (!q) return 0;
@@ -405,13 +246,16 @@ static int gradient(const char *p, olui_cs *cs)
     }
     while (n < OLUI_MAX_STOPS) {
         const char *e;
-        if (!colour_at(q, &cs->stop_argb[n], &e)) break;
+        q = skip_ws(q);
+        e = colour_end(q);
+        if (e == q || !gfcss_parse_colour(q, (size_t)(e - q), &cs->stop_argb[n])) break;
         q = skip_ws(e);
         cs->stop_pos[n] = -1;
-        if (isdigit((unsigned char)*q)) {
-            long pc = strtol(q, (char **)&e, 10);
+        if (*q >= '0' && *q <= '9') {
+            long pc = 0;
+            while (*q >= '0' && *q <= '9') pc = pc * 10 + (*q++ - '0');
+            while ((*q >= '0' && *q <= '9') || *q == '.') ++q;
             cs->stop_pos[n] = (int)(pc * 10);
-            q = e;
             if (*q == '%') ++q;
         }
         ++n;
@@ -426,236 +270,207 @@ static int gradient(const char *p, olui_cs *cs)
     return 1;
 }
 
-static int is(const char *v, const char *word)
+static ol_unit units_of(const gfcss_length *l)
 {
-    size_t n = strlen(word);
-    return !strncmp(v, word, n) && !ident(v[n]);
+    return l->kind == GFCSS_LEN ? l->units : 0;     /* a percentage of what? the UI leaves it out */
 }
 
-static void set_font_size(olui_cs *cs, ol_unit fs, int lh_ratio)
+/* c into cs. base: what a new font size's line height is in proportion to,
+ * and the text flags CSS doesn't say (the parent's; NULL: the window's) */
+static void from_computed(const olui_sheet *s, const gfcss_computed *c, const olui_cs *base, olui_cs *cs)
 {
-    cs->ol.font_size = fs;
-    if (lh_ratio > 0) cs->ol.line_height = (ol_unit)((int64_t)fs * lh_ratio / 100);
-}
+    uint32_t flags = base ? base->ol.text_flags : 0;
+    ol_unit base_fs = base ? base->ol.font_size : OL_CSSPX(13), base_lh = base ? base->ol.line_height : OL_CSSPX(16);
+    int flex;
+    memset(cs, 0, sizeof(*cs));
+    ol_style_init(&cs->ol);
+    ol_box_style_init(&cs->box);
+    cs->box.border_sides = 0;
 
-/* One property */
-static void apply(olui_cs *cs, const char *prop, const char *v, const olui_cs *parent)
-{
-    ol_unit len, four[4];
-    uint32_t c;
-    long n;
-    ol_unit em = cs->ol.font_size;
-
-    if (!strcmp(prop, "display")) {
-        if (is(v, "none")) cs->ol.display = OL_DISPLAY_NONE;
-        else if (is(v, "inline") || is(v, "inline-block")) cs->ol.display = OL_DISPLAY_INLINE;
-        else if (is(v, "flex") || is(v, "inline-flex")) {
-            cs->ol.display = OL_DISPLAY_BLOCK;
-            if (!cs->column) cs->box.flags |= OL_BOX_ROW;
-        } else cs->ol.display = OL_DISPLAY_BLOCK;
-    } else if (!strcmp(prop, "flex-direction")) {
-        cs->column = is(v, "column");
-        if (cs->column) cs->box.flags &= ~(uint32_t)OL_BOX_ROW;
-        else cs->box.flags |= OL_BOX_ROW;
-    } else if (!strcmp(prop, "flex") || !strcmp(prop, "flex-grow")) {
-        if (is(v, "none")) cs->box.grow = 0;
-        else if (is(v, "auto")) cs->box.grow = 1;
-        else if (number_at(v, &n)) cs->box.grow = (int32_t)n;
-    } else if (!strcmp(prop, "gap")) {
-        if (length_at(v, em, &len, NULL)) cs->box.gap = len;
-    } else if (!strcmp(prop, "align-items")) {
-        if (is(v, "center")) cs->box.align = OL_CROSS_CENTRE;
-        else if (is(v, "start") || is(v, "flex-start")) cs->box.align = OL_CROSS_START;
-        else if (is(v, "end") || is(v, "flex-end")) cs->box.align = OL_CROSS_END;
-        else cs->box.align = OL_CROSS_STRETCH;
-    } else if (!strcmp(prop, "justify-content")) {
-        /* a row's children with room to spare: GFOpenLayout puts them at the row's text_align */
-        if (is(v, "center")) cs->ol.text_align = OL_ALIGN_CENTER;
-        else if (is(v, "end") || is(v, "flex-end") || is(v, "right")) cs->ol.text_align = OL_ALIGN_END;
-        else cs->ol.text_align = OL_ALIGN_START;
-    } else if (!strcmp(prop, "width")) {
-        if (is(v, "auto")) cs->box.width = 0;
-        else if (length_at(v, em, &len, NULL)) cs->box.width = len;
-    } else if (!strcmp(prop, "height")) {
-        if (is(v, "auto")) cs->box.height = 0;
-        else if (length_at(v, em, &len, NULL)) cs->box.height = len;
-    } else if (!strcmp(prop, "margin")) {
-        if (sides(v, em, four)) {
-            cs->ol.margin_top = four[0]; cs->ol.margin_right = four[1];
-            cs->ol.margin_bottom = four[2]; cs->ol.margin_left = four[3];
-        }
-    } else if (!strcmp(prop, "padding")) {
-        if (sides(v, em, four)) {
-            cs->ol.padding_top = four[0]; cs->ol.padding_right = four[1];
-            cs->ol.padding_bottom = four[2]; cs->ol.padding_left = four[3];
-        }
-    } else if (!strncmp(prop, "margin-", 7) || !strncmp(prop, "padding-", 8)) {
-        int pad = prop[0] == 'p';
-        const char *side = prop + (pad ? 8 : 7);
-        if (!length_at(v, em, &len, NULL)) return;
-        if (!strcmp(side, "top")) *(pad ? &cs->ol.padding_top : &cs->ol.margin_top) = len;
-        else if (!strcmp(side, "right")) *(pad ? &cs->ol.padding_right : &cs->ol.margin_right) = len;
-        else if (!strcmp(side, "bottom")) *(pad ? &cs->ol.padding_bottom : &cs->ol.margin_bottom) = len;
-        else if (!strcmp(side, "left")) *(pad ? &cs->ol.padding_left : &cs->ol.margin_left) = len;
-    } else if (!strcmp(prop, "color")) {
-        if (colour_at(v, &c, NULL)) cs->ol.foreground = c;
-    } else if (!strcmp(prop, "accent-color")) {
-        if (colour_at(v, &c, NULL)) cs->accent = c;
-    } else if (!strcmp(prop, "mark-background")) {
-        if (colour_at(v, &c, NULL)) cs->mark_bg = c;
-    } else if (!strcmp(prop, "mark-border-color")) {
-        if (colour_at(v, &c, NULL)) cs->mark_border = c;
-    } else if (!strcmp(prop, "placeholder-color")) {
-        if (colour_at(v, &c, NULL)) cs->muted = c;
-    } else if (!strcmp(prop, "background") || !strcmp(prop, "background-color") ||
-               !strcmp(prop, "background-image")) {
-        if (strstr(v, "gradient(")) {
-            gradient(v, cs);
-        } else if (is(v, "none")) {
-            cs->stops = 0;
-        } else if (colour_at(v, &c, NULL)) {
-            cs->stops = (c >> 24) ? 1 : 0;
-            cs->stop_argb[0] = c;
-            cs->stop_pos[0] = 0;
-        }
-    } else if (!strcmp(prop, "border")) {
-        /* width, style and colour in any order; "none" takes it away */
-        const char *p = v;
-        if (is(skip_ws(v), "none") || is(skip_ws(v), "0")) { cs->border = 0; return; }
-        while (*(p = skip_ws(p))) {
-            const char *e;
-            if (length_at(p, em, &len, &e)) { cs->border = len; p = e; }
-            else if (colour_at(p, &c, &e)) { cs->border_argb = c; p = e; }
-            else { while (*p && !isspace((unsigned char)*p)) ++p; }
-        }
-        if (!cs->border) cs->border = OL_CSSPX(1);
-    } else if (!strcmp(prop, "border-width")) {
-        if (length_at(v, em, &len, NULL)) cs->border = len;
-    } else if (!strcmp(prop, "border-color")) {
-        if (colour_at(v, &c, NULL)) cs->border_argb = c;
-    } else if (!strcmp(prop, "border-radius")) {
-        if (length_at(v, em, &len, NULL)) cs->radius = len;
-    } else if (!strcmp(prop, "font-size")) {
-        ol_unit base = parent ? parent->ol.font_size : OL_CSSPX(13);
-        if (length_at(v, base, &len, NULL) && len > 0) {
-            int ratio100 = cs->ol.font_size > 0
-                ? (int)((int64_t)cs->ol.line_height * 100 / cs->ol.font_size) : 125;
-            set_font_size(cs, len, ratio100);
-        }
-    } else if (!strcmp(prop, "line-height")) {
-        const char *e;
-        if (length_at(v, em, &len, &e)) {
-            /* a bare number is times the font size */
-            if (e[-1] == 'x' || e[-1] == 't' || e[-1] == 'm') cs->ol.line_height = len;
-            else cs->ol.line_height = (ol_unit)((int64_t)len * cs->ol.font_size / OL_CSSPX(1));
-        }
-    } else if (!strcmp(prop, "font-weight")) {
-        if (is(v, "bold") || (number_at(v, &n) && n >= 600)) cs->ol.text_flags |= OL_TEXT_BOLD;
-        else cs->ol.text_flags &= ~(uint32_t)OL_TEXT_BOLD;
-    } else if (!strcmp(prop, "font-style")) {
-        if (is(v, "italic") || is(v, "oblique")) cs->ol.text_flags |= OL_TEXT_ITALIC;
-        else cs->ol.text_flags &= ~(uint32_t)OL_TEXT_ITALIC;
-    } else if (!strcmp(prop, "font-family")) {
-        if (strstr(v, "monospace")) cs->ol.text_flags |= OL_TEXT_MONO;
-        else cs->ol.text_flags &= ~(uint32_t)OL_TEXT_MONO;
-    } else if (!strcmp(prop, "text-decoration")) {
-        if (strstr(v, "underline")) cs->ol.text_flags |= OL_TEXT_UNDERLINE;
-        else cs->ol.text_flags &= ~(uint32_t)OL_TEXT_UNDERLINE;
-    } else if (!strcmp(prop, "text-align")) {
-        if (is(v, "center")) cs->ol.text_align = OL_ALIGN_CENTER;
-        else if (is(v, "right") || is(v, "end")) cs->ol.text_align = OL_ALIGN_END;
-        else if (is(v, "justify")) cs->ol.text_align = OL_ALIGN_JUSTIFY;
-        else cs->ol.text_align = OL_ALIGN_START;
+    /* a box is a block until its CSS says otherwise */
+    flex = c->display == GFCSS_DISPLAY_FLEX || c->display == GFCSS_DISPLAY_INLINE_FLEX;
+    cs->column = c->flex_direction == GFCSS_COLUMN || c->flex_direction == GFCSS_COLUMN_REVERSE;
+    if (gfcss_is_set(c, GFCSS_P_DISPLAY)) {
+        if (c->display == GFCSS_DISPLAY_NONE) cs->ol.display = OL_DISPLAY_NONE;
+        else if (c->display == GFCSS_DISPLAY_INLINE || c->display == GFCSS_DISPLAY_INLINE_BLOCK)
+            cs->ol.display = OL_DISPLAY_INLINE;
+        else cs->ol.display = OL_DISPLAY_BLOCK;
+        if (flex && !cs->column) cs->box.flags |= OL_BOX_ROW;
     }
-}
-
-void olui_style_apply_decls(olui_cs *cs, const char *decls, const olui_cs *parent)
-{
-    const char *p = decls;
-    while (p && *p) {
-        char prop[32], value[160];
-        size_t n = 0;
-        int depth = 0;
-        p = skip_ws(p);
-        while (*p && *p != ':' && *p != ';') {
-            if (n + 1 < sizeof(prop) && !isspace((unsigned char)*p))
-                prop[n++] = (char)tolower((unsigned char)*p);
-            ++p;
-        }
-        prop[n] = 0;
-        if (*p != ':') {
-            if (*p) ++p;
-            continue;
-        }
-        ++p;
-        p = skip_ws(p);
-        n = 0;
-        while (*p && (*p != ';' || depth > 0)) {
-            if (*p == '(') ++depth;
-            else if (*p == ')') --depth;
-            if (n + 1 < sizeof(value)) value[n++] = *p;
-            ++p;
-        }
-        while (n > 0 && isspace((unsigned char)value[n - 1])) --n;
-        value[n] = 0;
-        /* !important is taken as written: the rules are applied in order anyway */
-        {
-            char *imp = strstr(value, "!important");
-            if (imp) { *imp = 0; while (imp > value && isspace((unsigned char)imp[-1])) *--imp = 0; }
-        }
-        if (prop[0]) apply(cs, prop, value, parent);
-        if (*p == ';') ++p;
+    cs->box.grow = c->flex_grow / 1000;
+    cs->box.gap = units_of((cs->box.flags & OL_BOX_ROW) ? &c->column_gap : &c->row_gap);
+    switch (c->align_items) {
+    case GFCSS_FLEX_CENTER: cs->box.align = OL_CROSS_CENTRE; break;
+    case GFCSS_FLEX_START: cs->box.align = OL_CROSS_START; break;
+    case GFCSS_FLEX_END: cs->box.align = OL_CROSS_END; break;
+    default: cs->box.align = OL_CROSS_STRETCH; break;
     }
-}
+    /* a row's children with room to spare: GFOpenLayout puts them at the row's text_align */
+    if (gfcss_is_set(c, GFCSS_P_JUSTIFY_CONTENT)) {
+        if (c->justify_content == GFCSS_FLEX_CENTER) cs->ol.text_align = OL_ALIGN_CENTER;
+        else if (c->justify_content == GFCSS_FLEX_END || c->justify_content == GFCSS_FLEX_RIGHT)
+            cs->ol.text_align = OL_ALIGN_END;
+        else cs->ol.text_align = OL_ALIGN_START;
+    } else {
+        switch (c->text_align) {
+        case GFCSS_ALIGN_CENTER: cs->ol.text_align = OL_ALIGN_CENTER; break;
+        case GFCSS_ALIGN_RIGHT: case GFCSS_ALIGN_END: cs->ol.text_align = OL_ALIGN_END; break;
+        case GFCSS_ALIGN_JUSTIFY: cs->ol.text_align = OL_ALIGN_JUSTIFY; break;
+        default: cs->ol.text_align = OL_ALIGN_START; break;
+        }
+    }
+    cs->box.width = units_of(&c->width);
+    cs->box.height = units_of(&c->height);
+    cs->ol.margin_top = units_of(&c->margin[GFCSS_TOP]);
+    cs->ol.margin_right = units_of(&c->margin[GFCSS_RIGHT]);
+    cs->ol.margin_bottom = units_of(&c->margin[GFCSS_BOTTOM]);
+    cs->ol.margin_left = units_of(&c->margin[GFCSS_LEFT]);
+    cs->ol.padding_top = units_of(&c->padding[GFCSS_TOP]);
+    cs->ol.padding_right = units_of(&c->padding[GFCSS_RIGHT]);
+    cs->ol.padding_bottom = units_of(&c->padding[GFCSS_BOTTOM]);
+    cs->ol.padding_left = units_of(&c->padding[GFCSS_LEFT]);
+    cs->ol.foreground = c->color;
 
-static int rule_cmp(const void *a, const void *b)
-{
-    const css_rule *x = *(const css_rule *const *)a, *y = *(const css_rule *const *)b;
-    if (x->spec != y->spec) return x->spec < y->spec ? -1 : 1;
-    return x->order < y->order ? -1 : x->order > y->order;
+    /* the box's fill: a gradient down it, or a colour */
+    if (c->background_image.kind == GFCSS_TEXT_FUNCTION) {
+        if (!gradient(&c->background_image, cs)) cs->stops = 0;
+    } else {
+        cs->stops = (c->background_color >> 24) ? 1 : 0;
+        cs->stop_argb[0] = c->background_color;
+        cs->stop_pos[0] = 0;
+    }
+    /* one border, as wide as its top; black unless a colour was given */
+    cs->border = c->border_width[GFCSS_TOP];
+    cs->border_argb = 0xff000000u;
+    if (gfcss_is_set(c, GFCSS_P_BORDER_TOP_COLOR)) cs->border_argb = c->border_color[GFCSS_TOP];
+    cs->radius = units_of(&c->border_radius[0]);
+
+    cs->ol.font_size = c->font_size;
+    if (gfcss_is_set(c, GFCSS_P_LINE_HEIGHT) && c->line_height_kind != GFCSS_LINE_NORMAL) {
+        if (c->line_height_kind == GFCSS_LINE_NUMBER)       /* times the font size (in CSS pixels' sixtieths, as ever) */
+            cs->ol.line_height = (ol_unit)((int64_t)(c->line_height * OL_CSSPX(1) / 1000) * c->font_size / OL_CSSPX(1));
+        else
+            cs->ol.line_height = c->line_height;
+    } else if (gfcss_is_set(c, GFCSS_P_FONT_SIZE)) {
+        /* the line height keeps its proportion to the font size */
+        int ratio100 = base_fs > 0 ? (int)((int64_t)base_lh * 100 / base_fs) : 125;
+        cs->ol.line_height = (ol_unit)((int64_t)c->font_size * ratio100 / 100);
+    } else {
+        cs->ol.line_height = base_lh;
+    }
+    if (c->font_weight >= 600) flags |= OL_TEXT_BOLD;
+    else flags &= ~(uint32_t)OL_TEXT_BOLD;
+    if (c->font_style != GFCSS_FONT_NORMAL) flags |= OL_TEXT_ITALIC;
+    else flags &= ~(uint32_t)OL_TEXT_ITALIC;
+    if (c->font_generic == GFCSS_FONT_MONOSPACE) flags |= OL_TEXT_MONO;
+    else flags &= ~(uint32_t)OL_TEXT_MONO;
+    if (gfcss_is_set(c, GFCSS_P_TEXT_DECORATION_LINE)) {
+        flags &= ~(uint32_t)(OL_TEXT_UNDERLINE | OL_TEXT_STRIKE);
+        if (c->text_decoration & GFCSS_UNDERLINE) flags |= OL_TEXT_UNDERLINE;
+        if (c->text_decoration & GFCSS_LINE_THROUGH) flags |= OL_TEXT_STRIKE;
+    }
+    cs->ol.text_flags = flags;
+    cs->accent = c->ext[s->slot[X_ACCENT]];
+    cs->mark_bg = c->ext[s->slot[X_MARK_BG]];
+    cs->mark_border = c->ext[s->slot[X_MARK_BORDER]];
+    cs->muted = c->ext[s->slot[X_MUTED]];
 }
 
 void olui_style_compute(const olui_sheet *sheet, olui_el *el, const olui_cs *parent)
 {
     olui_cs *cs = &el->cs;
-    const css_rule *hits[64];
-    size_t i, nhits = 0;
-
-    /* what is inherited, and what isn't */
-    memset(cs, 0, sizeof(*cs));
-    ol_style_init(&cs->ol);
-    ol_box_style_init(&cs->box);
-    cs->box.border_sides = 0;
-    cs->border_argb = 0xff000000u;
-    cs->accent = 0xff3366ccu;
-    cs->mark_bg = 0xffffffffu;
-    cs->mark_border = 0xff808080u;
-    cs->muted = 0xff909090u;
-    if (parent) {
-        cs->ol.font_size = parent->ol.font_size;
-        cs->ol.line_height = parent->ol.line_height;
-        cs->ol.foreground = parent->ol.foreground;
-        cs->ol.text_flags = parent->ol.text_flags;
-        cs->accent = parent->accent;
-        cs->mark_bg = parent->mark_bg;
-        cs->mark_border = parent->mark_border;
-        cs->muted = parent->muted;
-        if (!(parent->box.flags & OL_BOX_ROW)) cs->ol.text_align = parent->ol.text_align;
+    if (!sheet) {
+        /* no sheet: the defaults, and what is inherited */
+        gfcss_computed c;
+        olui_sheet tmp;
+        int i;
+        memset(&tmp, 0, sizeof(tmp));
+        for (i = 0; i < X_COUNT; ++i) tmp.slot[i] = i;
+        inherited_of(&tmp, parent, &c);
+        from_computed(&tmp, &c, parent, cs);
     } else {
-        cs->ol.font_size = OL_CSSPX(13);
-        cs->ol.line_height = OL_CSSPX(16);
+        inherited_of(sheet, parent, sheet->parent);
+        gfcss_computed_init(sheet->cs);
+        if (gfcss_compute(sheet->e, &el_ops, NULL, el, GFCSS_PSEUDO_NONE, sheet->parent, sheet->cs))
+            from_computed(sheet, sheet->cs, parent, cs);
+        else
+            from_computed(sheet, sheet->parent, parent, cs);
     }
-    if (sheet) {
-        for (i = 0; i < sheet->count; ++i) {
-            const css_rule *r = &sheet->rules[i];
-            if (matches_from(r, r->nparts - 1, el)) {
-                if (nhits == sizeof(hits) / sizeof(hits[0])) break;
-                hits[nhits++] = r;
-            }
-        }
-        qsort(hits, nhits, sizeof(hits[0]), rule_cmp);
-        for (i = 0; i < nhits; ++i) olui_style_apply_decls(cs, hits[i]->decls, parent);
-    }
-    if (el->style) olui_style_apply_decls(cs, el->style, parent);
     if (el->state & S_HIDDEN) cs->ol.display = OL_DISPLAY_NONE;
+}
+
+/* cs as GFCSS's computed style, everything it holds as though declared */
+static void to_computed(const olui_sheet *s, const olui_cs *cs, gfcss_computed *c)
+{
+    int k;
+    gfcss_computed_init(c);
+    c->display = cs->ol.display == OL_DISPLAY_NONE ? GFCSS_DISPLAY_NONE
+               : cs->ol.display == OL_DISPLAY_INLINE ? GFCSS_DISPLAY_INLINE
+               : (cs->box.flags & OL_BOX_ROW) || cs->column ? GFCSS_DISPLAY_FLEX : GFCSS_DISPLAY_BLOCK;
+    c->flex_direction = cs->column ? GFCSS_COLUMN : GFCSS_ROW;
+    c->flex_grow = cs->box.grow * 1000;
+    c->row_gap.units = c->column_gap.units = cs->box.gap;
+    c->row_gap.kind = c->column_gap.kind = GFCSS_LEN;
+    c->align_items = cs->box.align == OL_CROSS_CENTRE ? GFCSS_FLEX_CENTER : cs->box.align == OL_CROSS_START
+                   ? GFCSS_FLEX_START : cs->box.align == OL_CROSS_END ? GFCSS_FLEX_END : GFCSS_FLEX_STRETCH;
+    c->text_align = cs->ol.text_align == OL_ALIGN_CENTER ? GFCSS_ALIGN_CENTER : cs->ol.text_align == OL_ALIGN_END
+                  ? GFCSS_ALIGN_END : cs->ol.text_align == OL_ALIGN_JUSTIFY ? GFCSS_ALIGN_JUSTIFY : GFCSS_ALIGN_START;
+    if (cs->box.width > 0) { c->width.kind = GFCSS_LEN; c->width.units = cs->box.width; }
+    if (cs->box.height > 0) { c->height.kind = GFCSS_LEN; c->height.units = cs->box.height; }
+    c->margin[0].units = cs->ol.margin_top;
+    c->margin[1].units = cs->ol.margin_right;
+    c->margin[2].units = cs->ol.margin_bottom;
+    c->margin[3].units = cs->ol.margin_left;
+    c->padding[0].units = cs->ol.padding_top;
+    c->padding[1].units = cs->ol.padding_right;
+    c->padding[2].units = cs->ol.padding_bottom;
+    c->padding[3].units = cs->ol.padding_left;
+    c->color = cs->ol.foreground;
+    for (k = 0; k < 4; ++k) {
+        c->border_width[k] = cs->border;
+        c->border_style[k] = cs->border > 0 ? GFCSS_BORDER_SOLID : GFCSS_BORDER_NONE;
+        c->border_color[k] = cs->border_argb;
+        c->border_radius[k].units = cs->radius;
+    }
+    c->font_size = cs->ol.font_size;
+    c->line_height_kind = GFCSS_LINE_LENGTH;
+    c->line_height = cs->ol.line_height;
+    c->font_weight = (cs->ol.text_flags & OL_TEXT_BOLD) ? 700 : 400;
+    c->font_style = (cs->ol.text_flags & OL_TEXT_ITALIC) ? GFCSS_FONT_ITALIC : GFCSS_FONT_NORMAL;
+    c->font_generic = (cs->ol.text_flags & OL_TEXT_MONO) ? GFCSS_FONT_MONOSPACE : GFCSS_FONT_DEFAULT;
+    c->text_decoration = ((cs->ol.text_flags & OL_TEXT_UNDERLINE) ? GFCSS_UNDERLINE : 0) |
+                         ((cs->ol.text_flags & OL_TEXT_STRIKE) ? GFCSS_LINE_THROUGH : 0);
+    c->ext[s->slot[X_ACCENT]] = cs->accent;
+    c->ext[s->slot[X_MARK_BG]] = cs->mark_bg;
+    c->ext[s->slot[X_MARK_BORDER]] = cs->mark_border;
+    c->ext[s->slot[X_MUTED]] = cs->muted;
+}
+
+void olui_style_apply_decls(olui_cs *cs, const char *decls, const olui_cs *parent)
+{
+    /* one declaration list on cs: GFCSS applies it to cs as GFCSS sees it, and what
+       it says comes back (an engine of its own: this has no sheet) */
+    olui_sheet *s;
+    gfcss_computed *c, *pc;
+    int p, bg;
+    if (!cs || !decls || !decls[0] || !(s = olui_sheet_new())) return;
+    c = s->cs;
+    pc = s->parent;
+    to_computed(s, cs, c);
+    inherited_of(s, parent, pc);
+    if (gfcss_apply_declarations(s->e, decls, strlen(decls), pc, c)) {
+        olui_cs was = *cs;
+        bg = gfcss_is_set(c, GFCSS_P_BACKGROUND_COLOR) || gfcss_is_set(c, GFCSS_P_BACKGROUND_IMAGE);
+        /* all but the font size and line height as though declared: they come back as they are */
+        for (p = 0; p < GFCSS_P_COUNT + GFCSS_MAX_EXT; ++p)
+            if (p != GFCSS_P_FONT_SIZE && p != GFCSS_P_LINE_HEIGHT && p != GFCSS_P_JUSTIFY_CONTENT)
+                c->set[p >> 5] |= 1u << (p & 31);
+        from_computed(s, c, &was, cs);
+        if (!bg) {
+            cs->stops = was.stops;
+            memcpy(cs->stop_argb, was.stop_argb, sizeof(cs->stop_argb));
+            memcpy(cs->stop_pos, was.stop_pos, sizeof(cs->stop_pos));
+        }
+    }
+    olui_sheet_free(s);
 }
