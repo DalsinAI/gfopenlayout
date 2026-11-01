@@ -1,6 +1,6 @@
 #!/bin/sh
-# GFOpenLayout UI for AmigaOS 3.x on the 68040: libolui.a (GFOpenLayout, the UI,
-# GFOpenGadTools' theme reader and the Intuition glue) and OLUIDemo, with the
+# GFOpenLayout UI for AmigaOS 3.x on the 68040: libolui.a (GFOpenLayout and GFCSS,
+# the UI, GFOpenGadTools' theme reader and the Intuition glue) and OLUIDemo, with the
 # os32 stove. Soft float (one binary with or without an FPU): give SPECS the
 # GFOpen SDK's Lib/m68k-soft-m68040.specs. GFOpenLayout and the UI use no
 # floating point at all.
@@ -30,7 +30,8 @@ rm -f "$OUT/libolui.a"
 "$CC" $FLAGS -s -o "$OUT/OLUIDemo" "$HERE/examples/OLUIDemo.c" "$OUT/libolui.a"
 "$CC" $FLAGS -s -o "$OUT/OLUITest" "$HERE/tests/test_ui.c" "$OUT/libolui.a"
 "$CC" $FLAGS -s -o "$OUT/OLRowsTest" "$HERE/tests/test_rows.c" "$OUT/libolui.a"
-for f in "$OUT/libolui.a" "$OUT/OLUIDemo" "$OUT/OLUITest" "$OUT/OLRowsTest"; do
+"$CC" $FLAGS -s -o "$OUT/OLUICSSTest" "$HERE/tests/test_ui_css.c" "$OUT/libolui.a"
+for f in "$OUT/libolui.a" "$OUT/OLUIDemo" "$OUT/OLUITest" "$OUT/OLRowsTest" "$OUT/OLUICSSTest"; do
   echo "$f ($(wc -c < "$f") bytes)"
 done
-sha256sum "$OUT/OLUIDemo" "$OUT/OLUITest" "$OUT/OLRowsTest"
+sha256sum "$OUT/OLUIDemo" "$OUT/OLUITest" "$OUT/OLRowsTest" "$OUT/OLUICSSTest"

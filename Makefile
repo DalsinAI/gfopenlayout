@@ -23,7 +23,7 @@ CSS_OBJ = $(CSS_SRC:src/%.c=$(BUILD)/%.o)
 CSS_HDR = include/gfopenlayout.h include/gfopenlayout_css.h src/gfcss_internal.h src/openlayout_css.h
 
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_ui \
-     $(BUILD)/test_css
+     $(BUILD)/test_css $(BUILD)/test_ui_css
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -49,15 +49,21 @@ $(BUILD)/test_rows: tests/test_rows.c $(BUILD)/libopenlayout.a
 $(BUILD)/test_ui: tests/test_ui.c $(UI_SRC) ui/olui_internal.h include/gfopenlayout_ui.h $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) -std=c99 -Wall -Wextra -Werror -Iinclude -Iui $(UI_INC) tests/test_ui.c $(UI_SRC) $(BUILD)/libopenlayout.a -o $@
 
+# GFOpenLayout UI's CSS through GFCSS
+$(BUILD)/test_ui_css: tests/test_ui_css.c $(UI_SRC) ui/olui_internal.h include/gfopenlayout_ui.h $(BUILD)/libopenlayout.a
+	$(CC) $(CFLAGS) -std=c99 -Wall -Wextra -Werror -Iinclude -Iui $(UI_INC) tests/test_ui_css.c $(UI_SRC) $(BUILD)/libopenlayout.a -o $@
+
 $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
-test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_ui $(BUILD)/test_css
+test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_ui $(BUILD)/test_css \
+      $(BUILD)/test_ui_css
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
 	./$(BUILD)/test_ui
 	./$(BUILD)/test_css
+	./$(BUILD)/test_ui_css
 
 clean:
 	rm -rf $(BUILD)

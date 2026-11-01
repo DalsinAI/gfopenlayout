@@ -129,7 +129,7 @@ static void el_info(void *ud, const void *p, gfcss_info *in)
     if (el->state & S_SELECTED) st |= ST_SELECTED;
     if (el->state & S_OPEN) st |= ST_OPEN;
     in->state = st;
-    in->index = 0;              /* worked out from prev, only when a selector asks */
+    in->index = 0;              /* el_index, only when a selector asks */
     in->count = 0;
     in->empty = !el->first && (!el->text || !el->text[0]);
 }
@@ -174,7 +174,17 @@ static const char *el_attr(void *ud, const void *p, const char *name)
     return NULL;
 }
 
-static const gfcss_element_ops el_ops = { el_info, el_parent, el_prev, el_next, el_attr };
+static int32_t el_index(void *ud, const void *p)
+{
+    const olui_el *el = (const olui_el *)p, *c;
+    int32_t n = 1;
+    (void)ud;
+    if (!el->parent) return 1;
+    for (c = el->parent->first; c && c != el; c = c->next) ++n;
+    return n;
+}
+
+static const gfcss_element_ops el_ops = { el_info, el_parent, el_prev, el_next, el_attr, el_index };
 
 /* ---- From the UI's style to GFCSS's, and back ------------------------------------- */
 
