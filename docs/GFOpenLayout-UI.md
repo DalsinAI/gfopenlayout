@@ -1,6 +1,6 @@
 # GFOpenLayout UI
 
-GFOpenLayout UI (`olui`, version 0.2) lets a program describe its window in
+GFOpenLayout UI (`olui`, version 0.3) lets a program describe its window in
 HTML and CSS. GFOpenLayout lays the window out, the GFOpenGadTools theme draws
 it, and the program's own C functions are called back when something
 happens. It came from a chat window that needed a tree GadTools hasn't
@@ -16,6 +16,12 @@ olui_on(ui, "ok", OLUI_CLICK, ok_pressed, my_data);
 olui_amiga_layout(a);
 /* the event loop: olui_amiga_event(a, msg) for each IDCMP message, then olui_amiga_draw(a) */
 ```
+
+0.3 has what a word processor's windows and a web browser's forms need:
+drop-downs and list boxes (`select`), text of many lines (`textarea`),
+password and number fields, group boxes (`fieldset`), labels that work
+their controls, Tab's order (`tabindex`), boxes that scroll
+(`overflow:auto`) and tooltips (`title`).
 
 `examples/OLUIDemo.c` is a whole program with every widget in it.
 
@@ -52,12 +58,20 @@ fills it.
 | --- | --- | --- |
 | `row` | Its children side by side (`display:flex`) | |
 | `column` | Its children one under another, `gap` apart | |
-| `div`, `section`, `p`, `label`, `h1`-`h3`, `hr`, `spacer` | Boxes and text; `spacer` grows (`flex:1`) | |
+| `div`, `section`, `p`, `h1`-`h3`, `hr`, `spacer` | Boxes and text; `spacer` grows (`flex:1`) | |
+| `label` | Text; a click on it works its control: the one `for` names, or the one inside it (a checkbox is ticked, a radio button chosen, a button pressed, anything else takes the keyboard) | `for` |
 | `span`, `b`, `strong`, `i`, `em`, `u`, `code`, `a`, `br` | Text in a line | |
 | `button` | A button: `OLUI_CLICK` | `value` |
 | `checkbox` (or `input type=checkbox`) | A checkbox: `OLUI_CHANGE` | `checked`, `value` |
 | `radio` (or `input type=radio`) | A radio button; one of a `name` is on: `OLUI_CHANGE` | `name`, `value`, `checked` |
-| `input` | A one-line field: `OLUI_CHANGE` on each edit, `OLUI_SUBMIT` on Return | `value`, `placeholder` |
+| `input` | A one-line field: `OLUI_CHANGE` on each edit, `OLUI_SUBMIT` on Return | `value`, `placeholder`, `maxlength`, `readonly` |
+| `input type=password` | A field drawn a bullet a character; its events carry no `value`, `olui_get_text` reads it; never copied | as `input` |
+| `input type=number`, `spinner` | A number field with up and down arrow buttons: `OLUI_CHANGE` with the value in `index`. Decimals are fixed point: with `step=0.5` the value is in tenths (`olui_number_decimals`). Typed, it is held to `min` and `max` on Return or when the keyboard goes elsewhere | `value`, `min`, `max`, `step` |
+| `textarea` | Text of many lines, wrapped at words, that scrolls (a bar when it is taller than its box): `OLUI_CHANGE` on each edit. Its text is as written, spaces and newlines kept | `rows`, `cols` (its size when CSS gives none), `placeholder`, `readonly`, `maxlength`, `wrap=off` |
+| `select` | A drop-down: the chosen option and a mark; a click, Return or space opens its list over the window. With `size` above 1, a list box in place. `OLUI_CHANGE` with the option's number from 0 in `index`, its `value` (its text when it has none) in `value` and the option in `item` | `size` |
+| `option` | One of a select's choices (`</option>` may be left out, as in HTML) | `value`, `selected`, `disabled`, `label` |
+| `optgroup` | A row with its `label`, and the options in it under it | `label`, `disabled` |
+| `fieldset`, `legend` | A box round a group, its legend on its top edge, the edge broken where it is | |
 | `list`, `tree` | A list that scrolls; with items inside items, a tree: `OLUI_SELECT`, `OLUI_ACTIVATE`, `OLUI_EXPAND`, `OLUI_COLLAPSE` | |
 | `item`, `li` | A row of a list; items inside it are its children in the tree | `value`, `open`, `selected` |
 | `tabs` | Pages with a row of tab buttons: `OLUI_SELECT` | |
@@ -67,7 +81,8 @@ fills it.
 | `img` | A picture's place in a line (in a button too): the program draws it | `image` (its number), `width`, `height` |
 
 Every tag takes `id` (how the program finds it and names its handlers),
-`class`, `style`, `disabled` and `hidden`.
+`class`, `style`, `disabled`, `hidden`, `title` (a tooltip, but for a
+tab's, which is its button's text) and `tabindex`.
 
 ## The CSS
 
@@ -101,9 +116,20 @@ don't.
 | `accent-color` | Ticks, radio dots, progress bars and a slider's filled track |
 | `mark-background`, `mark-border-color` | A checkbox's and radio button's box, a slider's track (ours, not CSS's) |
 | `placeholder-color` | A field's placeholder (ours) |
+| `overflow` (`overflow-y`) | `auto` or `scroll`: a box with a height scrolls what it holds, with a bar when that is taller; `hidden`: cut to the box, scrolled only by the program; `visible` |
 
 A list with `height:auto` is as tall as its row, or as what grows gives it,
-and scrolls what it holds. What CSS has beyond this table (grid, floats,
+and scrolls what it holds.
+
+The new widgets' parts are styled as elements of their own: a select's
+pop-up list is `popup` (under its select: `#font popup`), its rows
+`option` and `optgroup` (`option:selected` is the one pointed at, and a
+list box's chosen one), and a tooltip `tooltip` (under the element whose
+title it is). A select with `size` is also of class `listbox`
+(`select.listbox` has a list's look), and `select:open` while its list is
+open. A textarea's selection is drawn in `accent-color` with its text in
+`mark-background`; a number field's buttons in `mark-background`, the one
+held in `accent-color`. What CSS has beyond this table (grid, floats,
 positions, transforms) is not done, and a rule using it is left out, as a
 browser leaves out what it doesn't know.
 
@@ -126,13 +152,37 @@ tabs' `item`, a `value` (a field's text, an item's or radio's `value`, else
 its `id`), an `index` and `checked`. A handler may change any widget: the
 window is laid out again after it returns.
 
-The keyboard: Tab and Shift-Tab move between widgets; Return and space
+A field's or textarea's text goes to and from the clipboard through the
+program: `OLUI_COPY` and `OLUI_CUT` carry the text in `value` (cut takes
+it out after), and on `OLUI_PASTE` the program gives the clipboard's text
+with `olui_insert_text(ui, ev->el, text)`. The Amiga key with x, c and v
+(Ctrl on the host, as `OLUI_QUAL_COMMAND`) and `olui_edit(ui, OLUI_COPY)`
+from a menu do it. Without a selection a field's whole text is cut or
+copied; a textarea's needs one.
+
+The keyboard: Tab and Shift-Tab move between widgets, those with a
+`tabindex` above 0 first (lowest first), then the rest in the markup's
+order; `tabindex=-1` is left out (a click still reaches it). A widget in a
+box that scrolls is scrolled into view. Return and space
 press a button or a checkbox; in a field the arrows (Shift for the ends),
 Backspace and Del; in a list Up, Down, Shift-Up and Shift-Down for a page,
 Right and Left to open and close a tree's items, Return to activate; in the
 tab buttons Left and Right; on a slider Left and Right (Up and Down) a step,
 Shift-Up and Shift-Down a tenth, Shift-Left and Shift-Right the ends. A double-click on an item activates it, and the
 wheel scrolls a list.
+
+In a textarea the arrows, Home and End (of the line), PageUp and PageDown;
+Shift with any of them selects; Return a new line; Backspace and Del; a
+drag selects, a double-click selects a word, the Amiga key with a all of
+it. In a closed select Up, Down, Home and End choose, as does a letter
+(the next option starting with it); Return or space opens it. In its open
+list Up, Down, Home, End, PageUp, PageDown and a letter point, Return or
+space chooses, Escape closes it with nothing chosen; a click outside it
+closes it too. A list box takes the same keys in place. In a number field
+Up and Down a step, PageUp and PageDown ten. On the Amiga Alt with the
+arrows is PageUp, PageDown, Home and End. The wheel scrolls the
+textarea, list box or box that scrolls under the pointer (the innermost
+that can).
 
 ## The calls
 
@@ -147,13 +197,33 @@ wheel scrolls a list.
 | `olui_layout(ui, w, h)`, `olui_draw(ui, area, fn, data)` | For a program that draws itself (the Amiga glue does both) |
 | `olui_mouse`, `olui_key` | Input, for the same |
 | `olui_find(ui, id)` | A widget |
-| `olui_get_text`, `olui_set_text`, `olui_get_value` | |
+| `olui_get_text`, `olui_set_text`, `olui_get_value` | A textarea's and a password's text too; a select's `olui_get_text` is its chosen option's |
 | `olui_get_checked`, `olui_set_checked`, `olui_set_disabled`, `olui_set_hidden`, `olui_set_progress`, `olui_focus` | `olui_set_checked` works on a button too, for `button:checked` (a toolbox's tool in use) |
 | `olui_slider_value`, `olui_set_slider` | A slider's value |
 | `olui_box(ui, el, rect)` | Where a widget is, as last laid out |
+| `olui_focused` | The widget with the keyboard |
+| `olui_get_scroll`, `olui_set_scroll` | A list's, textarea's, list box's or scrolling box's scroll, in pixels |
+| `olui_select_index`, `olui_select_set`, `olui_select_count`, `olui_select_option_value`, `olui_select_option_text`, `olui_select_add`, `olui_select_clear`, `olui_select_is_open`, `olui_select_open` | Selects; setting the choice sends no event |
+| `olui_number_value`, `olui_number_decimals`, `olui_set_number` | A number field's value, times 10 to the power of its decimals |
+| `olui_get_selection`, `olui_set_selection`, `olui_insert_text`, `olui_edit` | A field's or textarea's selection (bytes of its text), text put in as typed, and cut, copy and paste |
+| `olui_tick(ui, ms)` | Time going by: see below |
 | `olui_list_add(ui, list, parent, text, value)`, `olui_list_clear`, `olui_list_selected`, `olui_list_select`, `olui_item_open` | Lists and trees |
 | `olui_tabs_current`, `olui_tabs_select` | |
 | `olui_theme_css(text, dark, err, len)` | A theme file as CSS |
+
+## Time: olui_tick
+
+olui has no timer of its own. A program calls `olui_tick(ui, ms)` now and
+then with the milliseconds since the last call: a tooltip shows when the
+pointer has rested on an element with a `title` for `OLUI_TIP_DELAY` (700
+ms), and goes when the pointer moves to another element, a key is pressed
+or a button clicked (it comes back only when the pointer has been on
+another); a number field's arrow button held steps again after 400 ms and
+then every 80. It returns 1 when something needs drawing. The Amiga glue
+asks for `IDCMP_INTUITICKS` and calls it with 100 for each, about ten a
+second while the window is active, so a program on the glue does nothing
+more. A program that draws itself calls it from its own timer; without
+calls there are no tooltips, and a held arrow steps once.
 
 The Amiga glue (`include/gfopenlayout_ui_amiga.h`): `olui_amiga_idcmp()`,
 `olui_amiga_new(ui, window)`, `olui_amiga_theme(a, path or NULL)`,
@@ -180,7 +250,9 @@ What the UI needed in GFOpenLayout itself, for any program:
 
 ## Size and speed
 
-Measured 30 October 2026:
+Measured 30 October 2026, for 0.2 (0.3's widgets add to the UI's code, and
+each element some 85 bytes more by its new fields; not measured on the
+68040 yet):
 
 | | |
 | --- | --- |
@@ -214,8 +286,20 @@ A program links `libolui.a` and includes `gfopenlayout_ui.h` and
 
 ## Not yet
 
-- Text selection in a field, the clipboard, and multi-line text editing.
-- Menus, pop-up choosers and number fields.
+- A one-line field's selection is the program's (`olui_set_selection`) or
+  all of it (the Amiga key with a): Shift with the arrows still goes to
+  its ends, and the pointer places the caret only. A textarea selects
+  with both.
+- A textarea has no undo, its bar is not dragged (the wheel, the keys and
+  `olui_set_scroll` scroll it), lines break at spaces only (a word longer
+  than the line between its characters), and a tab is a character like
+  any other.
+- A select chooses one option (no `multiple`); its pop-up shows 12 rows
+  at most and scrolls the rest. A select is as wide as its widest option,
+  measured at each layout.
+- Menus.
+- A box that scrolls scrolls down only (no `overflow-x`), and its bar is not
+  dragged.
 - An `img` directly in a `row` or `column` keeps no place: put it in a line (a `div`, a `button`).
 - A resident library: it is a link library for now.
 - Laying out only what changed: a change that can move things (text, items, a style that changes a

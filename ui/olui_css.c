@@ -380,6 +380,12 @@ static void from_computed(const olui_sheet *s, const gfcss_computed *c, const ol
         if (c->text_decoration & GFCSS_LINE_THROUGH) flags |= OL_TEXT_STRIKE;
     }
     cs->ol.text_flags = flags;
+    switch (c->overflow_y) {
+    case GFCSS_OVERFLOW_AUTO: cs->overflow = O_AUTO; break;
+    case GFCSS_OVERFLOW_SCROLL: cs->overflow = O_SCROLL; break;
+    case GFCSS_OVERFLOW_HIDDEN: case GFCSS_OVERFLOW_CLIP: cs->overflow = O_HIDDEN; break;
+    default: cs->overflow = O_VISIBLE; break;
+    }
     cs->accent = c->ext[s->slot[X_ACCENT]];
     cs->mark_bg = c->ext[s->slot[X_MARK_BG]];
     cs->mark_border = c->ext[s->slot[X_MARK_BORDER]];
@@ -450,6 +456,9 @@ static void to_computed(const olui_sheet *s, const olui_cs *cs, gfcss_computed *
     c->font_generic = (cs->ol.text_flags & OL_TEXT_MONO) ? GFCSS_FONT_MONOSPACE : GFCSS_FONT_DEFAULT;
     c->text_decoration = ((cs->ol.text_flags & OL_TEXT_UNDERLINE) ? GFCSS_UNDERLINE : 0) |
                          ((cs->ol.text_flags & OL_TEXT_STRIKE) ? GFCSS_LINE_THROUGH : 0);
+    c->overflow_x = c->overflow_y = cs->overflow == O_AUTO ? GFCSS_OVERFLOW_AUTO
+                  : cs->overflow == O_SCROLL ? GFCSS_OVERFLOW_SCROLL
+                  : cs->overflow == O_HIDDEN ? GFCSS_OVERFLOW_HIDDEN : GFCSS_OVERFLOW_VISIBLE;
     c->ext[s->slot[X_ACCENT]] = cs->accent;
     c->ext[s->slot[X_MARK_BG]] = cs->mark_bg;
     c->ext[s->slot[X_MARK_BORDER]] = cs->mark_border;

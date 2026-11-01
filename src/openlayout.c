@@ -73,6 +73,24 @@ typedef struct {
     int live;                 /* worked out in this pass (an after zone is used only then) */
 } ol_wrap_zone;
 
+/* 0.9: an inline-block on the line being filled: its place holder op (a
+ * picture's, which the line's alignment moves along with the rest), and its
+ * box laid out again where finish_line puts it. */
+typedef struct {
+    size_t op;
+    ol_node *node;
+    ol_unit w, h;             /* its width and height, margins included */
+    ol_unit x, y;             /* where it goes, once its line is finished */
+} ol_inline_box;
+
+/* 0.9: a table's header rows (OL_BOX_REPEAT_HEADER), for the pages it goes
+ * on to: top to bottom in the galley, their ops first to end, and the
+ * table's rows' end. */
+typedef struct {
+    ol_unit top, bottom, end;
+    size_t first, end_op;
+} ol_repeat;
+
 /* Whether two zones are the same, but for line_dy. */
 static int zone_same(const ol_wrap_zone *a, const ol_wrap_zone *b)
 {
@@ -119,6 +137,12 @@ struct ol_document {
     ol_unit body_height;
     ol_unit *live_starts;     /* the pages cut so far in this pass: where each starts */
     int live_count, live_capacity;
+    /* 0.9: the inline-blocks of the lines being filled, innermost last */
+    ol_inline_box *iboxes;
+    size_t ibox_count, ibox_capacity;
+    /* 0.9: the tables' header rows that go again on the pages they go on to */
+    ol_repeat *repeats;
+    size_t repeat_count, repeat_capacity;
 
     /* pages: one after ol_layout, page 0 being the whole galley */
     int paged;
@@ -128,6 +152,8 @@ struct ol_document {
     ol_unit *page_end;        /* and of its end */
     size_t *page_first;       /* each page's first display op */
     size_t *page_ops;         /* and how many */
+    ol_unit *page_shift;      /* 0.9: how far down a repeated table header puts its content */
+    int *page_repeat;         /* 0.9: that header (doc->repeats); -1: none */
     int page_capacity;
 };
 
@@ -166,6 +192,7 @@ typedef struct {
     ol_unit nominal;          /* the height a line is taken to be, to find the zones it meets */
     ol_unit seg_height;       /* the tallest stretch finished on this line */
     ol_unit exact;            /* 0.7: every line exactly this high (OL_BOX_EXACT_LINES); 0: as its content */
+    size_t ibox_first;        /* 0.9: its inline-blocks are doc->iboxes from here */
 } ol_inline_flow;
 
 static char *ol_strdup0(const char *s)
@@ -377,6 +404,10 @@ void ol_document_free(ol_document *doc)
     free(doc->zones);
     free(doc->next_zones);
     free(doc->live_starts);
+    free(doc->iboxes);
+    free(doc->repeats);
+    free(doc->page_shift);
+    free(doc->page_repeat);
     free(doc->page_start);
     free(doc->page_end);
     free(doc->page_first);
@@ -759,6 +790,78 @@ static int add_break(ol_document *doc, ol_unit y)
     return 1;
 }
 
+/* ---- Web boxes' widths and borders (0.9) ------------------------------------ */
+
+/* p thousandths of w, in 32 bit divisions (which a 68040 does itself): w's
+ * thousands times p, and the rest's share */
+static ol_unit permille_of(ol_unit w, int32_t p)
+{
+    if (w <= 0 || p <= 0) return 0;
+    return (w / 1000) * p + (w % 1000) * p / 1000;
+}
+
+/* A box w wide (its margins outside it) between its least and its most, in
+ * a containing block cb wide: the most is max_width or max_width_permille of
+ * cb, the narrower; the least wins over it. */
+static ol_unit clamp_width(const ol_node *n, ol_unit w, ol_unit cb)
+{
+    ol_unit most = n->box.max_width, mp = permille_of(cb, n->box.max_width_permille);
+    if (mp > 0 && (most <= 0 || mp < most)) most = mp;
+    if (most > 0 && w > most) w = most;
+    if (n->box.min_width > 0 && w < n->box.min_width) w = n->box.min_width;
+    return w;
+}
+
+/* The width a box asks for in a containing block cb wide, its margins
+ * outside it: box.width, or width_permille of cb; 0: none. */
+static ol_unit asked_width(const ol_node *n, ol_unit cb)
+{
+    return n->box.width > 0 ? n->box.width : permille_of(cb, n->box.width_permille);
+}
+
+static int has_width(const ol_node *n)
+{
+    return n->box.width > 0 || n->box.width_permille > 0;
+}
+
+/* A block's width in a containing block cb wide, its margins included, and
+ * how far right of the block's left edge it goes (*dx): as wide as cb, or
+ * as it asks, between its least and most; never wider than cb, unless its
+ * least is. A block narrower than cb goes to cb's right (OL_BOX_AUTO_LEFT)
+ * or its middle (with OL_BOX_AUTO_RIGHT too). */
+static ol_unit block_width(const ol_node *c, ol_unit cb, ol_unit *dx)
+{
+    ol_unit m = c->style.margin_left + c->style.margin_right;
+    ol_unit asked = asked_width(c, cb), w = asked > 0 ? asked : cb - m, v = clamp_width(c, w, cb);
+    *dx = 0;
+    if (asked <= 0 && v == w) return cb;
+    w = v + m;
+    if (w > cb && !(c->box.min_width > 0 && v == c->box.min_width)) w = cb;
+    if (w < cb && (c->box.flags & OL_BOX_AUTO_LEFT))
+        *dx = (c->box.flags & OL_BOX_AUTO_RIGHT) ? (cb - w) / 2 : cb - w;
+    return w;
+}
+
+/* A side's border with OL_BOX_SIDE_BORDERS (0 top, 1 right, 2 bottom, 3
+ * left), which takes room inside the box; 0 without. */
+static ol_unit side_border(const ol_node *n, int side)
+{
+    ol_unit w = n->box.border_widths[side];
+    return (n->box.flags & OL_BOX_SIDE_BORDERS) && w > 0 ? w : 0;
+}
+
+/* What is between a box's edge and its content: its padding and its side
+ * border. */
+static ol_unit inset_top(const ol_node *n) { return n->style.padding_top + side_border(n, 0); }
+static ol_unit inset_right(const ol_node *n) { return n->style.padding_right + side_border(n, 1); }
+static ol_unit inset_bottom(const ol_node *n) { return n->style.padding_bottom + side_border(n, 2); }
+static ol_unit inset_left(const ol_node *n) { return n->style.padding_left + side_border(n, 3); }
+
+static int is_inline(const ol_node *n)
+{
+    return n->style.display == OL_DISPLAY_INLINE || n->style.display == OL_DISPLAY_INLINE_BLOCK;
+}
+
 /* ---- Lines ---------------------------------------------------------------- */
 
 static int is_space(char c)
@@ -988,6 +1091,45 @@ static int line_room(ol_inline_flow *flow)
     return line_room_from(flow, flow->line_top);
 }
 
+static int layout_inline_box(ol_inline_flow *flow, ol_node *node, ol_unit x, ol_unit y, ol_unit w,
+                             ol_unit *bottom_out);
+
+/* 0.9: the line's inline-blocks, once its height and baseline are known:
+ * each where its place holder went across, and down by its valign (its
+ * bottom on the baseline, or at the line's top, middle or bottom); its box
+ * laid out there, its ops after the line's others, the place holders taken
+ * out. */
+static int place_inline_boxes(ol_inline_flow *flow, size_t first, ol_unit height, ol_unit baseline)
+{
+    ol_document *doc = flow->doc;
+    size_t from = flow->ibox_first, n = doc->ibox_count, i, j, k;
+    for (k = from; k < n; ++k) {
+        ol_inline_box *b = &doc->iboxes[k];
+        b->x = doc->ops[b->op].u.image.bounds.x;
+        switch (b->node->box.valign) {
+        case OL_VALIGN_TOP: b->y = flow->line_top; break;
+        case OL_VALIGN_MIDDLE: b->y = flow->line_top + (height - b->h) / 2; break;
+        case OL_VALIGN_BOTTOM: b->y = flow->line_top + height - b->h; break;
+        default: b->y = baseline - b->h; break;
+        }
+    }
+    for (i = j = first, k = from; i < doc->op_count; ++i) {
+        if (k < n && doc->iboxes[k].op == i) {
+            ++k;
+            continue;
+        }
+        doc->ops[j++] = doc->ops[i];
+    }
+    doc->op_count = j;
+    for (k = from; k < n; ++k) {
+        ol_inline_box b = doc->iboxes[k];   /* a copy: the inline-blocks inside it come after it */
+        ol_unit bottom;
+        if (!layout_inline_box(flow, b.node, b.x, b.y, b.w, &bottom)) return 0;
+    }
+    doc->ibox_count = from;
+    return 1;
+}
+
 /* Ends the flow's line: aligns it, puts its pieces on one baseline (a
  * picture stands on it), and keeps it whole on a page. last: a paragraph's
  * last line, or one ended by a line break, which justification leaves. */
@@ -1041,6 +1183,7 @@ static int finish_line(ol_inline_flow *flow, int last)
             op->u.image.bounds.y = baseline - op->u.image.bounds.height;
         }
     }
+    if (doc->ibox_count > flow->ibox_first && !place_inline_boxes(flow, first, height, baseline)) return 0;
     flow->line_height = height;
     ++flow->lines;
     return add_keep(doc, flow->line_top, flow->line_top + height);
@@ -1070,6 +1213,7 @@ static void start_flow(ol_inline_flow *flow, ol_document *doc, const ol_node *bl
     flow->line_top = top;
     flow->align = align;
     flow->line_first_op = doc->op_count;
+    flow->ibox_first = doc->ibox_count;
     flow->wraps = !doc->wrap_off;
     flow->room_pending = flow->wraps;
     flow->exact = block && (block->box.flags & OL_BOX_EXACT_LINES) && block->style.line_height > 0
@@ -1322,10 +1466,84 @@ static int layout_inline_image(ol_inline_flow *flow, ol_node *node)
     return 1;
 }
 
+typedef struct {
+    size_t ops, keeps, breaks, anchors, repeats;
+} ol_mark;
+static void mark_take(const ol_document *doc, ol_mark *m);
+static void mark_back(ol_document *doc, const ol_mark *m);
+static ol_unit content_width(ol_document *doc, const ol_node *node,
+                             ol_measure_text_fn measure, void *measure_userdata);
+
+/* 0.9: an inline-block: as wide as it asks (in thousandths of the line's
+ * width), or as its content up to the line's width, between its least and
+ * its most; on to the next line when it does not fit, as a word is. Laid
+ * out here for its height, and taken back: a place holder (a picture's op)
+ * stands for it on the line until the line is finished. */
+static int layout_inline_block(ol_inline_flow *flow, ol_node *node)
+{
+    ol_document *doc = flow->doc;
+    ol_unit line_w = flow->col_right - flow->x0, m = node->style.margin_left + node->style.margin_right;
+    ol_unit w = asked_width(node, line_w), bottom;
+    ol_display_op *op;
+    ol_inline_box *b;
+    ol_mark mark;
+
+    if (w <= 0) {
+        w = content_width(doc, node, flow->measure, flow->measure_userdata) - m;
+        if (w > line_w - m) w = line_w - m;
+    }
+    w = clamp_width(node, w, line_w);
+    if (w < OL_CSSPX(1)) w = OL_CSSPX(1);
+    w += m;
+
+    if (flow->room_pending && !line_room(flow)) return 0;
+    while (!piece_fits(flow, w) && (flow->has_content || flow->narrow))
+        if (!flow_wrap_on(flow, 0)) return 0;
+
+    mark_take(doc, &mark);
+    if (!layout_inline_box(flow, node, flow->cursor_x, flow->line_top, w, &bottom)) return 0;
+    mark_back(doc, &mark);
+
+    if (doc->ibox_count == doc->ibox_capacity) {
+        size_t cap = doc->ibox_capacity ? doc->ibox_capacity * 2 : 8;
+        ol_inline_box *q = (ol_inline_box *)realloc(doc->iboxes, cap * sizeof(*q));
+        if (!q) return 0;
+        doc->iboxes = q;
+        doc->ibox_capacity = cap;
+    }
+    op = append_op(doc, OL_OP_IMAGE);
+    if (!op) return 0;
+    b = &doc->iboxes[doc->ibox_count++];
+    memset(b, 0, sizeof(*b));
+    b->op = doc->op_count - 1;
+    b->node = node;
+    b->w = w;
+    b->h = bottom - flow->line_top;
+    op->u.image.node_id = node->id;
+    op->u.image.bounds.x = flow->cursor_x;
+    op->u.image.bounds.y = flow->line_top;
+    op->u.image.bounds.width = w;
+    op->u.image.bounds.height = b->h;
+    op->u.image.image_id = -1;
+
+    /* on the baseline it is as tall above it as a picture; at the line's
+     * top, middle or bottom the line is at least as tall as it */
+    if (node->box.valign == OL_VALIGN_BASELINE || node->box.valign > OL_VALIGN_BOTTOM) {
+        if (b->h > flow->ascent) flow->ascent = b->h;
+    } else if (b->h > flow->line_height) {
+        flow->line_height = b->h;
+    }
+    flow->cursor_x += w;
+    flow->content_right = flow->cursor_x;
+    flow->has_content = 1;
+    return 1;
+}
+
 static int layout_inline_node(ol_inline_flow *flow, ol_node *node)
 {
     ol_node *child;
     if (!node || node->style.display == OL_DISPLAY_NONE) return 1;
+    if (node->style.display == OL_DISPLAY_INLINE_BLOCK) return layout_inline_block(flow, node);
 
     if (node->role == OL_ROLE_IMAGE) {
         if (!layout_inline_image(flow, node)) return 0;
@@ -1380,11 +1598,31 @@ static int add_rule(ol_document *doc, ol_id id, ol_unit x1, ol_unit y1,
     return y1 != y2 || add_keep(doc, y1, y1 + (thickness > 0 ? thickness : 1));
 }
 
+/* 0.9: OL_BOX_SIDE_BORDERS: each side's border a rule along that side,
+ * inside the box: a rule covers from its line to the thickness right of and
+ * below it (as ol_draw_page's box for it does), so each is the strip of the
+ * box its width deep. The top and bottom ones go the box's whole width, the
+ * left and right ones its whole height. */
+static int add_side_borders(ol_document *doc, const ol_node *node)
+{
+    const ol_box_style *b = &node->box;
+    ol_rect r = node->bounds;
+    ol_unit x2 = r.x + r.width, y2 = r.y + r.height;
+    ol_unit t = side_border(node, 0), rt = side_border(node, 1), bm = side_border(node, 2), l = side_border(node, 3);
+    if (rect_empty(r)) return 1;
+    if (t && !add_rule(doc, node->id, r.x, r.y, x2 - t, r.y, t, b->border_argbs[0])) return 0;
+    if (bm && !add_rule(doc, node->id, r.x, y2 - bm, x2 - bm, y2 - bm, bm, b->border_argbs[2])) return 0;
+    if (l && !add_rule(doc, node->id, r.x, r.y, r.x, y2 - l, l, b->border_argbs[3])) return 0;
+    if (rt && !add_rule(doc, node->id, x2 - rt, r.y, x2 - rt, y2 - rt, rt, b->border_argbs[1])) return 0;
+    return 1;
+}
+
 static int add_borders(ol_document *doc, const ol_node *node)
 {
     const ol_box_style *b = &node->box;
     ol_rect r = node->bounds;
     ol_unit x2 = r.x + r.width, y2 = r.y + r.height;
+    if (b->flags & OL_BOX_SIDE_BORDERS) return add_side_borders(doc, node);
     if (b->border_width <= 0 || !b->border_sides || rect_empty(r)) return 1;
     if ((b->border_sides & OL_BORDER_TOP) &&
         !add_rule(doc, node->id, r.x, r.y, x2, r.y, b->border_width, b->border_argb)) return 0;
@@ -1458,17 +1696,78 @@ static int layout_frame(ol_document *doc, ol_node *node, ol_unit origin_x, ol_un
     return 1;
 }
 
+static void move_op(ol_display_op *op, ol_unit dx, ol_unit dy);
+static const ol_anchor *anchor_at(const ol_document *doc, size_t i);
+
+/* 0.9: a node's blocks below it moved down dy (their bounds; inline
+ * nodes' come from their ops at the end) */
+static void move_bounds_below(ol_node *node, ol_unit dy)
+{
+    ol_node *c;
+    for (c = node->first_child; c; c = c->next_sibling) {
+        if (!rect_empty(c->bounds)) c->bounds.y += dy;
+        move_bounds_below(c, dy);
+    }
+}
+
+/* 0.9: a cell's content, its ops first to end, moved down dy in its row
+ * (box.valign): all but its own background, its frames' places, and its
+ * tables' repeated headers. */
+static void move_cell_content(ol_document *doc, ol_node *cell, size_t first, size_t end, ol_unit dy)
+{
+    size_t i;
+    for (i = first; i < end; ++i) {
+        ol_display_op *op = &doc->ops[i];
+        if (i == first && op->type == OL_OP_FILL_RECT && op->u.fill_rect.node_id == cell->id) continue;
+        if (anchor_at(doc, i)) continue;
+        move_op(op, 0, dy);
+    }
+    for (i = 0; i < doc->anchor_count; ++i)
+        if (doc->anchors[i].first >= first && doc->anchors[i].end <= end) {
+            doc->anchors[i].y += dy;
+            doc->anchors[i].line_y += dy;
+        }
+    for (i = 0; i < doc->repeat_count; ++i)
+        if (doc->repeats[i].first >= first && doc->repeats[i].end_op <= end) {
+            doc->repeats[i].top += dy;
+            doc->repeats[i].bottom += dy;
+            doc->repeats[i].end += dy;
+        }
+    move_bounds_below(cell, dy);
+}
+
+/* 0.9: the width a table's cell asks for its column, its margins included:
+ * box.width or width_permille of the table's, between its least and its
+ * most; its least alone; 0: none. */
+static ol_unit cell_hint(const ol_node *cell, ol_unit width)
+{
+    ol_unit asked = asked_width(cell, width), m = cell->style.margin_left + cell->style.margin_right;
+    if (asked > 0) return clamp_width(cell, asked, width) + m;
+    return cell->box.min_width > 0 ? cell->box.min_width + m : 0;
+}
+
 /* A table's rows, as a grid: each cell at its column, every cell in a row
- * as tall as the row's tallest, its background and borders to match. */
+ * as tall as the row's tallest, its background and borders to match. 0.9:
+ * without the table's column widths, its cells' widths are its columns'
+ * (the widest of a column's cells that span it alone), as if they were the
+ * table's, the others sharing what is left; a cell's content stands at the
+ * top, middle or bottom of its row (box.valign); and the header rows
+ * (OL_BOX_REPEAT_HEADER from the first row on) are kept with the first row
+ * after them, and noted for the pages the table goes on to. */
 static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
                         ol_unit width, ol_measure_text_fn measure,
                         void *measure_userdata, ol_unit *bottom_out)
 {
-    ol_unit widths[OL_MAX_COLUMNS], col_x[OL_MAX_COLUMNS + 1];
+    ol_unit widths[OL_MAX_COLUMNS], col_x[OL_MAX_COLUMNS + 1], hints[OL_MAX_COLUMNS];
     ol_node *cells[OL_MAX_COLUMNS];
     size_t cell_first_op[OL_MAX_COLUMNS];
-    int ncols = table->column_count, i;
+    int ncols = table->column_count, i, hinted = 0;
+    const ol_unit *columns = table->columns;
     ol_node *row, *cell;
+    /* 0.9: the header rows so far: top, bottom, ops; and below the first row after them */
+    int heads = 0, in_header = 1;
+    ol_unit head_top = 0, head_bottom = 0, first_body_bottom = -1;
+    size_t head_first = 0, head_end = 0;
 
     if (!ncols) {
         for (row = table->first_child; row; row = row->next_sibling) {
@@ -1482,19 +1781,40 @@ static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
     }
     if (ncols > OL_MAX_COLUMNS) ncols = OL_MAX_COLUMNS;
 
+    if (ncols > 0 && !table->column_count) {        /* 0.9: the cells' widths as the columns' */
+        memset(hints, 0, sizeof(hints));
+        for (row = table->first_child; row; row = row->next_sibling) {
+            int col = 0;
+            if (row->role != OL_ROLE_ROW || row->style.display == OL_DISPLAY_NONE) continue;
+            for (cell = row->first_child; cell && col < ncols; cell = cell->next_sibling) {
+                int span;
+                ol_unit h;
+                if (cell->style.display == OL_DISPLAY_NONE) continue;
+                span = cell->box.column_span > 1 ? cell->box.column_span : 1;
+                h = span == 1 ? cell_hint(cell, width) : 0;
+                if (h > hints[col]) {
+                    hints[col] = h;
+                    hinted = 1;
+                }
+                col += span;
+            }
+        }
+        if (hinted) columns = hints;
+    }
+
     if (ncols > 0) {
-        if (table->column_count) {
+        if (table->column_count || hinted) {
             int64_t sum = 0;
             int unset = 0;
             ol_unit left;
             for (i = 0; i < ncols; ++i) {
-                if (table->columns[i] > 0) sum += table->columns[i];
+                if (columns[i] > 0) sum += columns[i];
                 else ++unset;
             }
             for (i = 0; i < ncols; ++i)
-                widths[i] = table->columns[i] > 0
-                    ? (sum > width ? (ol_unit)((int64_t)table->columns[i] * width / sum)
-                                   : table->columns[i])
+                widths[i] = columns[i] > 0
+                    ? (sum > width ? (ol_unit)((int64_t)columns[i] * width / sum)
+                                   : columns[i])
                     : 0;
             left = width - (ol_unit)(sum > width ? width : sum);
             for (i = 0; unset && i < ncols; ++i)
@@ -1509,13 +1829,14 @@ static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
 
     for (row = table->first_child; row; row = row->next_sibling) {
         ol_unit row_top = y, row_bottom = y;
-        size_t row_bg = (size_t)-1;
+        size_t row_bg = (size_t)-1, row_first = doc->op_count, cells_end;
         int col = 0, ncells = 0, k;
 
         if (row->style.display == OL_DISPLAY_NONE) continue;
         if (row->role != OL_ROLE_ROW || ncols <= 0) {
             /* a caption or other block between the rows */
             if (!layout_block(doc, row, x, y, width, measure, measure_userdata, &y)) return 0;
+            if (heads) in_header = 0;
             continue;
         }
         if ((row->box.flags & OL_BOX_PAGE_BREAK_BEFORE) && !add_break(doc, y)) return 0;
@@ -1542,10 +1863,16 @@ static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
             if (cell_bottom > row_bottom) row_bottom = cell_bottom;
             col += span;
         }
+        cells_end = doc->op_count;
         for (k = 0; k < ncells; ++k) {
             ol_node *c = cells[k];
             ol_unit h = row_bottom - c->style.margin_bottom - c->bounds.y;
             if (h > c->bounds.height) {
+                /* 0.9: its content in the middle or at the bottom of the room the row gives it */
+                ol_unit dy = c->box.valign == OL_VALIGN_MIDDLE ? (h - c->bounds.height) / 2
+                           : c->box.valign == OL_VALIGN_BOTTOM ? h - c->bounds.height : 0;
+                if (dy > 0)
+                    move_cell_content(doc, c, cell_first_op[k], k + 1 < ncells ? cell_first_op[k + 1] : cells_end, dy);
                 c->bounds.height = h;
                 if ((c->style.background >> 24) != 0 && cell_first_op[k] < doc->op_count &&
                     doc->ops[cell_first_op[k]].type == OL_OP_FILL_RECT)
@@ -1559,23 +1886,51 @@ static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
         row->bounds.height = row_bottom - row_top;
         if (row_bg != (size_t)-1) doc->ops[row_bg].u.fill_rect.bounds = row->bounds;
         if (!add_keep(doc, row_top, row_bottom)) return 0;
+        if (in_header && (row->box.flags & OL_BOX_REPEAT_HEADER)) {
+            if (!heads++) {
+                head_top = row_top;
+                head_first = row_first;
+            }
+            head_bottom = row_bottom;
+            head_end = doc->op_count;
+        } else {
+            if (in_header && heads) first_body_bottom = row_bottom;
+            in_header = 0;
+        }
         y = row_bottom;
+    }
+    /* 0.9: a header with rows after it: never alone at a page's foot, and noted for the pages after (not in
+     * a frame anchored to its page, nor in an inline-block, which are never cut) */
+    if (heads && first_body_bottom >= 0 && !doc->anchor_depth) {
+        ol_repeat *r;
+        if (!add_keep(doc, head_top, first_body_bottom)) return 0;
+        if (doc->repeat_count == doc->repeat_capacity) {
+            size_t cap = doc->repeat_capacity ? doc->repeat_capacity * 2 : 4;
+            ol_repeat *q = (ol_repeat *)realloc(doc->repeats, cap * sizeof(*q));
+            if (!q) return 0;
+            doc->repeats = q;
+            doc->repeat_capacity = cap;
+        }
+        r = &doc->repeats[doc->repeat_count++];
+        r->top = head_top;
+        r->bottom = head_bottom;
+        r->end = y;
+        r->first = head_first;
+        r->end_op = head_end;
     }
     *bottom_out = y;
     return 1;
 }
 
-/* 0.8: what a layout has added so far, to take back and lay out again */
-typedef struct {
-    size_t ops, keeps, breaks, anchors;
-} ol_mark;
-
+/* 0.8: what a layout has added so far, to take back and lay out again
+ * (ol_mark, above; 0.9: with the tables' repeated headers) */
 static void mark_take(const ol_document *doc, ol_mark *m)
 {
     m->ops = doc->op_count;
     m->keeps = doc->keep_count;
     m->breaks = doc->break_count;
     m->anchors = doc->anchor_count;
+    m->repeats = doc->repeat_count;
 }
 
 static void mark_back(ol_document *doc, const ol_mark *m)
@@ -1584,6 +1939,7 @@ static void mark_back(ol_document *doc, const ol_mark *m)
     doc->keep_count = m->keeps;
     doc->break_count = m->breaks;
     doc->anchor_count = m->anchors;
+    doc->repeat_count = m->repeats;
 }
 
 static int is_grower(const ol_node *n)
@@ -1604,7 +1960,7 @@ static ol_unit content_width(ol_document *doc, const ol_node *node,
     if (!node || node->style.display == OL_DISPLAY_NONE || is_frame(node)) return 0;
     ml = node->style.margin_left;
     mr = node->style.margin_right;
-    if (node->box.width > 0) return node->box.width + ml + mr;
+    if (node->box.width > 0) return clamp_width(node, node->box.width, 0) + ml + mr;
     if (node->text && node->text[0]) {
         const char *t = node->text;
         while (*t) {
@@ -1625,7 +1981,7 @@ static ol_unit content_width(ol_document *doc, const ol_node *node,
         cw = content_width(doc, c, measure, measure_userdata);
         if (node->box.flags & OL_BOX_ROW) {
             w += cw + (n++ ? node->box.gap : 0);
-        } else if (c->style.display == OL_DISPLAY_INLINE) {
+        } else if (is_inline(c)) {
             run += cw;
         } else {
             if (run > w) w = run;
@@ -1640,7 +1996,8 @@ static ol_unit content_width(ol_document *doc, const ol_node *node,
         for (i = 0; i < node->column_count; ++i) sum += node->columns[i];
         if (sum > w) w = sum;
     }
-    return w + node->style.padding_left + node->style.padding_right + ml + mr;
+    /* 0.9: its side borders too, between its least and its most */
+    return clamp_width(node, w + inset_left(node) + inset_right(node), 0) + ml + mr;
 }
 
 static int layout_block_in(ol_document *doc, ol_node *node,
@@ -1668,8 +2025,11 @@ static int layout_row(ol_document *doc, ol_node *row, ol_unit x, ol_unit y, ol_u
         c->force_height = 0;
         /* the width it asks for, kept in its bounds until it is laid out */
         c->bounds.width = content_width(doc, c, measure, measure_userdata);
+        if (c->box.width <= 0 && c->box.width_permille > 0)       /* 0.9: of the row's width */
+            c->bounds.width = clamp_width(c, permille_of(width, c->box.width_permille), width) +
+                              c->style.margin_left + c->style.margin_right;
         used += c->bounds.width;
-        if (c->box.width <= 0) flex += c->bounds.width;
+        if (!has_width(c)) flex += c->bounds.width;
         if (c->box.grow > 0) grow += c->box.grow;
         ++n;
     }
@@ -1696,13 +2056,17 @@ static int layout_row(ol_document *doc, ol_node *row, ol_unit x, ol_unit y, ol_u
                 d = grow_left == c->box.grow ? share_left
                                              : (ol_unit)((int64_t)left * c->box.grow / grow);
                 grow_left -= c->box.grow;
-            } else if (left < 0 && c->box.width <= 0 && flex > 0) {
+            } else if (left < 0 && !has_width(c) && flex > 0) {
                 d = flex_left == w ? share_left : (ol_unit)((int64_t)left * w / flex);
                 flex_left -= w;
             }
-            if ((left > 0 && c->box.grow > 0) || (left < 0 && c->box.width <= 0 && flex > 0))
+            if ((left > 0 && c->box.grow > 0) || (left < 0 && !has_width(c) && flex > 0))
                 share_left -= d;
             w += d;
+            {                               /* 0.9: between its least and its most, of the row's width */
+                ol_unit m = c->style.margin_left + c->style.margin_right;
+                w = clamp_width(c, w - m, width) + m;
+            }
             if (w < OL_CSSPX(1)) w = OL_CSSPX(1);
             c->bounds.x = w;                /* its width, until it is laid out */
         }
@@ -1710,7 +2074,7 @@ static int layout_row(ol_document *doc, ol_node *row, ol_unit x, ol_unit y, ol_u
 
     fixed_h = row->force_height > 0 ? row->force_height : row->box.height;
     if (fixed_h > 0) {
-        row_h = fixed_h - row->style.padding_top - row->style.padding_bottom;
+        row_h = fixed_h - inset_top(row) - inset_bottom(row);
         if (row_h < 0) row_h = 0;
     }
     mark_take(doc, &mark);
@@ -1779,18 +2143,16 @@ static int layout_children(ol_document *doc, ol_node *node, ol_inline_flow *flow
     }
     for (child = node->first_child; child; child = child->next_sibling) {
         if (child->style.display == OL_DISPLAY_NONE || is_frame(child)) continue;
-        if (child->style.display == OL_DISPLAY_INLINE) {
+        if (is_inline(child)) {
             if (!layout_inline_node(flow, child)) return 0;
         } else {
-            ol_unit child_bottom, w = inner_w;
+            ol_unit child_bottom, w, dx;
             size_t keeps_before;
             if (!flush_flow(flow, &current_y)) return 0;
             if (blocks++) current_y += node->box.gap;
             keeps_before = doc->keep_count;
-            if (child->box.width > 0 &&
-                child->box.width + child->style.margin_left + child->style.margin_right < w)
-                w = child->box.width + child->style.margin_left + child->style.margin_right;
-            if (!layout_block_in(doc, child, inner_x, current_y, w,
+            w = block_width(child, inner_w, &dx);      /* 0.9: its width asked for, and its auto margins */
+            if (!layout_block_in(doc, child, inner_x + dx, current_y, w,
                                  measure, measure_userdata, &child_bottom))
                 return 0;
             /* a heading stays with the next block's first line */
@@ -1835,8 +2197,8 @@ static int layout_block_in(ol_document *doc, ol_node *node,
 
     box_x = x + ml;
     box_y = y + mt;
-    inner_x = box_x + node->style.padding_left;
-    inner_w = width - ml - mr - node->style.padding_left - node->style.padding_right;
+    inner_x = box_x + inset_left(node);
+    inner_w = width - ml - mr - inset_left(node) - inset_right(node);
     if (inner_w < OL_CSSPX(1)) inner_w = OL_CSSPX(1);
 
     memset(&node->bounds, 0, sizeof(node->bounds));
@@ -1849,7 +2211,7 @@ static int layout_block_in(ol_document *doc, ol_node *node,
         bg->u.fill_rect.argb = node->style.background;
     }
 
-    current_y = empty_top = box_y + node->style.padding_top;
+    current_y = empty_top = box_y + inset_top(node);
     zones_live(doc, node, inner_x, current_y);  /* 0.6: its frames, for its own lines too */
     start_flow(&flow, doc, node, measure, measure_userdata, inner_x, inner_x + inner_w,
                current_y, node->style.text_align, node->box.text_indent);
@@ -1884,7 +2246,7 @@ static int layout_block_in(ol_document *doc, ol_node *node,
             int32_t grow = 0;
             if (!flush_flow(&flow, &end_y)) return 0;
             if (end_y < current_y) end_y = current_y;
-            left = box_y + fixed_h - node->style.padding_bottom - end_y;
+            left = box_y + fixed_h - inset_bottom(node) - end_y;
             if (left > 0) {
                 ol_unit share_left = left;
                 for (child = node->first_child; child; child = child->next_sibling)
@@ -1927,9 +2289,9 @@ static int layout_block_in(ol_document *doc, ol_node *node,
     }
     /* 0.6: where its first line went (below a frame, say), for the page its frames go on */
     first_line = doc->keep_count > keeps_at_start ? doc->keeps[keeps_at_start].top
-                                                  : box_y + node->style.padding_top;
-    if (fixed_h > 0) content_bottom = box_y + fixed_h - node->style.padding_bottom;  /* 0.8 */
-    content_bottom += node->style.padding_bottom;
+                                                  : box_y + inset_top(node);
+    if (fixed_h > 0) content_bottom = box_y + fixed_h - inset_bottom(node);  /* 0.8 */
+    content_bottom += inset_bottom(node);
 
     node->bounds.x = box_x;
     node->bounds.y = box_y;
@@ -1950,7 +2312,7 @@ static int layout_block_in(ol_document *doc, ol_node *node,
     /* frames last, above the flow they stand in */
     for (child = node->first_child; child; child = child->next_sibling)
         if (child->style.display != OL_DISPLAY_NONE && is_frame(child) &&
-            !layout_frame(doc, child, inner_x, box_y + node->style.padding_top, first_line,
+            !layout_frame(doc, child, inner_x, box_y + inset_top(node), first_line,
                           measure, measure_userdata))
             return 0;
 
@@ -1967,6 +2329,26 @@ static int layout_block(ol_document *doc, ol_node *node,
     return layout_block_in(doc, node, x, y, width, measure, measure_userdata, bottom_out);
 }
 
+/* 0.9: an inline-block's box, laid out as a block at x, y, w wide (its
+ * margins included). Its lines do not wrap round frames, its frames stand
+ * in it (none is anchored to a page) and its tables' headers are not
+ * repeated; it leaves no keeps or breaks behind: its line keeps it whole. */
+static int layout_inline_box(ol_inline_flow *flow, ol_node *node, ol_unit x, ol_unit y, ol_unit w,
+                             ol_unit *bottom_out)
+{
+    ol_document *doc = flow->doc;
+    size_t keeps = doc->keep_count, breaks = doc->break_count;
+    int ok;
+    ++doc->wrap_off;
+    ++doc->anchor_depth;
+    ok = layout_block_in(doc, node, x, y, w, flow->measure, flow->measure_userdata, bottom_out);
+    --doc->anchor_depth;
+    --doc->wrap_off;
+    doc->keep_count = keeps;
+    doc->break_count = breaks;
+    return ok;
+}
+
 /* The document's children, one under another, as the galley. */
 static int layout_galley(ol_document *doc, ol_unit width,
                          ol_measure_text_fn measure, void *measure_userdata)
@@ -1979,15 +2361,18 @@ static int layout_galley(ol_document *doc, ol_unit width,
     for (child = root->first_child; child; child = child->next_sibling) {
         size_t keeps_before = doc->keep_count;
         if (child->style.display == OL_DISPLAY_NONE || is_frame(child)) continue;
-        if (child->style.display == OL_DISPLAY_INLINE) {
+        if (is_inline(child)) {
             ol_inline_flow flow;
             start_flow(&flow, doc, NULL, measure, measure_userdata, 0, width, y,
                        child->style.text_align, 0);
             if (!layout_inline_node(&flow, child)) return 0;
             if (!flush_flow(&flow, &y)) return 0;
         } else {
-            ol_unit bottom;
-            if (!layout_block(doc, child, 0, y, width, measure, measure_userdata, &bottom))
+            ol_unit bottom, dx, w;
+            /* 0.9: its width asked for and its auto margins, in the galley too (0.8 gave the
+             * document's own blocks the galley's width, whatever their box.width) */
+            w = block_width(child, width, &dx);
+            if (!layout_block(doc, child, dx, y, w, measure, measure_userdata, &bottom))
                 return 0;
             y = bottom;
         }
@@ -2022,6 +2407,8 @@ static void reset_layout(ol_document *doc)
     doc->break_count = 0;
     doc->anchor_count = 0;
     doc->anchor_depth = 0;
+    doc->ibox_count = 0;
+    doc->repeat_count = 0;
     doc->paged = 0;
     doc->page_count = 0;
     doc->zones_moved = 0;
@@ -2038,8 +2425,9 @@ static int add_page(ol_document *doc, ol_unit start, ol_unit end)
     if (doc->page_count == doc->page_capacity) {
         int cap = doc->page_capacity ? doc->page_capacity * 2 : 8;
         ol_unit *s = (ol_unit *)realloc(doc->page_start, (size_t)cap * sizeof(*s));
-        ol_unit *e;
+        ol_unit *e, *sh;
         size_t *f, *n;
+        int *rp;
         if (!s) return 0;
         doc->page_start = s;
         e = (ol_unit *)realloc(doc->page_end, (size_t)cap * sizeof(*e));
@@ -2051,12 +2439,20 @@ static int add_page(ol_document *doc, ol_unit start, ol_unit end)
         n = (size_t *)realloc(doc->page_ops, (size_t)cap * sizeof(*n));
         if (!n) return 0;
         doc->page_ops = n;
+        sh = (ol_unit *)realloc(doc->page_shift, (size_t)cap * sizeof(*sh));
+        if (!sh) return 0;
+        doc->page_shift = sh;
+        rp = (int *)realloc(doc->page_repeat, (size_t)cap * sizeof(*rp));
+        if (!rp) return 0;
+        doc->page_repeat = rp;
         doc->page_capacity = cap;
     }
     doc->page_start[doc->page_count] = start;
     doc->page_end[doc->page_count] = end;
     doc->page_first[doc->page_count] = 0;
     doc->page_ops[doc->page_count] = 0;
+    doc->page_shift[doc->page_count] = 0;
+    doc->page_repeat[doc->page_count] = -1;
     ++doc->page_count;
     return 1;
 }
@@ -2110,6 +2506,27 @@ static ol_unit content_from(const ol_document *doc, ol_unit y)
     return y;
 }
 
+/* 0.9: the table header that goes again at the top of a page starting at
+ * start, inside a table's rows below its header: the innermost such table's
+ * (the one that starts last), when the header is less high than a page.
+ * Its height, or 0; *which: its doc->repeats, or -1. */
+static ol_unit header_for(const ol_document *doc, ol_unit start, ol_unit body_height, int *which)
+{
+    size_t i;
+    ol_unit h = 0, top = 0;
+    *which = -1;
+    for (i = 0; i < doc->repeat_count; ++i) {
+        const ol_repeat *r = &doc->repeats[i];
+        if (r->bottom <= start && start < r->end && r->bottom - r->top < body_height &&
+            (*which < 0 || r->top > top)) {
+            *which = (int)i;
+            top = r->top;
+            h = r->bottom - r->top;
+        }
+    }
+    return h;
+}
+
 static int cut_pages(ol_document *doc, ol_unit body_height)
 {
     ol_unit total = doc->content_height, start = 0;
@@ -2118,7 +2535,10 @@ static int cut_pages(ol_document *doc, ol_unit body_height)
     if (doc->keep_count && doc->keeps[doc->keep_count - 1].bottom > total)
         total = doc->keeps[doc->keep_count - 1].bottom;
     for (;;) {
-        ol_unit limit = start + body_height, end = limit;
+        int which = -1;
+        /* 0.9: a page a table goes on to has its header first, and so less room */
+        ol_unit shift = start > 0 && doc->repeat_count ? header_for(doc, start, body_height, &which) : 0;
+        ol_unit limit = start + body_height - shift, end = limit;
         int forced = 0;
 
         while (b < doc->break_count && doc->breaks[b] <= start) ++b;
@@ -2137,6 +2557,8 @@ static int cut_pages(ol_document *doc, ol_unit body_height)
             }
         }
         if (!add_page(doc, start, end)) return 0;
+        doc->page_shift[doc->page_count - 1] = shift;
+        doc->page_repeat[doc->page_count - 1] = which;
         if (end >= total) break;
         start = content_from(doc, end);
         if (start >= total) break;
@@ -2187,8 +2609,11 @@ static void op_pages(const ol_document *doc, const ol_display_op *op,
  * body when it crosses pages. */
 static int place_op(const ol_document *doc, ol_display_op *op, int p, int split)
 {
-    ol_unit dy = doc->page.margin_top - doc->page_start[p];
-    ol_unit dx = doc->page.margin_left;
+    /* 0.9: below a repeated table header; what comes down onto the page from
+     * above it (the table's background and side borders, and its blocks')
+     * goes up behind the header too */
+    ol_unit dy = doc->page.margin_top + doc->page_shift[p] - doc->page_start[p];
+    ol_unit dx = doc->page.margin_left, up = 0;
     ol_unit lo = doc->page_start[p], hi = doc->page_end[p];
     op->page = p;
     switch (op->type) {
@@ -2205,22 +2630,29 @@ static int place_op(const ol_document *doc, ol_display_op *op, int p, int split)
         ol_rect *r = &op->u.fill_rect.bounds;
         ol_unit t = r->y, b = r->y + r->height;
         if (split) {
-            if (t < lo && p > 0) t = lo;
+            if (t < lo && p > 0) {
+                t = lo;
+                up = doc->page_shift[p];
+            }
             if (b > hi && p + 1 < doc->page_count) b = hi;
             if (b <= t) return 0;
         }
         r->x += dx;
-        r->y = t + dy;
-        r->height = b - t;
+        r->y = t + dy - up;
+        r->height = b - t + up;
         break;
     }
     case OL_OP_RULE:
         if (split) {
             ol_unit *a = op->u.rule.y1 < op->u.rule.y2 ? &op->u.rule.y1 : &op->u.rule.y2;
             ol_unit *z = a == &op->u.rule.y1 ? &op->u.rule.y2 : &op->u.rule.y1;
-            if (*a < lo && p > 0) *a = lo;
+            if (*a < lo && p > 0) {
+                *a = lo;
+                up = doc->page_shift[p];
+            }
             if (*z > hi && p + 1 < doc->page_count) *z = hi;
             if (*z <= *a) return 0;
+            *a -= up;
         }
         op->u.rule.x1 += dx;
         op->u.rule.x2 += dx;
@@ -2262,6 +2694,8 @@ static int anchor_place(const ol_document *doc, const ol_anchor *a, int paged, o
 {
     int p = !paged ? 0 : a->page >= 0 && a->page < doc->page_count ? a->page : page_holding(doc, a->y);
     anchor_place_at(doc, a, paged, paged ? doc->page_start[p] : 0, ox, oy);
+    /* 0.9: one placed from its block moves down with it below a repeated table header */
+    if (paged && OL_ANCHOR_Y_OF(a->anchor) == OL_ANCHOR_BLOCK) *oy += doc->page_shift[p];
     return p;
 }
 
@@ -2735,6 +3169,109 @@ static int sort_ops_into_pages(ol_document *doc)
     return 1;
 }
 
+/* 0.9: the header rows' ops copied for each page a table goes on to, in
+ * that page's coordinates (the header at the top of its body), and where
+ * among the page's ops they go: after the frames behind the text and the
+ * ops that come down onto the page from above it (the table's background,
+ * its side rules), before the rows the page has of its own. Worked out
+ * before the ops are sorted into their pages, and put in after. */
+typedef struct {
+    ol_display_op *ops;       /* page by page */
+    size_t count;
+    size_t *count_on;         /* each page's */
+    size_t *at;               /* where on the page they go, from its first op */
+} ol_header_copies;
+
+static void header_copies_free(ol_header_copies *hc)
+{
+    free(hc->ops);
+    free(hc->count_on);
+    free(hc->at);
+}
+
+static int header_copies(ol_document *doc, ol_header_copies *hc)
+{
+    size_t i, k, n = 0, upto = 0;
+    int p;
+    memset(hc, 0, sizeof(*hc));
+    for (p = 0; p < doc->page_count; ++p) {
+        const ol_repeat *r;
+        if (doc->page_repeat[p] < 0) continue;
+        r = &doc->repeats[doc->page_repeat[p]];
+        for (i = r->first; i < r->end_op; ++i)
+            if (!anchor_at(doc, i)) ++n;
+        if (r->end_op > upto) upto = r->end_op;
+    }
+    if (!n) return 1;
+    hc->ops = (ol_display_op *)malloc(n * sizeof(*hc->ops));
+    hc->count_on = (size_t *)calloc((size_t)doc->page_count, sizeof(*hc->count_on));
+    hc->at = (size_t *)calloc((size_t)doc->page_count, sizeof(*hc->at));
+    if (!hc->ops || !hc->count_on || !hc->at) {
+        header_copies_free(hc);
+        return 0;
+    }
+    for (k = 0; k < doc->anchor_count; ++k) {
+        const ol_anchor *a = &doc->anchors[k];
+        ol_unit ox, oy;
+        if (op_layer(a) == 0) hc->at[anchor_place(doc, a, 1, &ox, &oy)] += a->end - a->first;
+    }
+    for (i = 0, k = 0; i < upto && i < doc->op_count; ++i) {
+        int first, last, split, q;
+        if (anchor_of(doc, i, &k)) continue;
+        op_pages(doc, &doc->ops[i], &first, &last, &split);
+        for (q = first; q <= last; ++q) {
+            ol_display_op tmp;
+            if (doc->page_repeat[q] < 0 || i >= doc->repeats[doc->page_repeat[q]].end_op) continue;
+            tmp = doc->ops[i];
+            if (place_op(doc, &tmp, q, split)) ++hc->at[q];
+        }
+    }
+    for (p = 0; p < doc->page_count; ++p) {
+        const ol_repeat *r;
+        if (doc->page_repeat[p] < 0) continue;
+        r = &doc->repeats[doc->page_repeat[p]];
+        for (i = r->first; i < r->end_op; ++i) {
+            ol_display_op *c;
+            if (anchor_at(doc, i)) continue;
+            c = &hc->ops[hc->count++];
+            *c = doc->ops[i];
+            move_op(c, doc->page.margin_left, doc->page.margin_top - r->top);
+            c->page = p;
+            ++hc->count_on[p];
+        }
+    }
+    return 1;
+}
+
+/* n ops from src on to dst, which is not before it: the last first */
+static void ops_along(ol_display_op *ops, size_t dst, size_t src, size_t n)
+{
+    while (n--) ops[dst + n] = ops[src + n];
+}
+
+/* 0.9: the copies put in among their pages' ops, the pages moved along to
+ * make room, the last page first. */
+static int header_copies_insert(ol_document *doc, const ol_header_copies *hc)
+{
+    size_t from = hc->count;
+    int p;
+    if (!hc->count) return 1;
+    if (!ol_document_reserve(doc, doc->op_count + hc->count)) return 0;
+    for (p = doc->page_count - 1; p >= 0; --p) {
+        size_t src = doc->page_first[p], cnt = doc->page_ops[p], ins = hc->count_on[p], at, dst;
+        at = hc->at[p] < cnt ? hc->at[p] : cnt;
+        from -= ins;                        /* the copies on the pages before: as far as this one moves */
+        dst = src + from;
+        ops_along(doc->ops, dst + at + ins, src + at, cnt - at);
+        ops_along(doc->ops, dst, src, at);
+        if (ins) memcpy(&doc->ops[dst + at], &hc->ops[from], ins * sizeof(*doc->ops));
+        doc->page_first[p] = dst;
+        doc->page_ops[p] = cnt + ins;
+    }
+    doc->op_count += hc->count;
+    return 1;
+}
+
 /* 0.6: after a pass, its frames' zones, where it put them, on its own
  * pages: the zones the next pass's lines wrap round. 0 when they are the
  * zones this pass's lines wrapped round (none moved where lines had
@@ -2844,7 +3381,8 @@ int ol_layout_pages(ol_document *doc, const ol_page *page,
                     ol_measure_text_fn measure, void *measure_userdata)
 {
     ol_unit body_w, body_h;
-    int pass, changed;
+    int pass, changed, ok;
+    ol_header_copies copies;
     if (!doc || !page) return 0;
     body_w = page->width - page->margin_left - page->margin_right;
     body_h = page->height - page->margin_top - page->margin_bottom;
@@ -2867,7 +3405,10 @@ int ol_layout_pages(ol_document *doc, const ol_page *page,
 #ifdef OL_CHECK_SORT
     if (doc->zone_count) { ++ol_wrap_layouts; ol_wrap_passes += pass; if (changed) ++ol_wrap_unsettled; }
 #endif
-    if (!sort_ops_into_pages(doc)) return 0;
+    if (!header_copies(doc, &copies)) return 0;
+    ok = sort_ops_into_pages(doc) && header_copies_insert(doc, &copies);
+    header_copies_free(&copies);
+    if (!ok) return 0;
     doc->paged = 1;
     ++doc->generation;
     return 1;
@@ -2893,7 +3434,7 @@ const ol_node *ol_hit_test_page(const ol_document *doc, int page,
     ol_unit gy;
     if (!doc || page < 0 || page >= doc->page_count) return NULL;
     if (!doc->paged) return ol_hit_test(doc, x, y);
-    gy = y - doc->page.margin_top + doc->page_start[page];
+    gy = y - doc->page.margin_top - doc->page_shift[page] + doc->page_start[page];
     if (gy < doc->page_start[page] || gy >= doc->page_end[page]) return NULL;
     return ol_hit_test(doc, x - doc->page.margin_left, gy);
 }
@@ -2996,13 +3537,13 @@ int ol_caret_box(const ol_document *doc, const ol_text_position *pos,
     }
     /* nothing laid out for it (an empty paragraph): its content corner */
     if (node->style.display == OL_DISPLAY_BLOCK && !rect_empty(node->bounds)) {
-        ol_unit gx = node->bounds.x + node->style.padding_left + node->box.text_indent;
-        ol_unit gy = node->bounds.y + node->style.padding_top;
+        ol_unit gx = node->bounds.x + inset_left(node) + node->box.text_indent;
+        ol_unit gy = node->bounds.y + inset_top(node);
         int p = 0;
         if (doc->paged) {
             p = page_holding(doc, gy);
             gx += doc->page.margin_left;
-            gy += doc->page.margin_top - doc->page_start[p];
+            gy += doc->page.margin_top + doc->page_shift[p] - doc->page_start[p];
         }
         box->x = gx;
         box->y = gy;
