@@ -11,7 +11,7 @@ extern "C" {
 #define OL_VERSION "0.8"
 
 /*
- * OpenLayout logical units are exact across the three worlds we care about:
+ * GFOpenLayout logical units are exact across the three worlds we care about:
  *   1 point     = 80 OL units
  *   1 CSS pixel = 60 OL units (96 CSS px/in)
  *   1 twip      = 4 OL units (20 twips/point)
@@ -295,19 +295,19 @@ typedef struct {
      * and frame.y are measured from (OL_ANCHOR_X and OL_ANCHOR_Y), and
      * whether it is under the text (OL_ANCHOR_BEHIND) or over it. 0: a
      * 0.2 frame, from its containing block, in the flow's order. Through
-     * openlayout.library, OL_BoxStyleInit stops before this field (size
+     * gfopenlayout.library, OL_BoxStyleInit stops before this field (size
      * OL_BOX_STYLE_SIZE_0_3): a program that anchors frames sets size to
      * sizeof(ol_box_style) and anchor itself, and opens version 5. */
     uint32_t anchor;
     /* 0.6: how the body's text goes round an anchored frame (OL_WRAP_...),
      * and the room it keeps from the frame's edges: top, right, bottom,
-     * left. Through openlayout.library, a program sets size to
+     * left. Through gfopenlayout.library, a program sets size to
      * sizeof(ol_box_style) and opens version 7; with an older size its
      * frames have no wrap. */
     uint32_t wrap;
     ol_unit wrap_gap[4];
     /* 0.8: programs' windows (CSS width, height, flex-grow, gap and
-     * align-items). Through openlayout.library, a program sets size to
+     * align-items). Through gfopenlayout.library, a program sets size to
      * sizeof(ol_box_style) and opens version 8; with an older size these
      * are 0 (not set).
      * - width: the box's own width, margins outside it; 0: what its
@@ -348,7 +348,7 @@ enum {
 #define OL_ANCHOR_ON (1u << 5)      /* anchored even with both from the block and in front */
 
 /* The size of an ol_box_style before 0.4's anchor, as programs built for
- * openlayout.library 3 and 4 have it */
+ * gfopenlayout.library 3 and 4 have it */
 #define OL_BOX_STYLE_SIZE_0_3 offsetof(ol_box_style, anchor)
 
 /* 0.6: text round an anchored frame (box.wrap). The body's lines on the
@@ -377,10 +377,10 @@ enum {
 #define OL_WRAP_MIN OL_CSSPX(48)
 #define OL_WRAP_PASSES 4
 /* The size of an ol_box_style before 0.6's wrap, as programs built for
- * openlayout.library 5 and 6 have it */
+ * gfopenlayout.library 5 and 6 have it */
 #define OL_BOX_STYLE_SIZE_0_5 offsetof(ol_box_style, wrap)
 /* The size of an ol_box_style before 0.8's width, height, grow, gap and
- * align, as programs built for openlayout.library 7 have it */
+ * align, as programs built for gfopenlayout.library 7 have it */
 #define OL_BOX_STYLE_SIZE_0_7 offsetof(ol_box_style, width)
 
 /* 0.6: where an anchored frame went after ol_layout_pages (or ol_layout,
@@ -416,7 +416,7 @@ int ol_node_set_tabs(ol_node *node, int count, const ol_unit *stops);
  * '.' there (its end, when it has none); text that has no room keeps to
  * the left. A stop may be past the line's end (a contents page's page
  * numbers at the right margin or beyond). A leader fills the tab's space:
- * OpenLayout puts it in the tab's text op, in its style's text_flags
+ * GFOpenLayout puts it in the tab's text op, in its style's text_flags
  * (OL_TEXT_LEADER_OF), for the renderer to draw. */
 typedef enum {
     OL_TAB_LEFT = 0,

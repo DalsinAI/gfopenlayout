@@ -2,9 +2,9 @@
 #define LIBRARIES_OPENLAYOUT_H
 
 #include <exec/types.h>
-#include <openlayout.h>
+#include <gfopenlayout.h>
 
-#define OPENLAYOUTLIB_NAME "openlayout.library"
+#define OPENLAYOUTLIB_NAME "gfopenlayout.library"
 #define OPENLAYOUTLIB_VERSION 2             /* the calls up to OL_NodeValue */
 #define OPENLAYOUTLIB_REVISION 0
 #define OPENLAYOUTLIB_EXACT_REVISION 1      /* with version 7: OL_BOX_EXACT_LINES laid out (7.0 ignores the flag) */

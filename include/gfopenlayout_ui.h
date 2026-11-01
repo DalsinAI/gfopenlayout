@@ -1,5 +1,5 @@
-/* OpenLayout UI: programs' windows described in HTML and CSS, laid out by
- * OpenLayout and drawn in the OpenGadTools theme, with the program's own
+/* GFOpenLayout UI: programs' windows described in HTML and CSS, laid out by
+ * GFOpenLayout and drawn in the GFOpenGadTools theme, with the program's own
  * C functions called back when something happens.
  *
  *     olui *ui = olui_new();
@@ -10,8 +10,8 @@
  *     ... olui_mouse() and olui_key() from the window's events ...
  *
  * Plain C99 with no Amiga calls: the Amiga window glue (a RastPort drawer
- * on OpenGfx, the IDCMP loop) is openlayout_ui_amiga.h. All sizes and
- * positions here are pixels; OpenLayout's units stay inside.
+ * on GFOpenGfx, the IDCMP loop) is gfopenlayout_ui_amiga.h. All sizes and
+ * positions here are pixels; GFOpenLayout's units stay inside.
  *
  * MIT, Copyright (c) 2026 AmigaChrome Team. */
 #ifndef OPENLAYOUT_UI_H
@@ -20,7 +20,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "openlayout.h"
+#include "gfopenlayout.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,7 +61,7 @@ typedef void (*olui_handler)(olui *ui, const olui_event *ev, void *userdata);
 olui *olui_new(void);
 void olui_free(olui *ui);
 
-/* The program's measure: text widths, ascents and descents in OpenLayout
+/* The program's measure: text widths, ascents and descents in GFOpenLayout
  * units for a style (its font_size, and OL_TEXT_BOLD, OL_TEXT_MONO in
  * text_flags). The Amiga glue gives the RastPort's fonts. Without one,
  * text is measured as about 0.6 em a character. */
@@ -72,7 +72,7 @@ void olui_set_measure(olui *ui, ol_measure_text_fn measure, void *userdata);
  * when memory ran out. */
 int olui_add_css(olui *ui, const char *css);
 
-/* The window's contents as markup (the tags are in OpenLayout-UI.md),
+/* The window's contents as markup (the tags are in GFOpenLayout-UI.md),
  * with an optional stylesheet of the program's (added as olui_add_css
  * does). Replaces what was loaded before; the CSS stays. 1, or 0 with why
  * in err. */
@@ -233,10 +233,10 @@ void *olui_user(const olui_el *el);
 
 /* ---- The theme ------------------------------------------------------------------ */
 
-/* Turns an OpenGadTools theme file's text (THEME_SPEC.md, version 1) into
+/* Turns a GFOpenGadTools theme file's text (THEME_SPEC.md, version 1) into
  * CSS for olui_add_css, light or dark (the theme's light when it has no
  * dark). Returns a malloc'd string, or NULL with why in err. Built in
- * when OpenGadTools' theme reader is linked (OLUI_THEME: see the README). */
+ * when GFOpenGadTools' theme reader is linked (OLUI_THEME: see the README). */
 char *olui_theme_css(const char *theme_text, int dark, char *err, size_t errlen);
 
 #ifdef __cplusplus

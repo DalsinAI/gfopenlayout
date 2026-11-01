@@ -1,5 +1,5 @@
-/* OpenLayout UI's theme: an OpenGadTools theme file (THEME_SPEC.md,
- * version 1) as CSS, read with OpenGadTools' own reader (lib/ogt_theme.c,
+/* GFOpenLayout UI's theme: a GFOpenGadTools theme file (THEME_SPEC.md,
+ * version 1) as CSS, read with GFOpenGadTools' own reader (lib/ogt_theme.c,
  * built in from OGT_ROOT), so a window described in HTML and CSS takes the
  * same colours, gradients and corners as every GadTools window. The
  * program's own CSS, added after, can still change any of it.

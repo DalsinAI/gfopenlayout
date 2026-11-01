@@ -1,5 +1,5 @@
-/* OpenLayout UI's markup: HTML's syntax, with the tags a window needs
- * (OpenLayout-UI.md). Text runs collapse their spaces as HTML's do;
+/* GFOpenLayout UI's markup: HTML's syntax, with the tags a window needs
+ * (GFOpenLayout-UI.md). Text runs collapse their spaces as HTML's do;
  * <style> blocks are kept for the stylesheet.
  * MIT, Copyright (c) 2026 AmigaChrome Team. */
 #include "olui_internal.h"

@@ -1,18 +1,18 @@
-/* OpenLayout UI in an Intuition window (openlayout_ui_amiga.h).
+/* GFOpenLayout UI in an Intuition window (gfopenlayout_ui_amiga.h).
  *
  * Everything is drawn into a buffer the size of the window's inside, a
  * simple layer on a bitmap like the window's, so clip regions cut text as
  * they cut boxes, and the buffer is copied to the window in one blit: no
- * flicker while a window is drawn again. graphics.library is OpenGfx's;
+ * flicker while a window is drawn again. graphics.library is GFOpenGfx's;
  * boxes on a true-colour screen go through cybergraphics.library's
  * FillPixelArray in their exact colours, row by row for gradients and
- * rounded corners (as OpenGadTools' look does); on a screen with a palette,
+ * rounded corners (as GFOpenGadTools' look does); on a screen with a palette,
  * pens from ObtainBestPen, a gradient in four bands (THEME_SPEC.md 6).
  * Text is the screen's font at each size, through diskfont.library, its
  * UTF-8 turned into Latin-1 for the bitmap fonts. Integer maths only.
  *
  * MIT, Copyright (c) 2026 AmigaChrome Team. */
-#include "openlayout_ui_amiga.h"
+#include "gfopenlayout_ui_amiga.h"
 
 #include <exec/memory.h>
 #include <intuition/intuition.h>
@@ -36,7 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* cybergraphics.library through its vectors, as OpenGadTools' look_draw.c
+/* cybergraphics.library through its vectors, as GFOpenGadTools' look_draw.c
  * calls it: FillPixelArray (-150) and GetCyberMapAttr (-96) */
 static struct Library *CyberGfxBase;
 #define CGX_FILL(rp, x, y, w, h, argb) LP6(0x96, ULONG, FillPixelArray, struct RastPort *, (rp), a1, UWORD, (x), d0, \
@@ -707,8 +707,8 @@ int olui_amiga_theme(olui_amiga *a, const char *path)
     int dark = 0;
     if (!a) return 0;
     if (!path) {
-        /* OpenPrefs Look's choice: "Graphite dark" on the first line */
-        char *prefs = load_text("ENV:OpenGadTools/Look");
+        /* GFOpenPrefs Look's choice: "Graphite dark" on the first line */
+        char *prefs = load_text("ENV:GFOpenGadTools/Look");
         if (prefs) {
             char *nl = strchr(prefs, '\n'), *sp;
             if (nl) *nl = 0;

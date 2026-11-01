@@ -1,11 +1,11 @@
-/* OpenLayout UI: the widgets, their layout through OpenLayout, the
+/* GFOpenLayout UI: the widgets, their layout through GFOpenLayout, the
  * pointer and the keyboard, and drawing.
  *
  * The program's markup is kept as a tree of elements. Each layout styles
- * them (olui_css.c), builds a fresh OpenLayout document from them (one
+ * them (olui_css.c), builds a fresh GFOpenLayout document from them (one
  * node an element; a list's items, open or not, flattened under it) and
  * lays it out at the window's size. Drawing walks the elements back to
- * front: each one's box, its marks, then OpenLayout's text ops for its
+ * front: each one's box, its marks, then GFOpenLayout's text ops for its
  * node, a list's items cut to the list and moved by its scroll.
  *
  * MIT, Copyright (c) 2026 AmigaChrome Team. */
@@ -400,7 +400,7 @@ static int build(olui *ui, olui_el *el, ol_node *parent, const olui_cs *pcs, int
     st.background = 0;          /* olui draws the boxes */
     if (st.display == OL_DISPLAY_INLINE && el->kind != K_TEXT && el->first == NULL &&
         el->kind != K_BOX && el->kind != K_IMAGE)
-        st.display = OL_DISPLAY_BLOCK;  /* widgets are boxes; a picture stays in its line, where OpenLayout places it */
+        st.display = OL_DISPLAY_BLOCK;  /* widgets are boxes; a picture stays in its line, where GFOpenLayout places it */
     line = st.line_height > st.font_size ? st.line_height : st.font_size;
 
     switch (el->kind) {
@@ -1245,7 +1245,7 @@ static void out_text(drawer *d, const olui_el *el, olui_rect box, int32_t baseli
     d->fn(d->userdata, &op);
 }
 
-/* OpenLayout's text and image ops for el's node, moved up by dy; the text
+/* GFOpenLayout's text and image ops for el's node, moved up by dy; the text
  * in el's colour as it is now (a hover may change it without a layout) */
 static void node_ops(drawer *d, const olui_el *el, int32_t dy)
 {
@@ -1560,7 +1560,7 @@ static void add_extent(olui *ui, olui_el *el, olui_rect *area)
     }
 }
 
-/* What OpenLayout lays out from a style: all of it but the text's colour
+/* What GFOpenLayout lays out from a style: all of it but the text's colour
  * (node_ops draws in the element's) and the box olui paints */
 static int same_layout(const olui_cs *a, const olui_cs *b)
 {

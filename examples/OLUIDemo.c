@@ -1,5 +1,5 @@
 /* OLUIDemo: a window described in HTML and CSS, in the GadTools theme,
- * with its events in C. Every widget OpenLayout UI has: a field, buttons,
+ * with its events in C. Every widget GFOpenLayout UI has: a field, buttons,
  * a tree, tabs, a checkbox, radio buttons, a progress bar.
  *
  *     OLUIDemo [FILE=markup.html] [CSS=style.css] [THEME=x.theme]
@@ -16,10 +16,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "openlayout_ui.h"
-#include "openlayout_ui_amiga.h"
+#include "gfopenlayout_ui.h"
+#include "gfopenlayout_ui_amiga.h"
 
-static const char version[] = "$VER: OLUIDemo 0.1 (30.10.2026) AmigaChrome Team";
+static const char version[] = "$VER: OLUIDemo 0.1 (30.10.2026) AmiCradle Team";
 
 static const char markup[] =
     "<row>"
@@ -41,8 +41,8 @@ static const char markup[] =
     "      <label id=status>Nothing chosen yet.</label>"
     "    </tab>"
     "    <tab title=About>"
-    "      <h2>OpenLayout UI</h2>"
-    "      <p>This window is HTML and CSS, laid out by OpenLayout and drawn in the theme.</p>"
+    "      <h2>GFOpenLayout UI</h2>"
+    "      <p>This window is HTML and CSS, laid out by GFOpenLayout and drawn in the theme.</p>"
     "    </tab>"
     "  </tabs>"
     "</row>"
@@ -117,7 +117,7 @@ int main(void)
         if (args[0]) file_markup = load((const char *)args[0]);
         if (args[1]) file_css = load((const char *)args[1]);
     }
-    win = OpenWindowTags(NULL, WA_Title, (ULONG)"OpenLayout UI", WA_Width, 520, WA_Height, 360,
+    win = OpenWindowTags(NULL, WA_Title, (ULONG)"GFOpenLayout UI", WA_Width, 520, WA_Height, 360,
                          WA_MinWidth, 300, WA_MinHeight, 220, WA_MaxWidth, ~0UL, WA_MaxHeight, ~0UL,
                          WA_DragBar, TRUE, WA_DepthGadget, TRUE, WA_CloseGadget, TRUE, WA_SizeGadget, TRUE,
                          WA_Activate, TRUE, WA_SimpleRefresh, TRUE, WA_ReportMouse, TRUE,

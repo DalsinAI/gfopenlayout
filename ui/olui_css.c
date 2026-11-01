@@ -1,7 +1,7 @@
-/* OpenLayout UI's CSS: rules with type, class, id and state selectors,
+/* GFOpenLayout UI's CSS: rules with type, class, id and state selectors,
  * descendant and child combinators, and the properties a program's window
- * needs (OpenLayout-UI.md lists them). Written for OpenLayout UI; the
- * selector parser follows OpenBrowser Lite's (ob_css_lite.c).
+ * needs (GFOpenLayout-UI.md lists them). Written for GFOpenLayout UI; the
+ * selector parser follows GFOpenBrowser Lite's (ob_css_lite.c).
  * MIT, Copyright (c) 2026 AmigaChrome Team. */
 #include "olui_internal.h"
 
@@ -469,7 +469,7 @@ static void apply(olui_cs *cs, const char *prop, const char *v, const olui_cs *p
         else if (is(v, "end") || is(v, "flex-end")) cs->box.align = OL_CROSS_END;
         else cs->box.align = OL_CROSS_STRETCH;
     } else if (!strcmp(prop, "justify-content")) {
-        /* a row's children with room to spare: OpenLayout puts them at the row's text_align */
+        /* a row's children with room to spare: GFOpenLayout puts them at the row's text_align */
         if (is(v, "center")) cs->ol.text_align = OL_ALIGN_CENTER;
         else if (is(v, "end") || is(v, "flex-end") || is(v, "right")) cs->ol.text_align = OL_ALIGN_END;
         else cs->ol.text_align = OL_ALIGN_START;

@@ -1,8 +1,8 @@
-# OpenLayout Design
+# GFOpenLayout Design
 
 Version 0.1 — 7 October 2026
 
-OpenLayout is the small shared layout and semantic-display engine for the Open Amiga applications. It is deliberately not a browser engine and deliberately not an OpenWrite document model.
+GFOpenLayout is the small shared layout and semantic-display engine for the Open Amiga applications. It is deliberately not a browser engine and deliberately not a GFOpenWrite document model.
 
 Its job is:
 
@@ -24,30 +24,30 @@ renderer (pixman.library / printer / PDF / other)
 
 ## 1. Design goals
 
-OpenLayout must provide one deterministic geometry engine for:
+GFOpenLayout must provide one deterministic geometry engine for:
 
-- OpenWrite screen, PDF and print layout;
+- GFOpenWrite screen, PDF and print layout;
 - static HTML and html.datatype;
-- the lightweight OpenBrowser path;
-- future OpenPage/DTP work;
+- the lightweight GFOpenBrowser path;
+- future GFOpenPage/DTP work;
 - headless rendering and automation.
 
 It must remain small enough to be an ordinary Amiga library/static library, not a second WebCore.
 
-The first build is pure C99, has no external dependencies, and cross-compiles for the AmigaChrome 68040 + FPU target.
+The first build is pure C99, has no external dependencies, and cross-compiles for the AmiCradle 68040 + FPU target.
 
 ## 2. Exact geometry
 
-OpenLayout uses signed 32-bit logical units.
+GFOpenLayout uses signed 32-bit logical units.
 
 The unit scale is chosen so all three existing coordinate systems convert exactly:
 
-- 1 point = 80 OpenLayout units;
-- 1 CSS pixel = 60 OpenLayout units;
-- 1 twip = 4 OpenLayout units;
-- 1 inch = 5760 OpenLayout units.
+- 1 point = 80 GFOpenLayout units;
+- 1 CSS pixel = 60 GFOpenLayout units;
+- 1 twip = 4 GFOpenLayout units;
+- 1 inch = 5760 GFOpenLayout units.
 
-This is intentional. OpenWrite's twips, browser CSS pixels and print/PDF points can all use integer conversion with no cumulative rounding drift.
+This is intentional. GFOpenWrite's twips, browser CSS pixels and print/PDF points can all use integer conversion with no cumulative rounding drift.
 
 Rasterisation is the presentation boundary. Layout is not recomputed merely because a different screen DPI or output device is used.
 
@@ -76,7 +76,7 @@ The tree is intentionally richer than a paint tree. Automation, hit-testing, acc
 
 A relayout may move a node but does not change its ID.
 
-This gives OpenAutomation a reliable object model. The intended higher-level API is Playwright-inspired rather than DOM-dependent:
+This gives GFOpenAutomation a reliable object model. The intended higher-level API is Playwright-inspired rather than DOM-dependent:
 
 - find by stable ID;
 - find by role + name;
@@ -87,11 +87,11 @@ This gives OpenAutomation a reliable object model. The intended higher-level API
 - take a semantic snapshot;
 - render headlessly.
 
-OpenLayout itself does not synthesize mouse clicks or mutate an HTML DOM. It identifies the semantic object and the owning adapter performs the action.
+GFOpenLayout itself does not synthesize mouse clicks or mutate an HTML DOM. It identifies the semantic object and the owning adapter performs the action.
 
 ## 5. Styles
 
-OpenLayout consumes computed styles. It does not parse CSS.
+GFOpenLayout consumes computed styles. It does not parse CSS.
 
 The first style structure covers:
 
@@ -104,13 +104,13 @@ The first style structure covers:
 - bold/italic/underline/mono flags;
 - simple text alignment.
 
-An HTML adapter may implement CSS. OpenWrite may derive styles from libowf. Both hand the same computed style to OpenLayout.
+An HTML adapter may implement CSS. GFOpenWrite may derive styles from libowf. Both hand the same computed style to GFOpenLayout.
 
 This separation avoids teaching a word processor about CSS selectors or teaching a browser about ODT styles.
 
 ## 6. Text
 
-Font ownership stays outside OpenLayout.
+Font ownership stays outside GFOpenLayout.
 
 The layout call accepts a text-measurement callback. A consumer may back that with:
 
@@ -136,19 +136,19 @@ Planned operations include clip push/pop, transformed image, glyph run and path 
 
 The display list is the rendering boundary.
 
-For AmigaChrome the preferred raster path is:
+For AmiCradle the preferred raster path is:
 
 ```text
-OpenLayout display list
+GFOpenLayout display list
         |
-OpenAmigaPixman / pixman.library
+GFOpenAmigaPixman / pixman.library
         |
-68040 fast paths / AC090 AC_MAGIC / OpenGPU
+68040 fast paths / AC090 AC_MAGIC / GFOpenGPU
         |
-OpenRTG or presentation buffer
+GFOpenRTG or presentation buffer
 ```
 
-Cairo is not required by OpenLayout.
+Cairo is not required by GFOpenLayout.
 
 ## 8. Headless operation
 
@@ -163,7 +163,7 @@ A headless caller can:
 5. render to an offscreen target;
 6. drive semantic actions through the owning adapter.
 
-This is the basis for deterministic regression tests and OpenAutomation.
+This is the basis for deterministic regression tests and GFOpenAutomation.
 
 ## 9. Incremental reflow
 
@@ -173,11 +173,11 @@ Version 0.1 currently performs a full relayout. Later versions will add dirty-no
 
 Correctness comes before incremental complexity.
 
-## 10. OpenWrite relationship
+## 10. GFOpenWrite relationship
 
-OpenWrite 1.0 is the regression baseline.
+GFOpenWrite 1.0 is the regression baseline.
 
-OpenWrite already has:
+GFOpenWrite already has:
 
 - deterministic layout entry point;
 - page geometry;
@@ -186,21 +186,21 @@ OpenWrite already has:
 
 The extraction path is:
 
-1. represent OpenWrite paragraphs/runs/tables/images as OpenLayout semantic nodes;
-2. map libowf formatting to computed OpenLayout styles;
-3. replace the direct renderer walk with an OpenLayout display list;
-4. compare geometry and output against OpenWrite 1.0;
-5. move selection/caret hit-testing to stable OpenLayout IDs.
+1. represent GFOpenWrite paragraphs/runs/tables/images as GFOpenLayout semantic nodes;
+2. map libowf formatting to computed GFOpenLayout styles;
+3. replace the direct renderer walk with a GFOpenLayout display list;
+4. compare geometry and output against GFOpenWrite 1.0;
+5. move selection/caret hit-testing to stable GFOpenLayout IDs.
 
-OpenWrite remains the editor and document owner. It does not become an HTML application.
+GFOpenWrite remains the editor and document owner. It does not become an HTML application.
 
 ## 11. HTML relationship
 
-HTML is an adapter, not OpenLayout's native document format.
+HTML is an adapter, not GFOpenLayout's native document format.
 
-The static HTML path is expected to support an HTML 4 / CSS 2-ish useful subset first. It builds a semantic tree, computes styles and hands that tree to OpenLayout.
+The static HTML path is expected to support an HTML 4 / CSS 2-ish useful subset first. It builds a semantic tree, computes styles and hands that tree to GFOpenLayout.
 
-OpenLayout does not implement:
+GFOpenLayout does not implement:
 
 - networking;
 - JavaScript;
@@ -211,7 +211,7 @@ OpenLayout does not implement:
 - Grid/Flexbox;
 - media.
 
-Those remain the full OpenBrowser/WebKit lane when required.
+Those remain the full GFOpenBrowser/WebKit lane when required.
 
 ## 12. First build
 
@@ -238,11 +238,11 @@ The first m68k build is deliberately tiny; size is part of the regression budget
 ### L0 — Foundation
 Current 0.1 core and tests.
 
-### L1 — OpenWrite adapter
-Reproduce OpenWrite 1.0 paragraph/run geometry and display output without changing document semantics.
+### L1 — GFOpenWrite adapter
+Reproduce GFOpenWrite 1.0 paragraph/run geometry and display output without changing document semantics.
 
 ### L2 — HTML Lite adapter
-HTML parser + small CSS cascade producing OpenLayout nodes and styles. Images remain external handles decoded by datatypes.
+HTML parser + small CSS cascade producing GFOpenLayout nodes and styles. Images remain external handles decoded by datatypes.
 
 ### L3 — Pixman renderer
 Render the display list through pixman.library with deterministic pixel regression tests.
@@ -253,7 +253,7 @@ Semantic snapshots, role/name selectors, action dispatch and headless page tests
 ### L5 — Advanced layout
 Tables, lists, floats where needed, pagination, tabs, shaped cluster line breaking and incremental reflow.
 
-0.2 (21 October 2026) does pagination, grid tables, frames, alignment and justification, left tab stops (a hanging first line stops at the left edge, as a list's does), shared baselines, font numbers, the caret and character hit-testing, and drawing at the display's resolution (`ol_scale`, `ol_draw_page`) for OpenWrite, the presentation program and desktop publishing. Still to come here: centred, right and decimal tabs, widows and orphans, headers and footers as page furniture, columns, rotated frames, shaped cluster line breaking and incremental reflow.
+0.2 (21 October 2026) does pagination, grid tables, frames, alignment and justification, left tab stops (a hanging first line stops at the left edge, as a list's does), shared baselines, font numbers, the caret and character hit-testing, and drawing at the display's resolution (`ol_scale`, `ol_draw_page`) for GFOpenWrite, the presentation program and desktop publishing. Still to come here: centred, right and decimal tabs, widows and orphans, headers and footers as page furniture, columns, rotated frames, shaped cluster line breaking and incremental reflow.
 
 ### Drawing at the display's resolution
 
@@ -265,6 +265,6 @@ Dale, 21 October 2026: pages are high quality and resolution independent, drawn 
 - `ol_draw_page` passes over the ops outside the area being drawn without converting them, so a scroll or a damaged rectangle costs what it shows;
 - fonts are asked for at the scaled pixel size; nothing is rendered into a big bitmap and filtered down.
 
-OpenGfx (opengpu.library, the Cairo and pixman replacement) takes the same scale and OpenLayout's units, so OpenBrowser and the office programs share one rasteriser and one resolution model.
+GFOpenGfx (gfopengpu.library, the Cairo and pixman replacement) takes the same scale and GFOpenLayout's units, so GFOpenBrowser and the office programs share one rasteriser and one resolution model.
 
-The governing rule is: add layout capability because a real Open app needs it, not because a web standard contains it.
+The governing rule is: add layout capability because a real GFOpen app needs it, not because a web standard contains it.

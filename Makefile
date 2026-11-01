@@ -6,7 +6,7 @@ BUILD = build
 
 .PHONY: all test clean
 
-# OpenLayout UI: with OGT_ROOT (OpenGadTools), its theme reader is built in
+# GFOpenLayout UI: with OGT_ROOT (GFOpenGadTools), its theme reader is built in
 OGT_ROOT ?=
 ifneq ($(OGT_ROOT),)
 UI_THEME = ui/olui_theme.c $(OGT_ROOT)/lib/ogt_theme.c
@@ -22,7 +22,7 @@ all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUIL
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/openlayout.o: src/openlayout.c include/openlayout.h | $(BUILD)
+$(BUILD)/openlayout.o: src/openlayout.c include/gfopenlayout.h | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) -DOL_CHECK_SORT -Iinclude -c src/openlayout.c -o $@
 
 $(BUILD)/libopenlayout.a: $(BUILD)/openlayout.o
@@ -37,7 +37,7 @@ $(BUILD)/test_document: tests/test_document.c $(BUILD)/libopenlayout.a
 $(BUILD)/test_rows: tests/test_rows.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_rows.c $(BUILD)/libopenlayout.a -o $@
 
-$(BUILD)/test_ui: tests/test_ui.c $(UI_SRC) ui/olui_internal.h include/openlayout_ui.h $(BUILD)/libopenlayout.a
+$(BUILD)/test_ui: tests/test_ui.c $(UI_SRC) ui/olui_internal.h include/gfopenlayout_ui.h $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) -std=c99 -Wall -Wextra -Werror -Iinclude -Iui $(UI_INC) tests/test_ui.c $(UI_SRC) $(BUILD)/libopenlayout.a -o $@
 
 test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_ui

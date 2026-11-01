@@ -1,4 +1,4 @@
-#include "openlayout.h"
+#include "gfopenlayout.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -61,7 +61,7 @@ int main(void)
     ol_node_set_style(heading, &s);
     CHECK(ol_node_set_name(heading, "page-title"));
 
-    heading_text = ol_node_append(doc, heading, OL_ROLE_TEXT, "OpenLayout first light");
+    heading_text = ol_node_append(doc, heading, OL_ROLE_TEXT, "GFOpenLayout first light");
     CHECK(heading_text != NULL);
     s.display = OL_DISPLAY_INLINE;
     ol_node_set_style(heading_text, &s);

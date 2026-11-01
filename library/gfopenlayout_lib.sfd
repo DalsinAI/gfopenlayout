@@ -1,12 +1,12 @@
-==id $Id: openlayout_lib.sfd 3.0 (21.10.2026) $
-* "openlayout.library"
+==id $Id: gfopenlayout_lib.sfd 3.0 (21.10.2026) $
+* "gfopenlayout.library"
 ==base _OpenLayoutBase
 ==basetype struct Library *
-==libname openlayout.library
+==libname gfopenlayout.library
 ==bias 30
 ==public
 ==include <exec/types.h>
-==include <libraries/openlayout.h>
+==include <libraries/gfopenlayout.h>
 ULONG OL_Version()()
 CONST_STRPTR OL_VersionString()()
 ol_document *OL_DocumentNew()()
@@ -37,7 +37,7 @@ ULONG OL_NodeRole(const ol_node *node)(a0)
 CONST_STRPTR OL_NodeText(const ol_node *node)(a0)
 CONST_STRPTR OL_NodeName(const ol_node *node)(a0)
 CONST_STRPTR OL_NodeValue(const ol_node *node)(a0)
-* version 3: documents (OpenLayout 0.2)
+* version 3: documents (GFOpenLayout 0.2)
 VOID OL_BoxStyleInit(ol_box_style *box)(a0)
 VOID OL_NodeSetBox(struct OLNodeBox *req)(a0)
 BOOL OL_NodeSetColumns(struct OLNodeColumns *req)(a0)
@@ -55,11 +55,11 @@ LONG OL_UnscaleX(const ol_scale *scale, LONG px)(a0,d0)
 LONG OL_UnscaleY(const ol_scale *scale, LONG py)(a0,d0)
 ULONG OL_DrawPage(struct OLDrawPage *req)(a0)
 BOOL OL_NodeSetTabs(struct OLNodeTabs *req)(a0)
-* version 4: right, centred and decimal tab stops, and leaders (OpenLayout 0.3)
+* version 4: right, centred and decimal tab stops, and leaders (GFOpenLayout 0.3)
 BOOL OL_NodeSetTabStops(struct OLNodeTabStops *req)(a0)
-* version 6: the display list's room at once (OpenLayout 0.5)
+* version 6: the display list's room at once (GFOpenLayout 0.5)
 BOOL OL_DocumentReserve(struct OLDocumentReserve *req)(a0)
 ol_document *OL_DocumentNewReserved(ULONG ops)(d0)
-* version 7: text round frames (OpenLayout 0.6), and where a frame went
+* version 7: text round frames (GFOpenLayout 0.6), and where a frame went
 BOOL OL_FramePlace(struct OLFramePlace *req)(a0)
 ==end

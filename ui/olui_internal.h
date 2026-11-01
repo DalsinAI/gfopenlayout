@@ -1,9 +1,9 @@
-/* OpenLayout UI's insides, shared by its files.
+/* GFOpenLayout UI's insides, shared by its files.
  * MIT, Copyright (c) 2026 AmigaChrome Team. */
 #ifndef OLUI_INTERNAL_H
 #define OLUI_INTERNAL_H
 
-#include "openlayout_ui.h"
+#include "gfopenlayout_ui.h"
 
 /* What an element is */
 enum {
@@ -36,7 +36,7 @@ enum {
     S_HIDDEN = 1u << 7       /* olui_set_hidden: display none, whatever the CSS */
 };
 
-/* A computed style: what OpenLayout lays out, and how olui draws the box */
+/* A computed style: what GFOpenLayout lays out, and how olui draws the box */
 typedef struct {
     ol_style ol;
     ol_box_style box;
