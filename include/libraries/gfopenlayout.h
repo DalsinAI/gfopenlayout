@@ -19,6 +19,11 @@
 #define OPENLAYOUTLIB_ROW_VERSION 8         /* programs' windows: OL_BOX_ROW and ol_box_style's width, height, grow,
                                                gap and align, with the size the program sets (OL_BoxStyleInit
                                                stops before them) */
+#define OPENLAYOUTLIB_WEB_VERSION 9         /* web boxes: OL_BOX_SIDE_BORDERS, OL_BOX_AUTO_LEFT and _RIGHT,
+                                               OL_BOX_REPEAT_HEADER, OL_DISPLAY_INLINE_BLOCK and ol_box_style's
+                                               border_widths, border_argbs, min_width, max_width,
+                                               width_permille, max_width_permille and valign, with the size the
+                                               program sets (OL_BoxStyleInit stops before them) */
 
 struct OLNodeAppend {
     ol_document *document;
