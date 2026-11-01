@@ -33,6 +33,7 @@ struct olui_sheet {
     css_rule *rules;
     size_t count, capacity;
     unsigned order;
+    unsigned states;            /* every state a selector names */
 };
 
 olui_sheet *olui_sheet_new(void)
@@ -144,6 +145,7 @@ static char *dup_range(const char *s, size_t n)
 static int add_rule(olui_sheet *sheet, const char *sel, size_t sel_len, const char *decls, size_t decl_len)
 {
     css_rule r;
+    int i;
     char *s = dup_range(sel, sel_len);
     if (!s) return 0;
     if (!parse_selector(s, &r)) {
@@ -161,7 +163,13 @@ static int add_rule(olui_sheet *sheet, const char *sel, size_t sel_len, const ch
     if (!(r.decls = dup_range(decls, decl_len))) return 0;
     r.order = sheet->order++;
     sheet->rules[sheet->count++] = r;
+    for (i = 0; i < r.nparts; ++i) sheet->states |= r.part[i].states;
     return 1;
+}
+
+unsigned olui_sheet_states(const olui_sheet *sheet)
+{
+    return sheet ? sheet->states : 0;
 }
 
 int olui_sheet_add(olui_sheet *sheet, const char *css)

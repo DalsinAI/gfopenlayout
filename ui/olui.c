@@ -70,7 +70,8 @@ struct olui {
     int width, height, zoom;
     ol_scale scale;
     int stale;                  /* must be laid out again */
-    int damaged;
+    int damaged;                /* all of it must be drawn again */
+    olui_rect part;             /* else this part (w 0: none): what a hover, press or focus changed */
     handler handlers[MAX_HANDLERS];
     int nhandlers;
     olui_el *focus, *hover, *pressed;
@@ -91,6 +92,12 @@ static void touch(olui *ui)
     ui->damaged = 1;
 }
 
+/* The states that change only how a widget looks, unless its style says
+ * otherwise (restyle_paint) */
+#define S_PAINT (S_HOVER | S_ACTIVE | S_FOCUS)
+
+static int restyle_paint(olui *ui, olui_el *el, unsigned bit);
+
 static void set_state(olui *ui, olui_el *el, unsigned bit, int on)
 {
     unsigned was;
@@ -98,7 +105,9 @@ static void set_state(olui *ui, olui_el *el, unsigned bit, int on)
     was = el->state;
     if (on) el->state |= bit;
     else el->state &= ~bit;
-    if (el->state != was) touch(ui);
+    if (el->state == was) return;
+    if (!(bit & ~S_PAINT) && restyle_paint(ui, el, bit)) return;
+    touch(ui);
 }
 
 static int visible(const olui_el *el)
@@ -1143,6 +1152,19 @@ static int crosses(olui_rect a, const olui_rect *b)
     return !b || (a.x < b->x + b->w && b->x < a.x + a.w && a.y < b->y + b->h && b->y < a.y + a.h);
 }
 
+/* Where a text's letters may reach past its box (a slant, a kern): half
+ * its size and a little more all round. Drawing part of the window draws
+ * the texts that reach into it too. */
+static olui_rect ink(olui_rect r, int32_t font_pixels)
+{
+    int32_t m = font_pixels / 2 + 2;
+    r.x -= m;
+    r.y -= m;
+    r.w += 2 * m;
+    r.h += 2 * m;
+    return r;
+}
+
 static void out_box(drawer *d, const olui_el *el, olui_rect r, const olui_cs *cs)
 {
     olui_draw_op op;
@@ -1206,7 +1228,7 @@ static void out_text(drawer *d, const olui_el *el, olui_rect box, int32_t baseli
                      const ol_style *st, uint32_t argb)
 {
     olui_draw_op op;
-    if (!n || !crosses(box, d->area)) return;
+    if (!n || !crosses(ink(box, px(d->ui, st->font_size)), d->area)) return;
     memset(&op, 0, sizeof(op));
     op.kind = OLUI_DRAW_TEXT;
     op.box = box;
@@ -1220,7 +1242,8 @@ static void out_text(drawer *d, const olui_el *el, olui_rect box, int32_t baseli
     d->fn(d->userdata, &op);
 }
 
-/* OpenLayout's text and image ops for el's node, moved up by dy */
+/* OpenLayout's text and image ops for el's node, moved up by dy; the text
+ * in el's colour as it is now (a hover may change it without a layout) */
 static void node_ops(drawer *d, const olui_el *el, int32_t dy)
 {
     olui *ui = d->ui;
@@ -1237,7 +1260,7 @@ static void node_ops(drawer *d, const olui_el *el, int32_t dy)
             if (!text) continue;
             out_text(d, el, r, ol_scale_y(&ui->scale, op->u.text.baseline) - dy,
                      text + op->u.text.text_offset, op->u.text.text_length, &op->u.text.style,
-                     op->u.text.style.foreground);
+                     el->cs.ol.foreground);
         } else if (op->type == OL_OP_IMAGE) {
             ol_pixel_rect p = ol_scale_rect(&ui->scale, op->u.image.bounds);
             olui_draw_op o;
@@ -1252,6 +1275,17 @@ static void node_ops(drawer *d, const olui_el *el, int32_t dy)
 }
 
 static void draw_el(drawer *d, const olui_el *el, int32_t dy, const olui_rect *clip);
+
+/* Where a field's drawing may go from its box r: its text's clip reaches
+ * 2 pixels past it at most */
+static olui_rect field_reach(olui_rect r)
+{
+    r.x -= 2;
+    r.y -= 2;
+    r.w += 4;
+    r.h += 4;
+    return r;
+}
 
 static void draw_field(drawer *d, const olui_el *el, olui_rect r)
 {
@@ -1344,7 +1378,8 @@ static void draw_el(drawer *d, const olui_el *el, int32_t dy, const olui_rect *c
         return;
     }
     case K_INPUT:
-        draw_field(d, el, r);
+        /* a field measures its text to draw it: not when it is outside what is drawn */
+        if (crosses(field_reach(r), d->area)) draw_field(d, el, r);
         return;
     case K_PROGRESS: {
         olui_rect in = inside(ui, el, r), bar;
@@ -1425,17 +1460,164 @@ void olui_draw(olui *ui, const olui_rect *area, olui_draw_fn fn, void *userdata)
     d.area = area;
     draw_el(&d, ui->root, 0, NULL);
     ui->damaged = 0;
+    ui->part.w = ui->part.h = 0;
 }
 
 int olui_damaged(const olui *ui, olui_rect *area)
 {
-    if (!ui || !(ui->damaged || ui->stale)) return 0;
-    if (area) {
-        area->x = 0;
-        area->y = 0;
-        area->w = ui->width;
-        area->h = ui->height;
+    if (!ui) return 0;
+    if (ui->damaged || ui->stale) {
+        if (area) {
+            area->x = 0;
+            area->y = 0;
+            area->w = ui->width;
+            area->h = ui->height;
+        }
+        return 1;
     }
+    if (ui->part.w <= 0 || ui->part.h <= 0) return 0;
+    if (area) *area = ui->part;
+    return 1;
+}
+
+/* ---- A hover, press or focus, drawn again without a layout ----------------------- */
+
+static void grow_to(olui_rect *a, olui_rect r)
+{
+    int32_t x1, y1;
+    if (r.w <= 0 || r.h <= 0) return;
+    if (a->w <= 0 || a->h <= 0) {
+        *a = r;
+        return;
+    }
+    x1 = a->x + a->w > r.x + r.w ? a->x + a->w : r.x + r.w;
+    y1 = a->y + a->h > r.y + r.h ? a->y + a->h : r.y + r.h;
+    if (r.x < a->x) a->x = r.x;
+    if (r.y < a->y) a->y = r.y;
+    a->w = x1 - a->x;
+    a->h = y1 - a->y;
+}
+
+static olui_rect cut(olui_rect r, olui_rect c)
+{
+    int32_t x1 = r.x + r.w < c.x + c.w ? r.x + r.w : c.x + c.w;
+    int32_t y1 = r.y + r.h < c.y + c.h ? r.y + r.h : c.y + c.h;
+    if (r.x < c.x) r.x = c.x;
+    if (r.y < c.y) r.y = c.y;
+    r.w = x1 > r.x ? x1 - r.x : 0;
+    r.h = y1 > r.y ? y1 - r.y : 0;
+    return r;
+}
+
+/* Where an element's ops go, cut as they are cut */
+typedef struct {
+    olui_rect *area;
+    olui_rect clip;
+    int clipped;
+} extent;
+
+static void extent_op(void *userdata, const olui_draw_op *op)
+{
+    extent *e = (extent *)userdata;
+    olui_rect r = op->box;
+    if (op->kind == OLUI_DRAW_CLIP) {
+        e->clip = op->clip;
+        e->clipped = op->clip.w > 0 && op->clip.h > 0;
+        return;
+    }
+    if (op->kind == OLUI_DRAW_TEXT) r = ink(r, op->font_pixels);
+    if (e->clipped) r = cut(r, e->clip);
+    grow_to(e->area, r);
+}
+
+/* What el draws (and what it holds), as one box on the window, into area */
+static void add_extent(olui *ui, olui_el *el, olui_rect *area)
+{
+    drawer d;
+    extent e;
+    olui_el *list = el->kind == K_LIST ? NULL : list_of(el);
+    olui_rect in;
+    memset(&e, 0, sizeof(e));
+    e.area = area;
+    d.ui = ui;
+    d.fn = extent_op;
+    d.userdata = &e;
+    d.area = NULL;
+    if (el->kind == K_INPUT) {
+        /* known without drawing it, which measures its text */
+        if (visible(el)) grow_to(area, field_reach(rect_of(ui, el)));
+    } else if (list && list->node) {
+        /* an item: moved by its list's scroll and cut to its inside */
+        in = inside(ui, list, rect_of_node(ui, list->node));
+        e.clip = in;
+        e.clipped = 1;
+        draw_el(&d, el, list->scroll, &in);
+    } else {
+        draw_el(&d, el, 0, NULL);
+    }
+}
+
+/* What OpenLayout lays out from a style: all of it but the text's colour
+ * (node_ops draws in the element's) and the box olui paints */
+static int same_layout(const olui_cs *a, const olui_cs *b)
+{
+    ol_style x = a->ol, y = b->ol;
+    x.foreground = y.foreground = 0;
+    return !memcmp(&x, &y, sizeof(x)) && !memcmp(&a->box, &b->box, sizeof(a->box)) && a->border == b->border &&
+           a->column == b->column;
+}
+
+/* el and what is under it styled again, from the styles build gives them;
+ * 0 when one of them lays out differently now. Where those whose look
+ * changed are goes into area. */
+static int restyle_tree(olui *ui, olui_el *el, olui_rect *area)
+{
+    olui_el *list = el->kind == K_ITEM ? list_of(el) : NULL, *c;
+    olui_cs was;
+    if (!el->node) return 1;    /* not in this layout: what an item holds that isn't an item */
+    was = el->cs;
+    olui_style_compute(ui->sheet, el, list ? &list->cs : el->parent ? &el->parent->cs : NULL);
+    el->styled_state = el->state;
+    if (!same_layout(&was, &el->cs)) return 0;
+    if (memcmp(&was, &el->cs, sizeof(was))) {
+        /* where it was drawn as well as where it is: a box may come or go */
+        olui_cs now = el->cs;
+        el->cs = was;
+        add_extent(ui, el, area);
+        el->cs = now;
+        add_extent(ui, el, area);
+    }
+    for (c = el->first; c; c = c->next)
+        if (!restyle_tree(ui, c, area)) return 0;
+    return 1;
+}
+
+/* A hover, press or focus on el changed: el and what is under it are
+ * styled again (rules reach them through el), and while none of them lays
+ * out differently, only where one looks different is damaged. 0: it must
+ * be laid out again. */
+static int restyle_paint(olui *ui, olui_el *el, unsigned bit)
+{
+    olui_rect area, win;
+    if (ui->stale || !el->node || el->styled_gen != ui->style_gen) return 0;
+    memset(&area, 0, sizeof(area));
+    if (!(olui_sheet_states(ui->sheet) & bit)) {
+        /* no rule names it: every style stays as it is */
+        if (el->styled_state == (el->state ^ bit)) el->styled_state = el->state;
+    } else if (!restyle_tree(ui, el, &area)) {
+        el->styled_state = ~el->state;  /* the layout styles it, and what is under it, again */
+        return 0;
+    }
+    if (bit & S_FOCUS) {
+        /* a field's caret and placeholder, a checkbox's edge: drawn from the state itself */
+        uint32_t s = ol_node_states(el->node);
+        ol_node_set_states(el->node, (el->state & S_FOCUS) ? s | OL_STATE_FOCUSED : s & ~(uint32_t)OL_STATE_FOCUSED);
+        add_extent(ui, el, &area);
+    }
+    win.x = win.y = 0;
+    win.w = ui->width;
+    win.h = ui->height;
+    grow_to(&ui->part, cut(area, win));
     return 1;
 }
 

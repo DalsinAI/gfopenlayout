@@ -13,12 +13,15 @@
     printf("FAIL line=%d expr=%s\n", __LINE__, #x); return 20; \
 } } while (0)
 
+static long measured;          /* texts measured, all told */
+
 /* every character 7 px wide (8 bold), ascent 10, descent 3, at 13 px */
 static int measure(void *userdata, const char *utf8, size_t length,
                    const ol_style *style, ol_text_metrics *m)
 {
     size_t i, glyphs = 0;
     (void)userdata;
+    ++measured;
     for (i = 0; i < length; ++i)
         if (((unsigned char)utf8[i] & 0xc0u) != 0x80u) ++glyphs;
     m->width = (ol_unit)glyphs * style->font_size * ((style->text_flags & OL_TEXT_BOLD) ? 8 : 7) / 13;
@@ -178,6 +181,311 @@ static char *read_file(const char *path)
     if (s) s[n] = 0;
     fclose(f);
     return s;
+}
+
+/* ---- Frames: the window's pixels from its draw ops (each op only inside
+ * its box, cut to the clip and to what is drawn), to see that drawing only
+ * what a hover, press or focus damaged ends with the picture drawing it all
+ * gives ---- */
+#define FW 520
+#define FH 340
+
+typedef struct {
+    uint32_t *px;
+    olui_rect clip;
+    int clipped;
+    olui_rect area;
+    long ops;
+} frame;
+
+static void frame_fill(frame *f, olui_rect r, uint32_t argb)
+{
+    int32_t x, y, x0 = r.x, y0 = r.y, x1 = r.x + r.w, y1 = r.y + r.h;
+    if ((argb >> 24) < 0x80) return;    /* see-through: left out, as the Amiga's buffer does */
+    if (f->clipped) {
+        if (x0 < f->clip.x) x0 = f->clip.x;
+        if (y0 < f->clip.y) y0 = f->clip.y;
+        if (x1 > f->clip.x + f->clip.w) x1 = f->clip.x + f->clip.w;
+        if (y1 > f->clip.y + f->clip.h) y1 = f->clip.y + f->clip.h;
+    }
+    if (x0 < f->area.x) x0 = f->area.x;
+    if (y0 < f->area.y) y0 = f->area.y;
+    if (x1 > f->area.x + f->area.w) x1 = f->area.x + f->area.w;
+    if (y1 > f->area.y + f->area.h) y1 = f->area.y + f->area.h;
+    for (y = y0; y < y1; ++y)
+        for (x = x0; x < x1; ++x) f->px[y * FW + x] = argb;
+}
+
+static uint32_t frame_mix(uint32_t a, uint32_t b, int t)
+{
+    uint32_t out = 0xff000000u;
+    int k;
+    for (k = 0; k < 24; k += 8) {
+        int va = (int)((a >> k) & 255), vb = (int)((b >> k) & 255);
+        out |= (uint32_t)(va + (vb - va) * t / 1000) << k;
+    }
+    return out;
+}
+
+static void frame_op(void *userdata, const olui_draw_op *op)
+{
+    frame *f = (frame *)userdata;
+    olui_rect r = op->box;
+    int32_t i;
+    ++f->ops;
+    switch (op->kind) {
+    case OLUI_DRAW_CLIP:
+        f->clip = op->clip;
+        f->clipped = op->clip.w > 0 && op->clip.h > 0;
+        break;
+    case OLUI_DRAW_BOX:
+        /* row by row down the stops, corners cut in, the border round */
+        for (i = 0; i < op->box.h; ++i) {
+            int32_t edge = i < op->box.h - 1 - i ? i : op->box.h - 1 - i;
+            int32_t in = edge < op->radius ? (op->radius - edge) / 2 : 0, b = op->border;
+            uint32_t fill = op->stops ? frame_mix(op->stop_argb[0], op->stop_argb[op->stops - 1],
+                                                  op->box.h > 1 ? (int)(i * 1000 / (op->box.h - 1)) : 0) : 0;
+            r.x = op->box.x + in;
+            r.y = op->box.y + i;
+            r.w = op->box.w - 2 * in;
+            r.h = 1;
+            if (b && (i < b || i >= op->box.h - b)) {
+                frame_fill(f, r, op->border_argb | 0xff000000u);
+                continue;
+            }
+            if (op->stops) {
+                olui_rect m = r;
+                m.x += b;
+                m.w -= 2 * b;
+                frame_fill(f, m, fill);
+            }
+            if (b) {
+                olui_rect side = r;
+                side.w = b;
+                frame_fill(f, side, op->border_argb | 0xff000000u);
+                side.x = r.x + r.w - b;
+                frame_fill(f, side, op->border_argb | 0xff000000u);
+            }
+        }
+        break;
+    case OLUI_DRAW_TEXT: {
+        /* a stroke a character, where and how long by the character */
+        int32_t asc = op->font_pixels * 10 / 13, cw = op->font_pixels * 7 / 13;
+        size_t k;
+        if (cw < 2) cw = 2;
+        for (k = 0; k < op->length; ++k) {
+            unsigned c = (unsigned char)op->text[k];
+            r.x = op->box.x + (int32_t)k * cw + (int32_t)(c % (unsigned)(cw - 1));
+            r.y = op->baseline - asc + (int32_t)(c % 3);
+            r.w = 1 + (int32_t)(c & 1);
+            r.h = op->font_pixels - (int32_t)(c % 3);
+            frame_fill(f, r, op->argb | 0xff000000u);
+        }
+        break;
+    }
+    case OLUI_DRAW_MARK:
+        frame_fill(f, r, (op->argb | 0xff000000u) ^ (uint32_t)op->mark);
+        break;
+    case OLUI_DRAW_IMAGE:
+        frame_fill(f, r, 0xff000000u | (uint32_t)op->image * 0x010101u);
+        break;
+    default:
+        break;
+    }
+}
+
+/* Draws ui into px: what crosses area, or all of it on a fresh frame */
+static long frame_draw(olui *ui, uint32_t *px, const olui_rect *area)
+{
+    frame f;
+    memset(&f, 0, sizeof(f));
+    f.px = px;
+    if (area) {
+        f.area = *area;
+    } else {
+        int i;
+        for (i = 0; i < FW * FH; ++i) px[i] = 0xffff00ffu;
+        f.area.w = FW;
+        f.area.h = FH;
+    }
+    olui_draw(ui, area, frame_op, &f);
+    return f.ops;
+}
+
+/* What happens to the window, and what it may do: lay out again or not */
+enum { ACT_MOVE, ACT_DOWN, ACT_UP, ACT_TAB, ACT_WHEEL };
+
+#define FOLDERS 40
+
+/* Where the pointer goes for a step: an element's middle by its id;
+ * "itemN" the program's Nth item; "edge" the item the tree's top cuts;
+ * "strip" the first tab button; NULL the window's padding */
+static int aim(olui *ui, olui_el **added, const char *id, int *x, int *y)
+{
+    olui_rect at, tree;
+    int i;
+    *x = 3;
+    *y = FH - 2;
+    if (!id) return 1;
+    if (!strcmp(id, "edge")) {
+        if (!olui_box(ui, olui_find(ui, "folders"), &tree)) return 0;
+        for (i = 0; i < FOLDERS; ++i)
+            if (olui_box(ui, added[i], &at) && at.y < tree.y + 1 && at.y + at.h > tree.y + 3) {
+                *x = at.x + at.w / 2;
+                *y = tree.y + 2;
+                return 1;
+            }
+        return 0;
+    }
+    if (!strcmp(id, "strip")) {
+        if (!olui_box(ui, olui_find(ui, "tabs"), &at)) return 0;
+        *x = at.x + 10;
+        *y = at.y + 4;
+        return 1;
+    }
+    if (!strncmp(id, "item", 4)) {
+        if (!olui_box(ui, added[atoi(id + 4)], &at)) return 0;
+    } else if (!olui_box(ui, olui_find(ui, id), &at)) {
+        return 0;
+    }
+    *x = at.x + at.w / 2;
+    *y = at.y + at.h / 2;
+    return 1;
+}
+
+static int frames(void)
+{
+    static const char css[] =
+        "item{padding:2px 4px}"
+        "button:hover{background:linear-gradient(#fff4dd,#e8c890);color:#803000}"
+        "item:hover{background:#dde8ff}"
+        "checkbox:hover{color:#0000aa}"
+        "tabbutton:hover{border-color:#cc6600}"
+        "input:focus{background:#ffffee}"
+        "#go:hover{padding:3px 20px}";  /* one that changes its size: laid out again */
+    /* what a step may do: damage a widget's place (an eighth of the window
+     * at most), damage across the window (two widgets far apart), lay out
+     * again, or damage all of it without a layout */
+    enum { SMALL, WIDE, LAYOUT, ALL };
+    static const struct { int act; const char *id; int may; } steps[] = {
+        { ACT_MOVE, "ok", SMALL },          /* hover on */
+        { ACT_MOVE, "go", LAYOUT },         /* off OK, on Go, which grows */
+        { ACT_MOVE, NULL, LAYOUT },         /* off Go: back to its size */
+        { ACT_MOVE, "ok", SMALL },
+        { ACT_DOWN, "ok", SMALL },          /* pressed (button:active) and the keyboard */
+        { ACT_MOVE, NULL, SMALL },          /* off it while held: not pressed-looking */
+        { ACT_MOVE, "ok", SMALL },
+        { ACT_UP, "ok", SMALL },            /* a click */
+        { ACT_TAB, NULL, WIDE },            /* the keyboard from OK to the field: caret, no placeholder */
+        { ACT_TAB, NULL, SMALL },           /* to Go, beside it */
+        { ACT_TAB, NULL, WIDE },            /* to the tree */
+        { ACT_MOVE, NULL, SMALL },
+        { ACT_MOVE, "html", SMALL },        /* a checkbox's text colour */
+        { ACT_MOVE, NULL, SMALL },
+        { ACT_MOVE, "work", SMALL },        /* an item */
+        { ACT_MOVE, "family", SMALL },
+        { ACT_WHEEL, "folders", ALL },      /* scrolled */
+        { ACT_MOVE, "item3", SMALL },       /* an item, moved by the scroll */
+        { ACT_MOVE, "item4", SMALL },
+        { ACT_MOVE, "edge", SMALL },        /* one the tree's top cuts */
+        { ACT_MOVE, NULL, SMALL },
+        { ACT_MOVE, "strip", SMALL },       /* a tab button */
+        { ACT_MOVE, NULL, SMALL }
+    };
+    olui *ui = olui_new();
+    uint32_t *screen = (uint32_t *)malloc(FW * FH * sizeof(uint32_t));
+    uint32_t *full = (uint32_t *)malloc(FW * FH * sizeof(uint32_t));
+    olui_el *added[FOLDERS];
+    char err[128];
+    size_t k;
+    int i, partial = 0;
+    long most = 0;
+
+    if (!screen || !full) {
+        printf("frames: no memory for two frames, left out\n");
+        free(screen);
+        free(full);
+        olui_free(ui);
+        return 0;
+    }
+    CHECK(ui);
+    olui_set_measure(ui, measure, NULL);
+    CHECK(olui_load(ui, markup, css, err, sizeof(err)));
+    {
+        /* enough items for the tree to scroll */
+        olui_el *tree = olui_find(ui, "folders");
+        char text[24];
+        for (i = 0; i < FOLDERS; ++i) {
+            sprintf(text, "Folder %d", i);
+            CHECK((added[i] = olui_list_add(ui, tree, NULL, text, NULL)));
+        }
+    }
+    CHECK(olui_layout(ui, FW, FH));
+    frame_draw(ui, screen, NULL);
+
+    for (k = 0; k < sizeof(steps) / sizeof(steps[0]); ++k) {
+        olui_rect r;
+        long before;
+        int x, y;
+        CHECK(aim(ui, added, steps[k].id, &x, &y));
+        before = measured;
+        switch (steps[k].act) {
+        case ACT_MOVE: olui_mouse(ui, x, y, OLUI_MOUSE_MOVE); break;
+        case ACT_DOWN: olui_mouse(ui, x, y, OLUI_MOUSE_DOWN); break;
+        case ACT_UP: olui_mouse(ui, x, y, OLUI_MOUSE_UP); break;
+        case ACT_TAB: olui_key(ui, OLUI_KEY_TAB, 0); break;
+        case ACT_WHEEL:
+            for (i = 0; i < 3; ++i) olui_mouse(ui, x, y, OLUI_WHEEL_DOWN);
+            break;
+        default: break;
+        }
+        /* a hover, press or focus that changes no size lays nothing out
+         * (measures nothing), and damages only where it changed */
+        if (steps[k].may == SMALL || steps[k].may == WIDE) {
+            if (measured != before) printf("frames: step %d measured %ld\n", (int)k, measured - before);
+            CHECK(measured == before);
+            if (olui_damaged(ui, &r)) {
+                if (getenv("OLUI_DEBUG"))
+                    printf("frames: step %d damage %ld %ld %ld %ld\n", (int)k, (long)r.x, (long)r.y, (long)r.w, (long)r.h);
+                CHECK(r.w > 0 && r.h > 0 && (long)r.w * r.h < (long)FW * FH / (steps[k].may == SMALL ? 8 : 1));
+                ++partial;
+            }
+        }
+        /* the window's loop: draw what is damaged */
+        if (olui_damaged(ui, &r)) {
+            long n = frame_draw(ui, screen, &r);
+            if (steps[k].may == SMALL && n > most) most = n;
+        }
+        /* the same as drawing it all, as laid out now */
+        frame_draw(ui, full, NULL);
+        if (memcmp(screen, full, FW * FH * sizeof(uint32_t))) printf("frames: step %d differs from a full draw\n", (int)k);
+        CHECK(!memcmp(screen, full, FW * FH * sizeof(uint32_t)));
+        /* and as every element styled and laid out again from the start */
+        CHECK(olui_add_css(ui, ""));
+        frame_draw(ui, full, NULL);
+        if (memcmp(screen, full, FW * FH * sizeof(uint32_t))) printf("frames: step %d differs from a new layout\n", (int)k);
+        CHECK(!memcmp(screen, full, FW * FH * sizeof(uint32_t)));
+    }
+    CHECK(partial >= 12);
+
+    /* with no rule for :hover, a hover damages nothing */
+    {
+        olui *plain = olui_new();
+        olui_rect r, b;
+        CHECK(plain);
+        olui_set_measure(plain, measure, NULL);
+        CHECK(olui_load(plain, markup, NULL, err, sizeof(err)) && olui_layout(plain, FW, FH));
+        frame_draw(plain, full, NULL);
+        CHECK(olui_box(plain, olui_find(plain, "ok"), &b));
+        CHECK(olui_mouse(plain, b.x + 2, b.y + 2, OLUI_MOUSE_MOVE) && !olui_damaged(plain, &r));
+        CHECK(!olui_mouse(plain, 3, FH - 2, OLUI_MOUSE_MOVE) && !olui_damaged(plain, &r));
+        olui_free(plain);
+    }
+    printf("frames: %d partial draws, at most %ld ops each, each the same as a full draw\n", partial, most);
+    free(screen);
+    free(full);
+    olui_free(ui);
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -364,6 +672,9 @@ int main(int argc, char **argv)
         CHECK(!olui_box(sl, red, &b) || b.w == 0);
         olui_free(sl);
     }
+
+    /* a hover, press or focus drawn again where it changed, as a full draw would */
+    CHECK(frames() == 0);
 
     /* a bad markup says where */
     {

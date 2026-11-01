@@ -84,6 +84,8 @@ struct olui_amiga {
     int bw, bh;
     olui_rect clip;             /* the clip now; w 0: none */
     int clipped;
+    olui_rect area;             /* drawing only this part (olui_damaged's): everything is cut to it */
+    int limited;
     pen_slot pens[MAX_PENS];
     int npens;
     font_slot fonts[MAX_FONTS];
@@ -422,10 +424,29 @@ static void draw_mark(olui_amiga *a, const olui_draw_op *op)
     }
 }
 
+static int overlaps(const olui_rect *p, const olui_rect *q)
+{
+    return p->x < q->x + q->w && q->x < p->x + p->w && p->y < q->y + q->h && q->y < p->y + p->h;
+}
+
 static void set_clip(olui_amiga *a, const olui_rect *r)
 {
     struct Region *old;
-    if (!r || r->w <= 0 || r->h <= 0) {
+    olui_rect c;
+    if (r && (r->w <= 0 || r->h <= 0)) r = NULL;
+    if (a->limited) {
+        /* drawing a part: the clip is cut to it, and no clip is the part */
+        c = a->area;
+        if (r) {
+            int x1 = r->x + r->w < c.x + c.w ? r->x + r->w : c.x + c.w;
+            int y1 = r->y + r->h < c.y + c.h ? r->y + r->h : c.y + c.h;
+            if (r->x > c.x) c.x = r->x;
+            if (r->y > c.y) c.y = r->y;
+            c.w = x1 > c.x ? x1 - c.x : 0;
+            c.h = y1 > c.y ? y1 - c.y : 0;
+        }
+        r = &c;
+    } else if (!r) {
         a->clipped = 0;
         old = InstallClipRegion(a->layer, NULL);
         (void)old;
@@ -440,7 +461,8 @@ static void set_clip(olui_amiga *a, const olui_rect *r)
         rect.MinY = (WORD)r->y;
         rect.MaxX = (WORD)(r->x + r->w - 1);
         rect.MaxY = (WORD)(r->y + r->h - 1);
-        if (OrRectRegion(a->region, &rect)) InstallClipRegion(a->layer, a->region);
+        /* cut to nothing (a clip outside the part): the region stays empty */
+        if (r->w <= 0 || r->h <= 0 || OrRectRegion(a->region, &rect)) InstallClipRegion(a->layer, a->region);
     }
 }
 
@@ -507,21 +529,29 @@ static int make_buffer(olui_amiga *a)
     return 1;
 }
 
-/* The buffer to the window, around the widgets the program draws itself;
- * then it draws them (olui_amiga_own). */
-static void show(olui_amiga *a)
+/* The buffer to the window (area of it; NULL: all), around the widgets the
+ * program draws itself; then it draws those in area (olui_amiga_own). */
+static void show(olui_amiga *a, const olui_rect *area)
 {
     struct Region *r;
     struct RegionRectangle *rr;
     struct Rectangle rect;
+    olui_rect all;
     int i, x0 = a->win->BorderLeft, y0 = a->win->BorderTop;
     int seen = 0;
     if (!a->bm) return;
-    for (i = 0; i < a->nown; ++i) seen += a->own[i].seen;
+    if (!area) {
+        all.x = all.y = 0;
+        all.w = a->bw;
+        all.h = a->bh;
+        area = &all;
+    }
+    for (i = 0; i < a->nown; ++i) seen += a->own[i].seen && overlaps(&a->own[i].box, area);
     if (!seen || !(r = NewRegion())) {
-        BltBitMapRastPort(a->bm, 0, 0, a->win->RPort, x0, y0, a->bw, a->bh, 0xc0);
+        BltBitMapRastPort(a->bm, area->x, area->y, a->win->RPort, x0 + area->x, y0 + area->y, area->w, area->h, 0xc0);
     } else {
-        rect.MinX = 0; rect.MinY = 0; rect.MaxX = (WORD)(a->bw - 1); rect.MaxY = (WORD)(a->bh - 1);
+        rect.MinX = (WORD)area->x; rect.MinY = (WORD)area->y;
+        rect.MaxX = (WORD)(area->x + area->w - 1); rect.MaxY = (WORD)(area->y + area->h - 1);
         OrRectRegion(r, &rect);
         for (i = 0; i < a->nown; ++i) {
             const olui_rect *b = &a->own[i].box;
@@ -538,20 +568,42 @@ static void show(olui_amiga *a)
         DisposeRegion(r);
     }
     for (i = 0; i < a->nown; ++i)
-        if (a->own[i].seen)
+        if (a->own[i].seen && overlaps(&a->own[i].box, area))
             a->own[i].fn(a->own[i].data, a->own[i].el, x0 + a->own[i].box.x, y0 + a->own[i].box.y, a->own[i].box.w,
                          a->own[i].box.h);
 }
 
-static void draw_all(olui_amiga *a)
+/* Draws area of the window (olui_damaged's; NULL: all of it) into the
+ * buffer, cut to it, and copies that to the window */
+static void draw_area(olui_amiga *a, const olui_rect *area)
 {
-    int i;
+    int i, w = inner_w(a->win), h = inner_h(a->win);
+    olui_rect part;
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    /* a new buffer, or no region to cut text to: all of it */
+    if (!a->bm || a->bw != w || a->bh != h || !a->region) area = NULL;
     if (!make_buffer(a)) return;
+    if (area) {
+        part = *area;
+        if (part.x < 0) { part.w += part.x; part.x = 0; }
+        if (part.y < 0) { part.h += part.y; part.y = 0; }
+        if (part.x + part.w > a->bw) part.w = a->bw - part.x;
+        if (part.y + part.h > a->bh) part.h = a->bh - part.y;
+        /* none of it in the window (not laid out at its size), or all of it: all of it */
+        area = part.w <= 0 || part.h <= 0 || (part.w == a->bw && part.h == a->bh) ? NULL : &part;
+    }
     a->clipped = 0;
-    for (i = 0; i < a->nown; ++i) a->own[i].seen = 0;
-    olui_draw(a->ui, NULL, draw_op, a);
+    a->limited = area != NULL;
+    if (area) a->area = *area;
+    /* those that are drawn again say where they are again */
+    for (i = 0; i < a->nown; ++i)
+        if (!area || overlaps(&a->own[i].box, area)) a->own[i].seen = 0;
+    if (area) set_clip(a, NULL);
+    olui_draw(a->ui, area, draw_op, a);
+    a->limited = 0;
     set_clip(a, NULL);
-    show(a);
+    show(a, area);
 }
 
 /* ---- The public calls ---------------------------------------------------------------- */
@@ -689,13 +741,14 @@ int olui_amiga_layout(olui_amiga *a)
 {
     if (!a || !make_buffer(a)) return 0;
     if (!olui_layout(a->ui, a->bw, a->bh)) return 0;
-    draw_all(a);
+    draw_area(a, NULL);
     return 1;
 }
 
 void olui_amiga_draw(olui_amiga *a)
 {
-    if (a && olui_damaged(a->ui, NULL)) draw_all(a);
+    olui_rect r;
+    if (a && olui_damaged(a->ui, &r)) draw_area(a, &r);
 }
 
 int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
@@ -714,7 +767,7 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
         return OLUI_AMIGA_USED;
     case IDCMP_REFRESHWINDOW:
         BeginRefresh(a->win);
-        show(a);
+        show(a, NULL);
         EndRefresh(a->win, TRUE);
         return OLUI_AMIGA_USED;
     case IDCMP_MOUSEMOVE:
