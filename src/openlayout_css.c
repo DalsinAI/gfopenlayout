@@ -352,7 +352,7 @@ static const char *el_attr(void *ud, const void *el, const char *name)
     return ol_node_attr((const ol_node *)el, name);
 }
 
-static const gfcss_element_ops node_ops = { el_info, el_parent, el_prev, el_next, el_attr };
+static const gfcss_element_ops node_ops = { el_info, el_parent, el_prev, el_next, el_attr, NULL };
 
 typedef struct {
     ol_document *doc;

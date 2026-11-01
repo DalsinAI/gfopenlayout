@@ -91,6 +91,9 @@ typedef struct {
     const void *(*prev)(void *userdata, const void *el);  /* the element before it under its parent */
     const void *(*next)(void *userdata, const void *el);  /* and after it */
     const char *(*attr)(void *userdata, const void *el, const char *name);  /* NULL: not there */
+    /* its place among its parent's elements, from 1, when info gives 0: asked
+     * only when a selector needs it. May be NULL: prev is then walked. */
+    int32_t (*index)(void *userdata, const void *el);
 } gfcss_element_ops;
 
 /* Pseudo-elements (gfcss_compute's pseudo) */

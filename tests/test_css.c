@@ -88,7 +88,7 @@ static const char *t_attr(void *ud, const void *el, const char *name)
     return NULL;
 }
 
-static const gfcss_element_ops ops = { t_info, t_parent, t_prev, t_next, t_attr };
+static const gfcss_element_ops ops = { t_info, t_parent, t_prev, t_next, t_attr, NULL };
 
 /* el's style, its ancestors' worked out first */
 static void style_of(gfcss_engine *e, const tel *el, gfcss_computed *out)

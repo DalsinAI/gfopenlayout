@@ -159,6 +159,7 @@ static int child_index(const gm *m, const void *el, const gfcss_info *in)
 {
     int n = 1;
     if (in->index > 0) return in->index;
+    if (m->ops->index) return m->ops->index(m->ud, el);
     for (el = m->ops->prev(m->ud, el); el; el = m->ops->prev(m->ud, el)) ++n;
     return n;
 }
@@ -546,6 +547,10 @@ static int prop_inherited(const gfcss_engine *e, int p)
 static void initial_of(const gfcss_engine *e, gfcss_computed *cs)
 {
     int k;
+    if (e->initial.size && e->initial_next == e->next && cs != &e->initial) {
+        memcpy(cs, &e->initial, sizeof(*cs));
+        return;
+    }
     gfcss_computed_init(cs);
     for (k = 0; k < e->next; ++k) cs->ext[k] = e->ext[k].initial;
 }
@@ -844,11 +849,36 @@ static void resolve(gfcss_engine *e, gfcss_computed *cs, const gfcss_computed *p
     if (cs->outline_style == GFCSS_BORDER_NONE) cs->outline_width = 0;
 }
 
+/* the inherited properties, field by field (an element's every style starts with these) */
 static void inherit_from(const gfcss_engine *e, gfcss_computed *cs, const gfcss_computed *parent)
 {
-    int p;
-    for (p = 0; p < GFCSS_P_COUNT + e->next; ++p)
-        if (prop_inherited(e, p)) copy_prop(cs, parent, p);
+    int k;
+    cs->visibility = parent->visibility;
+    cs->color = parent->color;
+    cs->font_generic = parent->font_generic;
+    cs->font_family = parent->font_family;
+    cs->font_size = parent->font_size;
+    cs->font_weight = parent->font_weight;
+    cs->font_style = parent->font_style;
+    cs->font_variant = parent->font_variant;
+    cs->line_height_kind = parent->line_height_kind;
+    cs->line_height = parent->line_height;
+    cs->text_align = parent->text_align;
+    cs->text_indent = parent->text_indent;
+    cs->text_transform = parent->text_transform;
+    cs->white_space = parent->white_space;
+    cs->list_style_type = parent->list_style_type;
+    cs->list_style_position = parent->list_style_position;
+    cs->list_style_image = parent->list_style_image;
+    cs->letter_spacing = parent->letter_spacing;
+    cs->word_spacing = parent->word_spacing;
+    cs->cursor = parent->cursor;
+    cs->border_collapse = parent->border_collapse;
+    cs->border_spacing[0] = parent->border_spacing[0];
+    cs->border_spacing[1] = parent->border_spacing[1];
+    cs->caption_side = parent->caption_side;
+    for (k = 0; k < e->next; ++k)
+        if (e->ext[k].flags & GFCSS_INHERITED) cs->ext[k] = parent->ext[k];
 }
 
 /* the parent as a whole gfcss_computed (a smaller one has the initial values after its size) */
@@ -874,6 +904,7 @@ static int prepare(gfcss_engine *e)
 {
     if (e->dirty && !build_index(e)) return 0;
     if (e->initial_next != e->next || !e->initial.size) {
+        e->initial.size = 0;
         initial_of(e, &e->initial);
         e->initial_next = e->next;
     }
