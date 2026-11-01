@@ -78,7 +78,12 @@ On them sits **GFOpenLayout UI** (`include/gfopenlayout_ui.h`, `ui/`, `amiga/`):
 a program's window described in HTML and CSS, laid out by GFOpenLayout,
 drawn in the GFOpenGadTools theme, with its events in the program's C
 functions. Buttons, checkboxes, radio buttons, fields, lists and trees,
-tabs and progress bars. [docs/GFOpenLayout-UI.md](docs/GFOpenLayout-UI.md)
+tabs and progress bars; and since 0.3 what a word processor's windows and
+a web browser's forms need: drop-downs and list boxes (`select`), text of
+many lines (`textarea`), password and number fields, group boxes
+(`fieldset`), labels that work their controls, Tab's order (`tabindex`),
+boxes that scroll (`overflow:auto`) and tooltips (`title`, through
+`olui_tick`). [docs/GFOpenLayout-UI.md](docs/GFOpenLayout-UI.md)
 describes it; `examples/OLUIDemo.c` is a whole program.
 
 ## Web boxes (0.9)

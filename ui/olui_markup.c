@@ -32,6 +32,7 @@ olui_el *olui_el_new(int kind, const char *tag)
         el->tag[sizeof(el->tag) - 1] = 0;
     }
     el->imax = 100;
+    el->want_x = -1;
     return el;
 }
 
@@ -45,6 +46,8 @@ void olui_el_free(olui_el *el)
     }
     free(el->id); free(el->cls); free(el->name); free(el->value);
     free(el->text); free(el->style); free(el->placeholder); free(el->title);
+    free(el->for_id); free(el->num_attr[0]); free(el->num_attr[1]); free(el->num_attr[2]);
+    free(el->lines);
     free(el);
 }
 
@@ -103,6 +106,11 @@ static int kind_of(const char *tag, const char *type)
         if (type && (!strcmp(type, "button") || !strcmp(type, "submit"))) return K_BUTTON;
         return K_INPUT;
     }
+    if (!strcmp(tag, "spinner")) return K_INPUT;
+    if (!strcmp(tag, "select")) return K_SELECT;
+    if (!strcmp(tag, "option")) return K_OPTION;
+    if (!strcmp(tag, "optgroup")) return K_OPTGROUP;
+    if (!strcmp(tag, "textarea")) return K_TEXTAREA;
     if (!strcmp(tag, "list") || !strcmp(tag, "tree")) return K_LIST;
     if (!strcmp(tag, "item") || !strcmp(tag, "li")) return K_ITEM;
     if (!strcmp(tag, "tabs")) return K_TABS;
@@ -116,7 +124,7 @@ static int kind_of(const char *tag, const char *type)
 static int is_void(const char *tag)
 {
     return !strcmp(tag, "input") || !strcmp(tag, "br") || !strcmp(tag, "hr") || !strcmp(tag, "img") ||
-           !strcmp(tag, "slider");
+           !strcmp(tag, "slider") || !strcmp(tag, "spinner");
 }
 
 /* Appends UTF-8 for code point c */
@@ -218,8 +226,16 @@ static int set_attr(olui_el *el, const char *name, const char *value, char *type
     else if (!strcmp(name, "hidden")) el->state |= S_HIDDEN;
     else if (!strcmp(name, "selected")) el->state |= S_SELECTED;
     else if (!strcmp(name, "open")) el->state |= S_OPEN;
-    else if (!strcmp(name, "max")) el->imax = atoi(value);
-    else if (!strcmp(name, "min")) el->imin = atoi(value);
+    else if (!strcmp(name, "max")) { el->imax = atoi(value); ok = olui_set_str(&el->num_attr[1], value); }
+    else if (!strcmp(name, "min")) { el->imin = atoi(value); ok = olui_set_str(&el->num_attr[0], value); }
+    else if (!strcmp(name, "step")) ok = olui_set_str(&el->num_attr[2], value);
+    else if (!strcmp(name, "for")) ok = olui_set_str(&el->for_id, value);
+    else if (!strcmp(name, "readonly")) el->flags |= F_READONLY;
+    else if (!strcmp(name, "wrap")) { if (!strcmp(value, "off")) el->flags |= F_NOWRAP; }
+    else if (!strcmp(name, "tabindex")) el->tabindex = atoi(value);
+    else if (!strcmp(name, "rows") || !strcmp(name, "size")) el->rows = atoi(value);
+    else if (!strcmp(name, "cols")) { el->cols = atoi(value); el->flags |= F_COLS; }
+    else if (!strcmp(name, "maxlength")) el->maxlength = atoi(value);
     else if (!strcmp(name, "image")) el->ivalue = atoi(value);
     else if (!strcmp(name, "width")) el->img_w = atoi(value);
     else if (!strcmp(name, "height")) el->img_h = atoi(value);
@@ -254,6 +270,7 @@ static int parse_content(parser *ps, olui_el *parent, int depth)
         if (ps->p[1] == '/') {
             char tag[16];
             size_t n = 0;
+            const char *lt = ps->p;
             ps->p += 2;
             while (*ps->p && *ps->p != '>' && !isspace((unsigned char)*ps->p)) {
                 if (n + 1 < sizeof(tag)) tag[n++] = (char)tolower((unsigned char)*ps->p);
@@ -263,6 +280,11 @@ static int parse_content(parser *ps, olui_el *parent, int depth)
             while (*ps->p && *ps->p != '>') ++ps->p;
             if (*ps->p) ++ps->p;
             if (!parent->parent) return fail(ps, "an end tag with nothing open");
+            if (strcmp(tag, parent->tag) && (parent->kind == K_OPTION || parent->kind == K_OPTGROUP)) {
+                /* </select> (or </optgroup>) ends an option left open, as HTML lets it */
+                ps->p = lt;
+                return 1;
+            }
             if (strcmp(tag, parent->tag)) {
                 char why[64];
                 snprintf(why, sizeof(why), "</%s> where </%s> was due", tag, parent->tag);
@@ -277,6 +299,7 @@ static int parse_content(parser *ps, olui_el *parent, int depth)
             size_t n = 0;
             olui_el *el;
             int self_closed = 0;
+            const char *lt = ps->p;
             ++ps->p;
             while (*ps->p && (isalnum((unsigned char)*ps->p) || *ps->p == '-')) {
                 if (n + 1 < sizeof(tag)) tag[n++] = (char)tolower((unsigned char)*ps->p);
@@ -284,6 +307,12 @@ static int parse_content(parser *ps, olui_el *parent, int depth)
             }
             tag[n] = 0;
             if (!n) return fail(ps, "a '<' that starts no tag (write &lt;)");
+            if ((parent->kind == K_OPTION && (!strcmp(tag, "option") || !strcmp(tag, "optgroup"))) ||
+                (parent->kind == K_OPTGROUP && !strcmp(tag, "optgroup"))) {
+                /* the next option ends the one before, as HTML lets it */
+                ps->p = lt;
+                return 1;
+            }
             if (!(el = olui_el_new(K_BOX, tag))) return fail(ps, "out of memory");
             for (;;) {
                 char name[24], *value = NULL;
@@ -325,6 +354,26 @@ static int parse_content(parser *ps, olui_el *parent, int depth)
                 free(value);
             }
             el->kind = kind_of(tag, type[0] ? type : NULL);
+            if (el->kind == K_INPUT && !strcmp(type, "password")) el->flags |= F_PASSWORD;
+            if (el->kind == K_INPUT && (!strcmp(type, "number") || !strcmp(tag, "spinner"))) el->flags |= F_NUMBER;
+            if (el->kind == K_TEXTAREA && !self_closed) {
+                /* its text as written: spaces and newlines kept, the first newline left out, as HTML does */
+                const char *e = strstr(ps->p, "</textarea"), *s0 = ps->p;
+                char *text, *d, *q;
+                if (!e) { olui_el_free(el); return fail(ps, "<textarea> is not closed"); }
+                if (*s0 == '\r') ++s0;
+                if (*s0 == '\n') ++s0;
+                if (!(text = decode(s0, e, 0))) { olui_el_free(el); return fail(ps, "out of memory"); }
+                for (q = d = text; *q; ++q)
+                    if (*q != '\r') *d++ = *q;
+                *d = 0;
+                el->text = text;
+                for (; ps->p < e; ++ps->p) if (*ps->p == '\n') ++ps->line;
+                ps->p = strchr(e, '>');
+                ps->p = ps->p ? ps->p + 1 : e + strlen(e);
+                olui_el_append(parent, el);
+                continue;
+            }
             if (el->kind == K_SLIDER) {
                 el->ivalue = el->value ? atoi(el->value) : el->imin;
                 if (el->ivalue < el->imin) el->ivalue = el->imin;
