@@ -765,6 +765,11 @@ static int widgets(void)
     CHECK(!l.found && l.bullets == 6);
     olui_focus(ui, pw);
     CHECK(!olui_edit(ui, OLUI_COPY));                   /* never copied */
+    /* all of it selected (the Amiga key with a): what is typed takes its place */
+    CHECK(olui_key(ui, 'a', OLUI_QUAL_COMMAND) && olui_get_selection(pw, &a, &b) && a == 0 && b == 6);
+    SAME(0);
+    CHECK(olui_key(ui, 'k', 0) && !strcmp(olui_get_text(pw), "k") && !olui_get_selection(pw, &a, &b));
+    SAME(0);
 
     /* ---- number: fixed point, the arrows, typed, held to min and max ---- */
     CHECK(olui_number_decimals(num) == 1 && olui_number_value(num) == 10 && !strcmp(olui_get_text(num), "1.0"));
@@ -978,6 +983,59 @@ static int widgets(void)
     olui_key(ui, OLUI_KEY_ESCAPE, 0);
     CHECK(!olui_tick(ui, 2000));
     SAME(0);
+
+    /* ---- a long select: its pop-up shows 12 rows and scrolls; a group disabled; the API opens it ---- */
+    {
+        olui *u2 = olui_new();
+        olui_el *big, *hid;
+        char m[2048] = "<select id=big><optgroup label=Off disabled><option>Zero</optgroup>";
+        olui_rect pr;
+        looker l2;
+        for (i = 1; i < 30; ++i) sprintf(m + strlen(m), "<option value=v%d>%c%d</option>", i, 'A' + i % 26, i);
+        strcat(m, "</select><div id=hid style='height:20px;overflow:hidden'><p>one</p><p>two</p><p>three</p></div>");
+        CHECK(u2);
+        w_screen = NULL;                                /* another window: not drawn on this one's frame */
+        olui_set_measure(u2, measure, NULL);
+        CHECK(olui_load(u2, m, NULL, err, sizeof(err)) && olui_layout(u2, 300, 400));
+        CHECK(olui_on(u2, NULL, 0, on_widget, NULL));
+        big = olui_find(u2, "big");
+        hid = olui_find(u2, "hid");
+        CHECK(olui_select_count(big) == 30 && olui_select_index(big) == 1);   /* Zero's group is disabled */
+        olui_select_open(u2, big, 1);
+        CHECK(olui_select_is_open(u2, big));
+        CHECK(olui_key(u2, OLUI_KEY_END, 0) && olui_key(u2, OLUI_KEY_RETURN, 0));
+        CHECK(olui_select_index(big) == 29 && !strcmp(w_last_value, "v29"));
+        olui_select_open(u2, big, 1);
+        CHECK(olui_key(u2, OLUI_KEY_HOME, 0) && olui_key(u2, 'c', 0));         /* C2, then C28 */
+        CHECK(olui_key(u2, 'c', 0) && olui_key(u2, OLUI_KEY_RETURN, 0) && olui_select_index(big) == 28);
+        olui_select_open(u2, big, 1);
+        CHECK(olui_key(u2, OLUI_KEY_HOME, 0));
+        l2 = seek(u2, "A26", NULL);
+        CHECK(!l2.found);                               /* below the 12 rows shown */
+        CHECK(olui_box(u2, big, &pr));
+        olui_mouse(u2, pr.x + 4, pr.y + pr.h + 30, OLUI_WHEEL_DOWN);
+        olui_mouse(u2, pr.x + 4, pr.y + pr.h + 30, OLUI_WHEEL_DOWN);
+        olui_mouse(u2, pr.x + 4, pr.y + pr.h + 30, OLUI_WHEEL_DOWN);
+        olui_mouse(u2, pr.x + 4, pr.y + pr.h + 30, OLUI_WHEEL_DOWN);
+        olui_mouse(u2, pr.x + 4, pr.y + pr.h + 30, OLUI_WHEEL_DOWN);
+        l2 = seek(u2, "A26", NULL);
+        CHECK(l2.found);                                /* scrolled to it */
+        olui_select_open(u2, big, 0);
+        CHECK(!olui_select_is_open(u2, big) && olui_select_index(big) == 28);
+        /* overflow hidden: cut to the box, no bar, scrolled by the program only */
+        olui_mouse(u2, 10, pr.y + pr.h + 16, OLUI_WHEEL_DOWN);
+        CHECK(olui_get_scroll(hid) == 0);
+        olui_set_scroll(u2, hid, 10);
+        CHECK(olui_get_scroll(hid) == 10);
+        olui_free(u2);
+        w_screen = screen;
+    }
+    /* a textarea left open says so */
+    {
+        olui *bad = olui_new();
+        CHECK(bad && !olui_load(bad, "<row>\n<textarea>text", NULL, err, sizeof(err)) && strstr(err, "line 2"));
+        olui_free(bad);
+    }
 
     if (w_ops_path) {
         /* the window with the select's pop-up open and a tooltip, to look at */

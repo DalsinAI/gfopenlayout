@@ -2291,11 +2291,11 @@ static void label_click(olui *ui, olui_el *lab)
     if (t->kind == K_BUTTON || t->kind == K_CHECK || t->kind == K_RADIO) press(ui, t);
 }
 
-/* The innermost thing under the pointer that scrolls and can */
+/* The innermost thing under the pointer that scrolls and can (overflow hidden: only by the program) */
 static olui_el *wheel_target(olui *ui, olui_el *el)
 {
     for (; el; el = el->parent)
-        if (scrolls(el) && visible(el) && scroll_most(ui, el) > 0) return el;
+        if (scrolls(el) && el->cs.overflow != O_HIDDEN && visible(el) && scroll_most(ui, el) > 0) return el;
     return NULL;
 }
 
@@ -2603,8 +2603,10 @@ int olui_key(olui *ui, unsigned code, unsigned qual)
         return ta_key(ui, f, code, qual);
     case K_INPUT: {
         const char *t = f->text ? f->text : "";
-        size_t len = strlen(t);
+        size_t len = strlen(t), a, b;
         if (f->caret > len) f->caret = len;
+        if (f->anchor > len) f->anchor = len;
+        ta_selection(f, &a, &b);
         if (f->flags & F_NUMBER) {
             /* a number field: Up and Down a step, PageUp and PageDown ten */
             switch (code) {
@@ -2622,10 +2624,12 @@ int olui_key(olui *ui, unsigned code, unsigned qual)
         case OLUI_KEY_HOME: f->caret = 0; break;
         case OLUI_KEY_END: f->caret = len; break;
         case OLUI_KEY_BACKSPACE:
-            if (f->caret) text_replace(ui, f, prev_char(t, f->caret), f->caret, NULL);
+            if (a != b) text_replace(ui, f, a, b, NULL);
+            else if (f->caret) text_replace(ui, f, prev_char(t, f->caret), f->caret, NULL);
             break;
         case OLUI_KEY_DELETE:
-            if (f->caret < len) text_replace(ui, f, f->caret, next_char(t, f->caret), NULL);
+            if (a != b) text_replace(ui, f, a, b, NULL);
+            else if (f->caret < len) text_replace(ui, f, f->caret, next_char(t, f->caret), NULL);
             break;
         case OLUI_KEY_RETURN:
             emit(ui, OLUI_SUBMIT, f, NULL, (f->flags & F_PASSWORD) ? NULL : f->text ? f->text : "",
@@ -2641,7 +2645,7 @@ int olui_key(olui *ui, unsigned code, unsigned qual)
                 else if (c < 0x10000) { u[0] = (char)(0xe0 | c >> 12); u[1] = (char)(0x80 | (c >> 6 & 63)); u[2] = (char)(0x80 | (c & 63)); n = 3; }
                 else { u[0] = (char)(0xf0 | c >> 18); u[1] = (char)(0x80 | (c >> 12 & 63)); u[2] = (char)(0x80 | (c >> 6 & 63)); u[3] = (char)(0x80 | (c & 63)); n = 4; }
                 u[n] = 0;
-                text_replace(ui, f, f->caret, f->caret, u);
+                text_replace(ui, f, a, b, u);      /* in the selection's place */
             } else {
                 return 0;
             }
