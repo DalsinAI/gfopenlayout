@@ -132,6 +132,27 @@ divisions, which a 68040 does itself. `tests/test_web.c` covers each of
 them. `gfopenlayout.library` 9.0 lays these out, with no new calls
 (`OPENLAYOUTLIB_WEB_VERSION`).
 
+## CSS: GFCSS
+
+**GFCSS** (`include/gfopenlayout_css.h`, `src/gfcss_*.c`, in
+`libopenlayout.a`) is the CSS engine GFOpenLayout UI styles its windows
+with and GFOpenBrowser Lite will style pages with: stylesheets read as CSS
+Syntax 3 says, `@media`, `@import` and `@supports`, every combinator and
+the structural, state and `:not()` pseudo-classes, the cascade with
+origins and `!important`, inheritance, and computed styles in integers
+only, turned into `ol_style` and `ol_box_style` by `gfcss_to_ol`. The
+caller describes its elements through a few functions; rules are indexed
+by id, class and type, and nothing is allocated for an element.
+
+GFOpenLayout's documents can be styled through it too: a node takes a
+tag, attributes and states (`ol_node_set_tag`, `ol_node_set_attr`,
+`ol_node_set_css_state`), a document stylesheets and a viewport
+(`ol_document_add_stylesheet`, `ol_document_set_viewport`), and
+`ol_document_apply_styles`, or the next `ol_layout`, styles every tagged
+node. Nodes with no tag keep their styles, so nothing changes for a
+document with no stylesheets. [docs/GFCSS.md](docs/GFCSS.md) describes
+both; `tests/test_css.c` tests them.
+
 ## Build and test
 
 Host:

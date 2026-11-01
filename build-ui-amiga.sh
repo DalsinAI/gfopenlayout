@@ -1,6 +1,6 @@
 #!/bin/sh
-# GFOpenLayout UI for AmigaOS 3.x on the 68040: libolui.a (GFOpenLayout, the UI,
-# GFOpenGadTools' theme reader and the Intuition glue) and OLUIDemo, with the
+# GFOpenLayout UI for AmigaOS 3.x on the 68040: libolui.a (GFOpenLayout and GFCSS,
+# the UI, GFOpenGadTools' theme reader and the Intuition glue) and OLUIDemo, with the
 # os32 stove. Soft float (one binary with or without an FPU): give SPECS the
 # GFOpen SDK's Lib/m68k-soft-m68040.specs. GFOpenLayout and the UI use no
 # floating point at all.
@@ -20,7 +20,8 @@ SPECFLAG=""
 mkdir -p "$OUT/obj"
 FLAGS="-m68040 $SPECFLAG -noixemul -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=gnu99 -Wall -Wextra -Werror \
   -I$HERE/include -I$HERE/ui -I$OGT_ROOT/lib"
-for f in src/openlayout.c ui/olui.c ui/olui_css.c ui/olui_markup.c ui/olui_theme.c amiga/olui_amiga.c; do
+for f in src/openlayout.c src/gfcss_parse.c src/gfcss_values.c src/gfcss_select.c src/openlayout_css.c \
+         ui/olui.c ui/olui_css.c ui/olui_markup.c ui/olui_theme.c amiga/olui_amiga.c; do
   "$CC" $FLAGS -c "$HERE/$f" -o "$OUT/obj/$(basename "$f" .c).o"
 done
 "$CC" $FLAGS -Wno-sign-compare -c "$OGT_ROOT/lib/ogt_theme.c" -o "$OUT/obj/ogt_theme.o"
@@ -28,8 +29,9 @@ rm -f "$OUT/libolui.a"
 "$AR" rcs "$OUT/libolui.a" "$OUT"/obj/*.o
 "$CC" $FLAGS -s -o "$OUT/OLUIDemo" "$HERE/examples/OLUIDemo.c" "$OUT/libolui.a"
 "$CC" $FLAGS -s -o "$OUT/OLUITest" "$HERE/tests/test_ui.c" "$OUT/libolui.a"
-"$CC" $FLAGS -s -o "$OUT/OLRowsTest" "$HERE/tests/test_rows.c" "$OUT/obj/openlayout.o"
-for f in "$OUT/libolui.a" "$OUT/OLUIDemo" "$OUT/OLUITest" "$OUT/OLRowsTest"; do
+"$CC" $FLAGS -s -o "$OUT/OLRowsTest" "$HERE/tests/test_rows.c" "$OUT/libolui.a"
+"$CC" $FLAGS -s -o "$OUT/OLUICSSTest" "$HERE/tests/test_ui_css.c" "$OUT/libolui.a"
+for f in "$OUT/libolui.a" "$OUT/OLUIDemo" "$OUT/OLUITest" "$OUT/OLRowsTest" "$OUT/OLUICSSTest"; do
   echo "$f ($(wc -c < "$f") bytes)"
 done
-sha256sum "$OUT/OLUIDemo" "$OUT/OLUITest" "$OUT/OLRowsTest"
+sha256sum "$OUT/OLUIDemo" "$OUT/OLUITest" "$OUT/OLRowsTest" "$OUT/OLUICSSTest"

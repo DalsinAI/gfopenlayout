@@ -618,6 +618,59 @@ typedef void (*ol_draw_fn)(void *userdata, const ol_device_op *op);
 size_t ol_draw_page(const ol_document *doc, int page, const ol_scale *scale,
                     const ol_pixel_rect *clip, ol_draw_fn draw, void *userdata);
 
+/* ---- CSS: nodes as elements, and a document's stylesheets (GFCSS) ---------
+ *
+ * A node may say what element it is: its tag, its attributes (id, class
+ * and style among them) and its states for :hover, :focus and the rest
+ * (GFCSS_STATE_... in gfopenlayout_css.h). A document holds stylesheets in
+ * the cascade's order and the viewport @media is evaluated against. Its
+ * tagged nodes are then styled through GFCSS: ol_document_apply_styles
+ * sets each one's ol_style and ol_box_style from the rules that match it
+ * (its style attribute last), and ol_layout and ol_layout_pages do so
+ * first by themselves when a sheet, an element or the width has changed
+ * since. A text node with no tag under an element takes the element's
+ * inherited style; other nodes with no tag keep the styles set on them, so
+ * a document with no stylesheets lays out as it always did. ::before and
+ * ::after with a string content are text nodes made first and last in
+ * their element (ol_node_is_generated). The sheets must say how elements
+ * are shown (a user-agent sheet: div{display:block} and so on): CSS's
+ * initial display is inline. */
+enum {
+    OL_ORIGIN_USER_AGENT = 0,
+    OL_ORIGIN_USER = 1,
+    OL_ORIGIN_AUTHOR = 2
+};
+
+/* 1, or 0 when memory ran out. A NULL value takes the attribute away. */
+int ol_node_set_tag(ol_node *node, const char *tag);
+const char *ol_node_tag(const ol_node *node);
+int ol_node_set_attr(ol_node *node, const char *name, const char *value);
+const char *ol_node_attr(const ol_node *node, const char *name);
+void ol_node_set_css_state(ol_node *node, uint32_t states);
+uint32_t ol_node_css_state(const ol_node *node);
+/* 1 for a text node made for a ::before or ::after */
+int ol_node_is_generated(const ol_node *node);
+/* Walking the tree */
+const ol_node *ol_node_first_child(const ol_node *node);
+const ol_node *ol_node_next_sibling(const ol_node *node);
+
+/* A stylesheet after those the document has (the text is copied); 1, or
+ * 0 when memory ran out. Mistakes in it are skipped as CSS says. */
+int ol_document_add_stylesheet(ol_document *doc, const char *css, size_t length, int origin);
+/* The viewport @media is evaluated against, and vw and vh are of; media
+ * 0 screen, 1 print (GFCSS_MEDIA_...). Until it is set, its width is the
+ * width laid out at, its height not known. */
+void ol_document_set_viewport(ol_document *doc, ol_unit width, ol_unit height, int media);
+/* Styles every tagged node now; percentages are of containing_width at
+ * the top. 1, or 0 when memory ran out. */
+int ol_document_apply_styles(ol_document *doc, ol_unit containing_width);
+/* The sheets' @import rules, in order, for the caller to fetch: url (as
+ * written, unescaped), and ol_document_add_import with the fetched text,
+ * which takes the import's place in the cascade. */
+int ol_document_import_count(const ol_document *doc);
+const char *ol_document_import_url(const ol_document *doc, int index);
+int ol_document_add_import(ol_document *doc, int index, const char *css, size_t length);
+
 #ifdef __cplusplus
 }
 #endif

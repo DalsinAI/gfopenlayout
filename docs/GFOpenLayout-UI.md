@@ -86,11 +86,19 @@ tab's, which is its button's text) and `tabindex`.
 
 ## The CSS
 
-Rules with type, class and id selectors, the descendant and child
-combinators (`toolbar button`, `row > label`) and the states `:hover`,
-`:active` (pressed), `:focus`, `:checked`, `:disabled`, `:selected` and
-`:open`. The more specific rule wins, then the later one, as in CSS; a
-`style` attribute comes last. Lengths are `px`, `pt` and `em`.
+The CSS is GFCSS's ([GFCSS.md](GFCSS.md)), the engine GFOpenBrowser Lite
+shares: every selector there (type, class and id, attributes, the
+descendant, child and sibling combinators, `:not()`, `:nth-child()` and
+the other structural pseudo-classes), the states `:hover`, `:active`
+(pressed), `:focus`, `:checked`, `:disabled`, `:enabled`, and the UI's own
+`:selected` and `:open`, and CSS's cascade: `!important`, then the more
+specific rule, then the later one, a `style` attribute after the rules.
+Lengths are any of CSS's absolute ones, `em`, `rem` (of the window's font
+size), `vw` and `vh` and `calc()`; colours are all of CSS's names,
+`#rgb` to `#rrggbbaa`, `rgb()`, `rgba()`, `hsl()` and `hsla()`.
+`@media screen` and `@media all` rules count (the window's size isn't
+known to them: a width or height feature is false); `@media print` rules
+don't.
 
 | Property | Values |
 | --- | --- |
@@ -102,9 +110,9 @@ combinators (`toolbar button`, `row > label`) and the states `:hover`,
 | `justify-content` | `start`, `center`, `end`: where a row's children go when none grows |
 | `width`, `height` | A length or `auto` |
 | `margin`, `padding` and their `-top`, `-right`, `-bottom`, `-left` | Lengths |
-| `color`, `background`, `background-color` | `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`, a few names; `background` also takes `linear-gradient()` down the box, with up to four stops |
+| `color`, `background`, `background-color` | Colours; `background` also takes `linear-gradient()` down the box, with up to four stops |
 | `border`, `border-width`, `border-color`, `border-radius` | |
-| `font-size`, `font-weight`, `font-style`, `font-family` (`monospace`), `text-decoration` (`underline`), `text-align`, `line-height` | |
+| `font-size`, `font-weight`, `font-style`, `font-family` (`monospace`), `font`, `text-decoration` (`underline`, `line-through`), `text-align`, `line-height` | |
 | `accent-color` | Ticks, radio dots, progress bars and a slider's filled track |
 | `mark-background`, `mark-border-color` | A checkbox's and radio button's box, a slider's track (ours, not CSS's) |
 | `placeholder-color` | A field's placeholder (ours) |
@@ -124,6 +132,16 @@ open. A textarea's selection is drawn in `accent-color` with its text in
 held in `accent-color`. What CSS has beyond this table (grid, floats,
 positions, transforms) is not done, and a rule using it is left out, as a
 browser leaves out what it doesn't know.
+
+The UI keeps its own ways where they aren't CSS's: an element is a block
+unless its CSS says otherwise; a row's children don't take its
+`text-align` (its `justify-content` is put there); an element given a new
+font size and no line height keeps its line height in proportion; a
+border is as wide as its top side, black unless a colour is given; a
+percentage (of what, the styling doesn't know) is left out. Since GFCSS,
+three things differ from the UI's first CSS: `!important` counts, an
+`rgba()` alpha is exact (0.5 was 141 of 255, now 128), and a line height
+set on an element stays when a later rule gives it a new font size.
 
 ## Events
 
@@ -246,11 +264,17 @@ Each element's style is kept until the stylesheet or its states change, so
 a hover or a click styles only what changed; the layout itself is done
 again in full. The 68040 hasn't been timed yet: the lab run will say.
 
+The CSS has been GFCSS's since 1 November 2026: the figures above are from
+before it. On the host a window of 401 widgets is styled and laid out from
+the start in about 270 µs with it, 365 µs with the UI's first CSS
+(`tests/test_ui_css.c`); its size on the 68040 is still to be measured.
+
 ## Building
 
 Host tests: `make test`, or `make test OGT_ROOT=<opengadtools>` with the
 theme reader; `tests/test_ui.c` runs the widgets, the keyboard and the
-events, and with `OLUI_THEME_FILE` set, a theme. `tests/ui_render.py` draws
+events, and with `OLUI_THEME_FILE` set, a theme; `tests/test_ui_css.c` the
+CSS GFCSS gives the UI. `tests/ui_render.py` draws
 `test_ui`'s ops as a picture, to look at a window on the host.
 
 Amiga: `OGT_ROOT=<opengadtools> SPECS=<SDK>/Lib/m68k-soft-m68040.specs
