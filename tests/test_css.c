@@ -973,14 +973,22 @@ static void test_to_ol(void)
     CHECK(st.foreground == 0xff123456u && st.background == 0xffabcdefu && st.text_align == OL_ALIGN_CENTER);
     CHECK(box.text_indent == OL_CSSPX(15));
     CHECK(box.border_width == OL_CSSPX(3) && box.border_argb == BLUE && box.border_sides == OL_BORDER_ALL);
+#ifdef OL_HAS_WEB_BOXES
+    CHECK((box.flags & OL_BOX_SIDE_BORDERS) && box.border_widths[0] == OL_CSSPX(1) &&
+          box.border_widths[3] == OL_CSSPX(3) && box.border_argbs[0] == RED && box.border_argbs[3] == BLUE);
+    CHECK(box.valign == OL_VALIGN_BASELINE);
+#endif
     /* content box: the padding and borders are added to the width */
     CHECK(box.width == OL_CSSPX(200 + 8 + 1 + 3) && box.height == OL_CSSPX(50 + 4 + 2));
     style_of(e, p1, &cs);
     gfcss_to_ol(&cs, OL_CSSPX(400), &st, &box);
     CHECK((box.flags & OL_BOX_ROW) && st.text_align == OL_ALIGN_CENTER && box.align == OL_CROSS_CENTRE &&
           box.gap == OL_CSSPX(3));
+#ifdef OL_HAS_WEB_BOXES
+    CHECK(box.width == 0 && box.width_permille == 500);            /* GFOpenLayout works it out */
+    CHECK((box.flags & OL_BOX_AUTO_LEFT) && (box.flags & OL_BOX_AUTO_RIGHT) && st.margin_left == 0);
+#else
     CHECK(box.width == OL_CSSPX(200));
-#ifndef OL_HAS_WEB_BOXES
     CHECK(st.margin_left == OL_CSSPX(100) && st.margin_right == OL_CSSPX(100));    /* centred */
 #endif
     style_of(e, p3, &cs);

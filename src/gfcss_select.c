@@ -1122,16 +1122,13 @@ void gfcss_to_ol(const gfcss_computed *cs, ol_unit cw, ol_style *st, ol_box_styl
     if (cs->width.kind == GFCSS_LEN) {
         ol_unit extra = cs->box_sizing == GFCSS_BORDER_BOX ? 0 : pad_lr + border_lr;
 #ifdef OL_HAS_WEB_BOXES
-        if (cs->width.pct) {
-            box->width = cs->width.units + extra;
-            box->width_permille = cs->width.pct / 100;
-        } else {
-            box->width = cs->width.units + extra;
-        }
+        /* a percentage alone, of the border box: GFOpenLayout works it out of the block it is in */
+        if (cs->width.pct > 0 && cs->width.units == 0 && extra == 0) box->width_permille = cs->width.pct / 100;
+        else box->width = gfcss_resolve(&cs->width, cw) + extra;
 #else
         box->width = gfcss_resolve(&cs->width, cw) + extra;
 #endif
-        if (box->width <= 0 && !(cs->width.pct)) box->width = 0;
+        if (box->width < 0) box->width = 0;
     }
     if (cs->height.kind == GFCSS_LEN && !cs->height.pct) {
         ol_unit extra = cs->box_sizing == GFCSS_BORDER_BOX ? 0
@@ -1139,13 +1136,15 @@ void gfcss_to_ol(const gfcss_computed *cs, ol_unit cw, ol_style *st, ol_box_styl
         box->height = cs->height.units + extra;
     }
 #ifdef OL_HAS_WEB_BOXES
-    if (cs->min_width.kind == GFCSS_LEN) box->min_width = gfcss_resolve(&cs->min_width, cw);
-    if (cs->max_width.kind == GFCSS_LEN) {
-        if (cs->max_width.pct) {
-            box->max_width = cs->max_width.units;
-            box->max_width_permille = cs->max_width.pct / 100;
-        } else {
-            box->max_width = cs->max_width.units;
+    {
+        /* the least and the most, of the border box as GFOpenLayout's are */
+        ol_unit extra = cs->box_sizing == GFCSS_BORDER_BOX ? 0 : pad_lr + border_lr;
+        if (cs->min_width.kind == GFCSS_LEN) box->min_width = gfcss_resolve(&cs->min_width, cw) + extra;
+        if (cs->max_width.kind == GFCSS_LEN) {
+            if (cs->max_width.pct > 0 && cs->max_width.units == 0 && extra == 0)
+                box->max_width_permille = cs->max_width.pct / 100;
+            else if ((box->max_width = gfcss_resolve(&cs->max_width, cw) + extra) <= 0)
+                box->max_width = 1;     /* max-width 0: as narrow as can be (0 would be none) */
         }
     }
     switch (cs->vertical_align) {
