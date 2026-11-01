@@ -3,8 +3,8 @@
 GFOpenLayout UI (`olui`, version 0.2) lets a program describe its window in
 HTML and CSS. GFOpenLayout lays the window out, the GFOpenGadTools theme draws
 it, and the program's own C functions are called back when something
-happens. It came from the OpenClaude window, which needed a tree that
-GadTools hasn't got.
+happens. It came from a chat window that needed a tree GadTools hasn't
+got.
 
 ```c
 olui *ui = olui_new();
