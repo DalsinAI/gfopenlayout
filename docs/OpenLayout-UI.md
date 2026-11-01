@@ -195,5 +195,5 @@ A program links `libolui.a` and includes `openlayout_ui.h` and
 - An `img` directly in a `row` or `column` keeps no place: put it in a line (a `div`, a `button`).
 - A resident library: it is a link library for now.
 - Laying out only what changed: a change that can move things (text, items, a style that changes a
-  size) lays the whole window out. A hover, press or focus that changes only how widgets look is drawn
-  again only where it changed, with no layout.
+  size, an item opened or closed) lays the whole window out. A hover, press, focus, check or selection
+  that changes only how widgets look is drawn again only where it changed, with no layout.

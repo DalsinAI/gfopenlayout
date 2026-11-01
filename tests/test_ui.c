@@ -313,7 +313,7 @@ static long frame_draw(olui *ui, uint32_t *px, const olui_rect *area)
 }
 
 /* What happens to the window, and what it may do: lay out again or not */
-enum { ACT_MOVE, ACT_DOWN, ACT_UP, ACT_TAB, ACT_WHEEL };
+enum { ACT_MOVE, ACT_DOWN, ACT_UP, ACT_TAB, ACT_WHEEL, ACT_WHEEL_UP, ACT_OPEN };
 
 #define FOLDERS 40
 
@@ -362,7 +362,9 @@ static int frames(void)
         "checkbox:hover{color:#0000aa}"
         "tabbutton:hover{border-color:#cc6600}"
         "input:focus{background:#ffffee}"
-        "#go:hover{padding:3px 20px}";  /* one that changes its size: laid out again */
+        "#go:hover{padding:3px 20px}"   /* one that changes its size: laid out again */
+        "item:selected item{color:#aa0000}"     /* rules that reach the items under an item */
+        "item:open item{color:#006600}";
     /* what a step may do: damage a widget's place (an eighth of the window
      * at most), damage across the window (two widgets far apart), lay out
      * again, or damage all of it without a layout */
@@ -390,7 +392,17 @@ static int frames(void)
         { ACT_MOVE, "edge", SMALL },        /* one the tree's top cuts */
         { ACT_MOVE, NULL, SMALL },
         { ACT_MOVE, "strip", SMALL },       /* a tab button */
-        { ACT_MOVE, NULL, SMALL }
+        { ACT_MOVE, NULL, SMALL },
+        { ACT_DOWN, "html", WIDE },         /* focus from the tree to the checkbox */
+        { ACT_UP, "html", SMALL },          /* unchecked: its tick goes */
+        { ACT_DOWN, "byname", SMALL },
+        { ACT_UP, "byname", SMALL },        /* a radio button chosen, the other not */
+        { ACT_WHEEL_UP, "folders", ALL },
+        { ACT_DOWN, "sent", WIDE },         /* an item selected, the focus to its tree */
+        { ACT_DOWN, "inbox", SMALL },       /* another: the items under it are styled again */
+        { ACT_DOWN, "work", SMALL },
+        { ACT_OPEN, "archive", LAYOUT },    /* items shown: laid out, the items under it styled again */
+        { ACT_DOWN, "y2025", SMALL }
     };
     olui *ui = olui_new();
     uint32_t *screen = (uint32_t *)malloc(FW * FH * sizeof(uint32_t));
@@ -437,9 +449,13 @@ static int frames(void)
         case ACT_WHEEL:
             for (i = 0; i < 3; ++i) olui_mouse(ui, x, y, OLUI_WHEEL_DOWN);
             break;
+        case ACT_WHEEL_UP:
+            for (i = 0; i < 3; ++i) olui_mouse(ui, x, y, OLUI_WHEEL_UP);
+            break;
+        case ACT_OPEN: olui_item_open(ui, olui_find(ui, steps[k].id), 1); break;
         default: break;
         }
-        /* a hover, press or focus that changes no size lays nothing out
+        /* a hover, press, focus, check or selection that changes no size lays nothing out
          * (measures nothing), and damages only where it changed */
         if (steps[k].may == SMALL || steps[k].may == WIDE) {
             if (measured != before) printf("frames: step %d measured %ld\n", (int)k, measured - before);

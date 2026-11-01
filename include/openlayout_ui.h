@@ -147,8 +147,8 @@ typedef void (*olui_draw_fn)(void *userdata, const olui_draw_op *op);
 void olui_draw(olui *ui, const olui_rect *area, olui_draw_fn draw, void *userdata);
 
 /* 1 when something changed that needs drawing, with the area it is in: a
- * hover, press or focus that changes no size, where it changed; else the
- * window. olui_draw clears it. */
+ * hover, press, focus, check or selection that changes no size, where it
+ * changed; else the window. olui_draw clears it. */
 int olui_damaged(const olui *ui, olui_rect *area);
 
 /* ---- Input ----------------------------------------------------------------- */
