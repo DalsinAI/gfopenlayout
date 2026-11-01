@@ -3,7 +3,7 @@
  * a keyword, a length in units or thousandths of an em, a colour, a
  * stretch of the sheet's text, a calc() sum. No floating point: decimals
  * are thousandths from the tokenizer on.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfcss_internal.h"
 
 /* ---- Value tokens ------------------------------------------------------------- */

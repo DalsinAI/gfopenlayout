@@ -3,7 +3,7 @@
  * CSS says: a bad declaration up to its ';', a rule whose selector list
  * has one we don't know as a whole, an at-rule we don't know with its
  * block.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfcss_internal.h"
 
 /* ---- Small helpers ---------------------------------------------------------- */

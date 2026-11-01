@@ -7,7 +7,7 @@
  * and the few with none. The winning declaration of each property is kept
  * as the rules are matched (origin and !important, specificity, order),
  * so nothing is sorted and nothing is allocated for an element.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfcss_internal.h"
 
 /* ---- The index --------------------------------------------------------------- */

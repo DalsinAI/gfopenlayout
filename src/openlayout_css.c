@@ -3,7 +3,7 @@
  * tagged node's ol_style and ol_box_style worked out from them before a
  * layout. Nodes with no tag keep what was set on them, so documents with
  * no stylesheets are laid out as before.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfopenlayout.h"
 #include "gfopenlayout_css.h"
 #include "openlayout_css.h"

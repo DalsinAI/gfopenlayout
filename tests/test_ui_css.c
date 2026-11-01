@@ -1,7 +1,7 @@
 /* GFOpenLayout UI's CSS through GFCSS: what the UI gained (attribute and
  * sibling selectors, :not() and :nth-child(), !important, more colours and
  * units), and how long styling a big window takes.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfopenlayout_ui.h"
 
 #include <stdio.h>

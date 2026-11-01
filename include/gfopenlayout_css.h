@@ -15,7 +15,7 @@
  * functions on its own element pointers); nothing is allocated for an
  * element while it is styled. docs/GFCSS.md says what is supported.
  *
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #ifndef GFOPENLAYOUT_CSS_H
 #define GFOPENLAYOUT_CSS_H
 

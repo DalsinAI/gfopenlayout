@@ -1,6 +1,6 @@
 /* GFOpenLayout 0.8: rows, widths, heights, grow and gap (OL_BOX_ROW and the
  * box style's width, height, grow, gap and align), for programs' windows.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfopenlayout.h"
 
 #include <stdio.h>

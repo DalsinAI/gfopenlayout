@@ -3,7 +3,7 @@
  * inheritance, @media, each unit and colour, shorthands, GFOpenLayout's
  * styles from a computed style, styling a GFOpenLayout document, and how
  * long 2,000 rules take over 2,000 elements.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfopenlayout_css.h"
 
 #include <stdio.h>

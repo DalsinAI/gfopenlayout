@@ -2,7 +2,7 @@
  * gfcss_select.c). Only malloc, calloc, realloc, free, memcpy, memset,
  * strlen and strcmp from the C library, so that it builds into the
  * resident gfopenlayout.library, whose runtime has no more.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #ifndef GFCSS_INTERNAL_H
 #define GFCSS_INTERNAL_H
 

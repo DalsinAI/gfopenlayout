@@ -11,7 +11,7 @@
  * CSS says otherwise, a row's children don't take its text-align (its
  * justify-content is that), a line height follows a new font size in
  * proportion, and a border is as wide as its top side.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "olui_internal.h"
 #include "gfopenlayout_css.h"
 

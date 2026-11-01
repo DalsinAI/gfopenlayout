@@ -8,7 +8,7 @@
  * front: each one's box, its marks, then GFOpenLayout's text ops for its
  * node, a list's items cut to the list and moved by its scroll.
  *
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "olui_internal.h"
 
 #include <stdlib.h>

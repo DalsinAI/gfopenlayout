@@ -1,6 +1,6 @@
 /* GFOpenLayout's documents styled through GFCSS: what openlayout.c and
  * openlayout_css.c share. Not a public header.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #ifndef OPENLAYOUT_CSS_H
 #define OPENLAYOUT_CSS_H
 

@@ -5,7 +5,7 @@
 # GFOpen SDK's Lib/m68k-soft-m68040.specs. GFOpenLayout and the UI use no
 # floating point at all.
 #   OGT_ROOT=.../amigachrome-guest/libraries/opengadtools SPECS=.../m68k-soft-m68040.specs ./build-ui-amiga.sh
-# MIT, Copyright (c) 2026 AmigaChrome Team.
+# MIT, Copyright (c) 2026 AmiCradle Team.
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 STOVE=${STOVE:-"$HOME/AmiCradle/stoves/os32-gcc16"}

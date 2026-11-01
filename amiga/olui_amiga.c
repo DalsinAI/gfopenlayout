@@ -11,7 +11,7 @@
  * Text is the screen's font at each size, through diskfont.library, its
  * UTF-8 turned into Latin-1 for the bitmap fonts. Integer maths only.
  *
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfopenlayout_ui_amiga.h"
 
 #include <exec/memory.h>

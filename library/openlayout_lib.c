@@ -15,7 +15,7 @@
  * headers, GFOpenLayout 0.9), with no new calls.
  * Programs built for 2 to 8 keep working: a box style of an older size
  * has the fields after it 0, as ol_node_set_box copies only its size.
- * Copyright (c) 2026 AmigaChrome Team. MIT.
+ * Copyright (c) 2026 AmiCradle Team. MIT.
  */
 #include <exec/types.h>
 #include <exec/resident.h>

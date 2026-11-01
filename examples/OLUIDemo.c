@@ -7,7 +7,7 @@
  *
  *     OLUIDemo [FILE=markup.html] [CSS=style.css] [THEME=x.theme]
  *
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include <exec/types.h>
 #include <intuition/intuition.h>
 #include <dos/dos.h>
