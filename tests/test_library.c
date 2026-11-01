@@ -1,7 +1,7 @@
 #include <exec/types.h>
 #include <exec/libraries.h>
 #include <proto/exec.h>
-#include <proto/openlayout.h>
+#include <proto/gfopenlayout.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -61,7 +61,7 @@ int main(void)
 
     append.parent = p;
     append.role = OL_ROLE_TEXT;
-    append.text = (CONST_STRPTR)"Resident OpenLayout can lay out ";
+    append.text = (CONST_STRPTR)"Resident GFOpenLayout can lay out ";
     text = OL_NodeAppend(&append);
     CHECK(text != NULL);
     style.display = OL_DISPLAY_INLINE;

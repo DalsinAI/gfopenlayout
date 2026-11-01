@@ -1,14 +1,14 @@
-/* openlayout.library 8.0: version 3 adds pages, tables, frames and the
- * caret (OpenLayout 0.2) after version 2's calls, which are unchanged;
- * version 4 adds tab stops that align and their leaders (OpenLayout 0.3);
- * version 5 places frames anchored to their pages (OpenLayout 0.4, the
+/* gfopenlayout.library 8.0: version 3 adds pages, tables, frames and the
+ * caret (GFOpenLayout 0.2) after version 2's calls, which are unchanged;
+ * version 4 adds tab stops that align and their leaders (GFOpenLayout 0.3);
+ * version 5 places frames anchored to their pages (GFOpenLayout 0.4, the
  * box style's anchor), with no new calls; version 6 adds
  * OL_DocumentReserve and sorts the display list into its pages where it is
- * (OpenLayout 0.5); version 7 wraps the text round anchored frames (the
- * box style's wrap and wrap_gap, OpenLayout 0.6) and adds OL_FramePlace;
+ * (GFOpenLayout 0.5); version 7 wraps the text round anchored frames (the
+ * box style's wrap and wrap_gap, GFOpenLayout 0.6) and adds OL_FramePlace;
  * revision 7.1 lays out OL_BOX_EXACT_LINES (exact line spacing,
- * OpenLayout 0.7), a flag that 7.0 leaves out; version 8 lays out rows
- * and the box style's width, height, grow, gap and align (OpenLayout 0.8,
+ * GFOpenLayout 0.7), a flag that 7.0 leaves out; version 8 lays out rows
+ * and the box style's width, height, grow, gap and align (GFOpenLayout 0.8,
  * programs' windows), with no new calls.
  * Programs built for 2 to 7 keep working.
  * Copyright (c) 2026 AmigaChrome Team. MIT.
@@ -21,7 +21,7 @@
 #include <dos/dos.h>
 #include <proto/exec.h>
 
-#include "../include/libraries/openlayout.h"
+#include "../include/libraries/gfopenlayout.h"
 
 #define REG(r, decl) register decl __asm(#r)
 #define LIB_VERSION 8
@@ -38,10 +38,10 @@ int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "openlayout.library 8.0 (30.10.2026) OpenLayout 0.8, AmigaChrome Team\r\n";
+    "gfopenlayout.library 8.0 (30.10.2026) GFOpenLayout 0.8, AmiCradle Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: openlayout.library 8.0 (30.10.2026) OpenLayout 0.8, AmigaChrome Team";
+    "$VER: gfopenlayout.library 8.0 (30.10.2026) GFOpenLayout 0.8, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),

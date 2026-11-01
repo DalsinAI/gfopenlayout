@@ -1,18 +1,18 @@
 #!/bin/sh
-# OpenLayout UI for AmigaOS 3.x on the 68040: libolui.a (OpenLayout, the UI,
-# OpenGadTools' theme reader and the Intuition glue) and OLUIDemo, with the
+# GFOpenLayout UI for AmigaOS 3.x on the 68040: libolui.a (GFOpenLayout, the UI,
+# GFOpenGadTools' theme reader and the Intuition glue) and OLUIDemo, with the
 # os32 stove. Soft float (one binary with or without an FPU): give SPECS the
-# Open SDK's Lib/m68k-soft-m68040.specs. OpenLayout and the UI use no
+# GFOpen SDK's Lib/m68k-soft-m68040.specs. GFOpenLayout and the UI use no
 # floating point at all.
 #   OGT_ROOT=.../amigachrome-guest/libraries/opengadtools SPECS=.../m68k-soft-m68040.specs ./build-ui-amiga.sh
 # MIT, Copyright (c) 2026 AmigaChrome Team.
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-STOVE=${STOVE:-"$HOME/AmigaChrome/stoves/os32-gcc16"}
+STOVE=${STOVE:-"$HOME/AmiCradle/stoves/os32-gcc16"}
 CC=${CC:-"$STOVE/prefix/bin/m68k-amigaos-gcc"}
 AR=${AR:-"$STOVE/prefix/bin/m68k-amigaos-ar"}
 OUT=${OUT:-"$HERE/build-amiga/ui"}
-OGT_ROOT=${OGT_ROOT:?"OGT_ROOT: OpenGadTools (amigachrome-guest libraries/opengadtools), for its theme reader"}
+OGT_ROOT=${OGT_ROOT:?"OGT_ROOT: GFOpenGadTools (amigachrome-guest libraries/opengadtools), for its theme reader"}
 SPECS=${SPECS:-}
 SPECFLAG=""
 [ -n "$SPECS" ] && SPECFLAG="-specs=$SPECS"

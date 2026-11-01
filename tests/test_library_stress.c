@@ -1,7 +1,7 @@
 #include <exec/types.h>
 #include <exec/libraries.h>
 #include <proto/exec.h>
-#include <proto/openlayout.h>
+#include <proto/gfopenlayout.h>
 
 #include <stdio.h>
 #include <string.h>

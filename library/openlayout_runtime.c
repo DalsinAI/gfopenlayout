@@ -1,4 +1,4 @@
-/* Minimal process-free runtime for resident openlayout.library.
+/* Minimal process-free runtime for resident gfopenlayout.library.
  * Copyright (c) 2026 AmigaChrome Team. MIT.
  */
 #include <exec/types.h>

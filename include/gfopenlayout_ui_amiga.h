@@ -1,13 +1,13 @@
-/* OpenLayout UI in an Intuition window: draws olui's ops through
- * graphics.library (OpenGfx), true-colour boxes with cybergraphics'
- * FillPixelArray as OpenGadTools does, text in the screen's font at each
+/* GFOpenLayout UI in an Intuition window: draws olui's ops through
+ * graphics.library (GFOpenGfx), true-colour boxes with cybergraphics'
+ * FillPixelArray as GFOpenGadTools does, text in the screen's font at each
  * size through diskfont.library, all into a buffer the size of the window's
  * inside that is copied to the window when it changes; and turns the
  * window's IDCMP messages into olui_mouse and olui_key.
  *
  *     struct Window *w = OpenWindowTags(..., WA_IDCMP, olui_amiga_idcmp(), WA_ReportMouse, TRUE, ...);
  *     olui_amiga *a = olui_amiga_new(ui, w);
- *     olui_amiga_theme(a, NULL);              (the theme OpenPrefs Look chose)
+ *     olui_amiga_theme(a, NULL);              (the theme GFOpenPrefs Look chose)
  *     olui_amiga_layout(a);
  *     for (;;) { WaitPort(w->UserPort); while ((m = GT_GetIMsg / GetMsg(...))) {
  *         int r = olui_amiga_event(a, m); ReplyMsg(m); if (r == OLUI_AMIGA_CLOSE) ...; }
@@ -18,7 +18,7 @@
 #define OPENLAYOUT_UI_AMIGA_H
 
 #include <exec/types.h>
-#include "openlayout_ui.h"
+#include "gfopenlayout_ui.h"
 
 struct Window;
 struct IntuiMessage;
@@ -41,7 +41,7 @@ olui_amiga *olui_amiga_new(olui *ui, struct Window *win);
 void olui_amiga_free(olui_amiga *a);
 
 /* The theme as CSS before the program's own: a theme file's path, or NULL
- * for the one OpenPrefs Look chose (ENV:OpenGadTools/Look, from
+ * for the one GFOpenPrefs Look chose (ENV:GFOpenGadTools/Look, from
  * SYS:Prefs/Presets/Themes). 1 when one was read. */
 int olui_amiga_theme(olui_amiga *a, const char *path);
 

@@ -1,7 +1,7 @@
-/* OpenLayout 0.8: rows, widths, heights, grow and gap (OL_BOX_ROW and the
+/* GFOpenLayout 0.8: rows, widths, heights, grow and gap (OL_BOX_ROW and the
  * box style's width, height, grow, gap and align), for programs' windows.
  * MIT, Copyright (c) 2026 AmigaChrome Team. */
-#include "openlayout.h"
+#include "gfopenlayout.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -186,7 +186,7 @@ int main(void)
     CHECK(ol_node_bounds(b).width - ol_node_bounds(a).width == OL_CSSPX(32));
     CHECK(ol_document_content_height(doc) == OL_CSSPX(200));
 
-    /* a box style from openlayout.library 7 (0.7's size) leaves 0.8's fields unset */
+    /* a box style from gfopenlayout.library 7 (0.7's size) leaves 0.8's fields unset */
     ol_box_style_init(&old);
     old.size = (uint32_t)OL_BOX_STYLE_SIZE_0_7;
     old.width = OL_CSSPX(99);

@@ -1,9 +1,9 @@
-/* OpenLayout UI on the host: markup and CSS to a laid out window, the
+/* GFOpenLayout UI on the host: markup and CSS to a laid out window, the
  * widgets' events through C callbacks, the keyboard, the theme as CSS.
  * With an argument, writes the window's draw ops there as lines of text
  * (tests/ui_render.py draws them as a picture).
  * MIT, Copyright (c) 2026 AmigaChrome Team. */
-#include "openlayout_ui.h"
+#include "gfopenlayout_ui.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,14 +1,14 @@
-# OpenLayout
+# GFOpenLayout
 
-OpenLayout is the small semantic layout and display-list engine shared by the Open Amiga applications.
+GFOpenLayout is the small semantic layout and display-list engine shared by the Open Amiga applications.
 
-It is intentionally independent of OpenWrite document formats and HTML parsing. Consumers provide a semantic tree and computed styles; OpenLayout provides deterministic geometry, stable object IDs, hit-testing and a renderer-neutral display list.
+It is intentionally independent of GFOpenWrite document formats and HTML parsing. Consumers provide a semantic tree and computed styles; GFOpenLayout provides deterministic geometry, stable object IDs, hit-testing and a renderer-neutral display list.
 
 ## First light
 
 The 0.1 foundation includes:
 
-- exact units shared by CSS pixels, print points and OpenWrite twips;
+- exact units shared by CSS pixels, print points and GFOpenWrite twips;
 - stable semantic IDs;
 - block/inline flow and word wrapping;
 - text measurement callback;
@@ -71,14 +71,14 @@ as wide as its `box.width` or its content, sharing the room left by
 `box.grow` (or giving room up in proportion when there is too little),
 `box.gap` apart, as tall as the row or at its top, middle or bottom
 (`box.align`). A box with a `box.height` shares what its children leave
-below them among those that grow. `openlayout.library` 8.0 lays these out,
+below them among those that grow. `gfopenlayout.library` 8.0 lays these out,
 with no new calls (`OPENLAYOUTLIB_ROW_VERSION`).
 
-On them sits **OpenLayout UI** (`include/openlayout_ui.h`, `ui/`, `amiga/`):
-a program's window described in HTML and CSS, laid out by OpenLayout,
-drawn in the OpenGadTools theme, with its events in the program's C
+On them sits **GFOpenLayout UI** (`include/gfopenlayout_ui.h`, `ui/`, `amiga/`):
+a program's window described in HTML and CSS, laid out by GFOpenLayout,
+drawn in the GFOpenGadTools theme, with its events in the program's C
 functions. Buttons, checkboxes, radio buttons, fields, lists and trees,
-tabs and progress bars. [docs/OpenLayout-UI.md](docs/OpenLayout-UI.md)
+tabs and progress bars. [docs/GFOpenLayout-UI.md](docs/GFOpenLayout-UI.md)
 describes it; `examples/OLUIDemo.c` is a whole program.
 
 ## Build and test
@@ -86,11 +86,11 @@ describes it; `examples/OLUIDemo.c` is a whole program.
 Host:
 
 ```sh
-make test                                   # OpenLayout, and the UI without a theme reader
-make test OGT_ROOT=<opengadtools>           # the UI with OpenGadTools' theme reader
+make test                                   # GFOpenLayout, and the UI without a theme reader
+make test OGT_ROOT=<opengadtools>           # the UI with GFOpenGadTools' theme reader
 ```
 
-OpenLayout UI for the Amiga (`libolui.a`, `OLUIDemo`, `OLUITest`, `OLRowsTest`), soft float:
+GFOpenLayout UI for the Amiga (`libolui.a`, `OLUIDemo`, `OLUITest`, `OLRowsTest`), soft float:
 
 ```sh
 OGT_ROOT=<opengadtools> SPECS=<SDK>/Lib/m68k-soft-m68040.specs ./build-ui-amiga.sh
@@ -127,15 +127,15 @@ Resident Amiga library and ABI test:
 ./build-library.sh
 ```
 
-The resident build produces `build-amiga/lib/openlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `openlayout.library` 8.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those; version 5 places frames anchored to their pages (`box.anchor`, OpenLayout 0.4) with no new calls; version 6 adds `OL_DocumentReserve` (OpenLayout 0.5); version 7 wraps text round anchored frames (`box.wrap`, OpenLayout 0.6) and adds `OL_FramePlace` (where a frame went); revision 7.1 lays a block's lines out exactly its line height with `OL_BOX_EXACT_LINES` (OpenLayout 0.7), a flag 7.0 ignores; version 8 lays out rows and the box style's width, height, grow, gap and align (OpenLayout 0.8), with no new calls. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4), one that anchors frames `OPENLAYOUTLIB_ANCHOR_VERSION` (5), one that reserves the display list's room `OPENLAYOUTLIB_RESERVE_VERSION` (6), one that wraps text round frames `OPENLAYOUTLIB_WRAP_VERSION` (7), and one that lays out rows `OPENLAYOUTLIB_ROW_VERSION` (8). The library's `OL_BoxStyleInit` fills only the `ol_box_style` that programs built for 3 and 4 have (`OL_BOX_STYLE_SIZE_0_3` bytes), so it never writes past theirs; a program that anchors a frame then sets `size` to `sizeof(ol_box_style)` and `anchor` (and `wrap` and `wrap_gap`).
+The resident build produces `build-amiga/lib/gfopenlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `gfopenlayout.library` 8.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those; version 5 places frames anchored to their pages (`box.anchor`, GFOpenLayout 0.4) with no new calls; version 6 adds `OL_DocumentReserve` (GFOpenLayout 0.5); version 7 wraps text round anchored frames (`box.wrap`, GFOpenLayout 0.6) and adds `OL_FramePlace` (where a frame went); revision 7.1 lays a block's lines out exactly its line height with `OL_BOX_EXACT_LINES` (GFOpenLayout 0.7), a flag 7.0 ignores; version 8 lays out rows and the box style's width, height, grow, gap and align (GFOpenLayout 0.8), with no new calls. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4), one that anchors frames `OPENLAYOUTLIB_ANCHOR_VERSION` (5), one that reserves the display list's room `OPENLAYOUTLIB_RESERVE_VERSION` (6), one that wraps text round frames `OPENLAYOUTLIB_WRAP_VERSION` (7), and one that lays out rows `OPENLAYOUTLIB_ROW_VERSION` (8). The library's `OL_BoxStyleInit` fills only the `ol_box_style` that programs built for 3 and 4 have (`OL_BOX_STYLE_SIZE_0_3` bytes), so it never writes past theirs; a program that anchors a frame then sets `size` to `sizeof(ol_box_style)` and `anchor` (and `wrap` and `wrap_gap`).
 
 The OS 3.2.3 / AC090 68040 qualification opens the library from `LIBS:` and runs both the normal ABI test and a 48-node stress test covering allocation growth, metadata, image nodes, layout and display-list access.
 
-The Amiga builds use the AmigaChrome os32-gcc16 stove by default.
+The Amiga builds use the AmiCradle os32-gcc16 stove by default.
 
 ## Geometry
 
-- 1 point = 80 OpenLayout units
+- 1 point = 80 GFOpenLayout units
 - 1 CSS pixel = 60 units
 - 1 twip = 4 units
 - 1 inch = 5760 units

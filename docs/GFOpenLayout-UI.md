@@ -1,15 +1,15 @@
-# OpenLayout UI
+# GFOpenLayout UI
 
-OpenLayout UI (`olui`, version 0.2) lets a program describe its window in
-HTML and CSS. OpenLayout lays the window out, the OpenGadTools theme draws
+GFOpenLayout UI (`olui`, version 0.2) lets a program describe its window in
+HTML and CSS. GFOpenLayout lays the window out, the GFOpenGadTools theme draws
 it, and the program's own C functions are called back when something
-happens. It came from the OpenClaude window, which needed a tree that
-GadTools hasn't got.
+happens. It came from a chat window that needed a tree GadTools hasn't
+got.
 
 ```c
 olui *ui = olui_new();
 olui_amiga *a = olui_amiga_new(ui, window);
-olui_amiga_theme(a, NULL);                    /* the theme OpenPrefs Look chose */
+olui_amiga_theme(a, NULL);                    /* the theme GFOpenPrefs Look chose */
 olui_load(ui, "<row><input id=name style='flex:1'><button id=ok>OK</button></row>",
           "button{width:80px}", err, sizeof err);
 olui_on(ui, "ok", OLUI_CLICK, ok_pressed, my_data);
@@ -22,22 +22,22 @@ olui_amiga_layout(a);
 ## How it fits
 
 - **GadTools stays.** Every GadTools program keeps working as it is, and
-  OpenGadTools is still how a plain window is made. OpenLayout UI is the
-  "GUI described once" that OpenGadTools' `DESIGN.md` plans as phase 6,
+  GFOpenGadTools is still how a plain window is made. GFOpenLayout UI is the
+  "GUI described once" that GFOpenGadTools' `DESIGN.md` plans as phase 6,
   for programs whose windows GadTools can't make well: trees, panes that
   share the room, pages of settings.
-- **One look.** The theme file OpenPrefs Look chose is turned into CSS
-  (`olui_theme_css`) with OpenGadTools' own theme reader
+- **One look.** The theme file GFOpenPrefs Look chose is turned into CSS
+  (`olui_theme_css`) with GFOpenGadTools' own theme reader
   (`lib/ogt_theme.c`), so these windows take the same colours, gradients
   and corners as GadTools windows. A program's CSS comes after the theme,
   so it can change any of it.
-- **Drawing is OpenGfx.** The Amiga glue draws through graphics.library,
-  which is OpenGfx's; boxes on a true-colour screen go through
-  cybergraphics' `FillPixelArray` in exact colours, as OpenGadTools' look
+- **Drawing is GFOpenGfx.** The Amiga glue draws through graphics.library,
+  which is GFOpenGfx's; boxes on a true-colour screen go through
+  cybergraphics' `FillPixelArray` in exact colours, as GFOpenGadTools' look
   does. On a palette screen it uses pens, with a gradient in four bands, as
   `THEME_SPEC.md` section 6 says.
-- **No floating point.** OpenLayout and the UI use integers only, so a
-  program is built soft float (`-m68040` and the Open SDK's specs file)
+- **No floating point.** GFOpenLayout and the UI use integers only, so a
+  program is built soft float (`-m68040` and the GFOpen SDK's specs file)
   and runs on a 68040 with or without an FPU.
 
 ## The markup
@@ -118,7 +118,7 @@ wheel scrolls a list.
 
 ## The calls
 
-`include/openlayout_ui.h` describes each one. The main ones:
+`include/gfopenlayout_ui.h` describes each one. The main ones:
 
 | Call | Does |
 | --- | --- |
@@ -137,7 +137,7 @@ wheel scrolls a list.
 | `olui_tabs_current`, `olui_tabs_select` | |
 | `olui_theme_css(text, dark, err, len)` | A theme file as CSS |
 
-The Amiga glue (`include/openlayout_ui_amiga.h`): `olui_amiga_idcmp()`,
+The Amiga glue (`include/gfopenlayout_ui_amiga.h`): `olui_amiga_idcmp()`,
 `olui_amiga_new(ui, window)`, `olui_amiga_theme(a, path or NULL)`,
 `olui_amiga_layout(a)`, `olui_amiga_event(a, msg)`, `olui_amiga_draw(a)`,
 `olui_amiga_free(a)`; `olui_amiga_own(a, el, fn, data)` for a widget the
@@ -148,15 +148,15 @@ elements, drawn into the window's buffer with the rest. It draws into a buffer t
 inside, a simple layer on a bitmap like the window's, and copies it to the
 window in one blit, so nothing flickers.
 
-## OpenLayout 0.8
+## GFOpenLayout 0.8
 
-What the UI needed in OpenLayout itself, for any program:
+What the UI needed in GFOpenLayout itself, for any program:
 
 - `OL_BOX_ROW`: a box's children side by side, as a CSS flex row;
 - the box style's `width`, `height`, `grow`, `gap` and `align`;
 - a box with a height shares what its children leave among those that grow.
 
-`openlayout.library` is 8.0 for these, with no new calls: a program sets
+`gfopenlayout.library` is 8.0 for these, with no new calls: a program sets
 `ol_box_style.size` to `sizeof(ol_box_style)` and opens version 8
 (`OPENLAYOUTLIB_ROW_VERSION`). `tests/test_rows.c` tests them.
 
@@ -166,8 +166,8 @@ Measured 30 October 2026:
 
 | | |
 | --- | --- |
-| Code, 68040, `-Os` | OpenLayout 20.9 KB; the UI 30.1 KB (widgets 15.1, CSS 7.9, markup 4.3, theme 2.8) |
-| Memory, 68040 | 252 bytes a node in OpenLayout, 340 an element in the UI, 100 a display op, and their text: a window of 300 widgets about 220 KB |
+| Code, 68040, `-Os` | GFOpenLayout 20.9 KB; the UI 30.1 KB (widgets 15.1, CSS 7.9, markup 4.3, theme 2.8) |
+| Memory, 68040 | 252 bytes a node in GFOpenLayout, 340 an element in the UI, 100 a display op, and their text: a window of 300 widgets about 220 KB |
 | Laying out a window of 265 widgets and a list of 100 items | 117 µs on a 2.1 GHz Xeon when only states changed (styles kept), 279 µs with every style worked out again |
 
 Each element's style is kept until the stylesheet or its states change, so
@@ -185,8 +185,8 @@ Amiga: `OGT_ROOT=<opengadtools> SPECS=<SDK>/Lib/m68k-soft-m68040.specs
 ./build-ui-amiga.sh` builds `libolui.a`, `OLUIDemo`, `OLUITest` and
 `OLRowsTest` with the os32 stove.
 
-A program links `libolui.a` and includes `openlayout_ui.h` and
-`openlayout_ui_amiga.h`.
+A program links `libolui.a` and includes `gfopenlayout_ui.h` and
+`gfopenlayout_ui_amiga.h`.
 
 ## Not yet
 

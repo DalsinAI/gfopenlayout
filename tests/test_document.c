@@ -1,10 +1,10 @@
 /*
- * OpenLayout 0.2's document layout: alignment and justification, shared
+ * GFOpenLayout 0.2's document layout: alignment and justification, shared
  * baselines, font numbers, grid tables, frames, pages, and the caret and
  * character hit-testing an editor needs.
  * MIT, Copyright (c) 2026 AmigaChrome Team.
  */
-#include "openlayout.h"
+#include "gfopenlayout.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -367,7 +367,7 @@ static void test_anchored_frames(void)
           ops[0]->u.text.bounds.y == OL_CSSPX(30));
     CHECK(ol_display_get(doc, ol_display_count(doc) - 1)->u.text.node_id == ol_node_id(t3));
 
-    /* a program that knows 0.3's ol_box_style (openlayout.library 3 or 4): its frames are not anchored */
+    /* a program that knows 0.3's ol_box_style (gfopenlayout.library 3 or 4): its frames are not anchored */
     ol_box_style_init(&box);
     box.flags = OL_BOX_ABSOLUTE;
     box.anchor = OL_ANCHOR_BEHIND;
@@ -1206,7 +1206,7 @@ static void test_wrap_frames(void)
     op = first_text(doc, ol_node_by_id(doc, body[0]));
     CHECK(op && op->u.text.bounds.x == OL_CSSPX(20) && op->u.text.bounds.y == OL_CSSPX(20));
 
-    /* a program built for 0.5's ol_box_style (openlayout.library 5 or 6): no wrap */
+    /* a program built for 0.5's ol_box_style (gfopenlayout.library 5 or 6): no wrap */
     box.wrap = OL_WRAP_SQUARE;
     box.size = (uint32_t)OL_BOX_STYLE_SIZE_0_5;
     ol_node_set_box(f1, &box);
