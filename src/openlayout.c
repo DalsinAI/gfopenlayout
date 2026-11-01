@@ -1,4 +1,5 @@
 #include "gfopenlayout.h"
+#include "openlayout_css.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,7 @@ struct ol_node {
     char *name;
     char *value;
     char *href;
+    void *css;                /* GFCSS: its element (tag, attributes, states): openlayout_css.c */
 
     ol_style style;
     ol_rect bounds;
@@ -91,6 +93,7 @@ struct ol_document {
     ol_unit viewport_width;
     uint32_t generation;
     ol_id next_id;
+    void *css;                /* GFCSS: its stylesheets: openlayout_css.c */
 
     /* collected while laying out, for pages */
     ol_span *keeps;
@@ -349,6 +352,7 @@ ol_document *ol_document_new(void)
 static void free_node(ol_node *node)
 {
     if (!node) return;
+    ol_css_node_free(node->css);
     free(node->text);
     free(node->name);
     free(node->value);
@@ -363,6 +367,7 @@ void ol_document_free(ol_document *doc)
 {
     size_t i;
     if (!doc) return;
+    ol_css_document_free(doc->css);
     for (i = 0; i < doc->node_count; ++i) free_node(doc->nodes[i]);
     free(doc->nodes);
     free(doc->ops);
@@ -596,6 +601,51 @@ const ol_node *ol_node_by_id(const ol_document *doc, ol_id id)
 const ol_node *ol_node_parent(const ol_node *node)
 {
     return node ? node->parent : NULL;
+}
+
+const ol_node *ol_node_first_child(const ol_node *node)
+{
+    return node ? node->first_child : NULL;
+}
+
+const ol_node *ol_node_next_sibling(const ol_node *node)
+{
+    return node ? node->next_sibling : NULL;
+}
+
+/* ---- What openlayout_css.c needs of the tree (GFCSS) ------------------------------- */
+
+void *ol_css_node_data(const ol_node *node) { return node ? node->css : NULL; }
+void ol_css_set_node_data(ol_node *node, void *css) { if (node) node->css = css; }
+void *ol_css_document_data(const ol_document *doc) { return doc ? doc->css : NULL; }
+void ol_css_set_document_data(ol_document *doc, void *css) { if (doc) doc->css = css; }
+ol_document *ol_css_node_document(const ol_node *node) { return node ? node->doc : NULL; }
+size_t ol_css_node_count(const ol_document *doc) { return doc ? doc->node_count : 0; }
+ol_node *ol_css_first_child(ol_node *node) { return node ? node->first_child : NULL; }
+ol_node *ol_css_next_sibling(ol_node *node) { return node ? node->next_sibling : NULL; }
+ol_node *ol_css_parent(ol_node *node) { return node ? node->parent : NULL; }
+
+/* node out of its parent's children, then back in as the first (first) or the last */
+void ol_css_move_child(ol_node *node, int first)
+{
+    ol_node *parent = node ? node->parent : NULL, *c, *before = NULL;
+    if (!parent) return;
+    if (first ? parent->first_child == node : parent->last_child == node) return;
+    for (c = parent->first_child; c && c != node; c = c->next_sibling) before = c;
+    if (!c) return;
+    if (before) before->next_sibling = node->next_sibling;
+    else parent->first_child = node->next_sibling;
+    if (parent->last_child == node) parent->last_child = before;
+    node->next_sibling = NULL;
+    if (first) {
+        node->next_sibling = parent->first_child;
+        parent->first_child = node;
+        if (!parent->last_child) parent->last_child = node;
+    } else {
+        if (parent->last_child) parent->last_child->next_sibling = node;
+        else parent->first_child = node;
+        parent->last_child = node;
+    }
 }
 
 const ol_node *ol_find_role_name(const ol_document *doc, ol_role role,
@@ -2770,6 +2820,7 @@ int ol_layout(ol_document *doc, ol_unit viewport_width,
 {
     int pass, changed;
     if (!doc || viewport_width <= 0) return 0;
+    if (doc->css && !ol_css_restyle(doc, viewport_width)) return 0;   /* GFCSS: its sheets first */
     doc->zone_count = 0;
     doc->paging = 0;
     for (pass = 1;; ++pass) {               /* 0.6: again while the frames to wrap round move */
@@ -2798,6 +2849,7 @@ int ol_layout_pages(ol_document *doc, const ol_page *page,
     body_w = page->width - page->margin_left - page->margin_right;
     body_h = page->height - page->margin_top - page->margin_bottom;
     if (body_w <= 0 || body_h <= 0) return 0;
+    if (doc->css && !ol_css_restyle(doc, body_w)) return 0;           /* GFCSS: its sheets first */
     /* 0.6: laid out again, round the frames to wrap round where the last pass put them, until they stay */
     doc->zone_count = 0;
     doc->paging = 1;

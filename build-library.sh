@@ -16,6 +16,7 @@ cp "$HERE/include/proto/gfopenlayout.h" "$OUT/include/proto/"
   -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter -nostartfiles \
   -I"$HERE/include" -o "$OUT/lib/gfopenlayout.library" \
   "$HERE/library/openlayout_lib.c" "$HERE/library/openlayout_runtime.c" "$HERE/src/openlayout.c" \
+  "$HERE/src/gfcss_parse.c" "$HERE/src/gfcss_values.c" "$HERE/src/gfcss_select.c" "$HERE/src/openlayout_css.c" \
   -lamiga -lgcc -Wl,-Map,"$OUT/lib/gfopenlayout.library.map"
 
 echo "$OUT/lib/gfopenlayout.library ($(wc -c < "$OUT/lib/gfopenlayout.library") bytes)"

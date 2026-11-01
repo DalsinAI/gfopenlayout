@@ -17,10 +17,10 @@ UI_INC =
 endif
 UI_SRC = ui/olui.c ui/olui_css.c ui/olui_markup.c $(UI_THEME)
 
-# GFCSS, the CSS engine
-CSS_SRC = src/gfcss_parse.c src/gfcss_values.c src/gfcss_select.c
+# GFCSS, the CSS engine, and GFOpenLayout's documents styled through it
+CSS_SRC = src/gfcss_parse.c src/gfcss_values.c src/gfcss_select.c src/openlayout_css.c
 CSS_OBJ = $(CSS_SRC:src/%.c=$(BUILD)/%.o)
-CSS_HDR = include/gfopenlayout.h include/gfopenlayout_css.h src/gfcss_internal.h
+CSS_HDR = include/gfopenlayout.h include/gfopenlayout_css.h src/gfcss_internal.h src/openlayout_css.h
 
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_ui \
      $(BUILD)/test_css
@@ -28,7 +28,7 @@ all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUIL
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/openlayout.o: src/openlayout.c include/gfopenlayout.h | $(BUILD)
+$(BUILD)/openlayout.o: src/openlayout.c include/gfopenlayout.h src/openlayout_css.h | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) -DOL_CHECK_SORT -Iinclude -c src/openlayout.c -o $@
 
 $(BUILD)/%.o: src/%.c $(CSS_HDR) | $(BUILD)
