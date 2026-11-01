@@ -79,6 +79,9 @@ typedef struct olui_sheet olui_sheet;
 olui_sheet *olui_sheet_new(void);
 void olui_sheet_free(olui_sheet *sheet);
 int olui_sheet_add(olui_sheet *sheet, const char *css);
+/* Every state (S_...) the sheet's selectors name: a change to another
+ * state changes no element's style */
+unsigned olui_sheet_states(const olui_sheet *sheet);
 /* el's style from its parent's (NULL: the defaults) and the rules that match it */
 void olui_style_compute(const olui_sheet *sheet, olui_el *el, const olui_cs *parent);
 /* one declaration list ("color: red; padding: 2px") on cs */

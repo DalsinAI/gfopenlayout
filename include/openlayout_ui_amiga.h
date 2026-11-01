@@ -48,7 +48,7 @@ int olui_amiga_theme(olui_amiga *a, const char *path);
 /* A widget the program draws itself (a div with a background, so it has a
  * box): the buffer is copied to the window around it, and fn is called
  * with its box in the window's RastPort's pixels each time the window is
- * drawn, to draw it there. fn NULL gives it back. Four at most; 1 when it
+ * drawn where it is, to draw it there. fn NULL gives it back. Four at most; 1 when it
  * was taken. */
 typedef void (*olui_amiga_own_fn)(void *userdata, const olui_el *el, int x, int y, int w, int h);
 int olui_amiga_own(olui_amiga *a, const olui_el *el, olui_amiga_own_fn fn, void *userdata);
@@ -56,7 +56,7 @@ int olui_amiga_own(olui_amiga *a, const olui_el *el, olui_amiga_own_fn fn, void 
 /* The pictures of img elements (<img image=N width=.. height=..>, in a
  * button too, for a toolbox): fn draws picture N into rp, the buffer the
  * window is drawn in, at x,y and w by h, cut to what olui is drawing. It is
- * called each time the window is drawn; the pen, draw mode and font are
+ * called each time the window is drawn where it is; the pen, draw mode and font are
  * fn's to set. NULL: img keeps its place empty. */
 struct RastPort;
 typedef void (*olui_amiga_image_fn)(void *userdata, struct RastPort *rp, const olui_el *el, int image, int x, int y,

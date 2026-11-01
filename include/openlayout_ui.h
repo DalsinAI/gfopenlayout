@@ -142,11 +142,13 @@ typedef struct {
 
 typedef void (*olui_draw_fn)(void *userdata, const olui_draw_op *op);
 
-/* Draws what crosses area (NULL: all of it), back to front. */
+/* Draws what crosses area (NULL: all of it), back to front; the drawer
+ * cuts what it draws to area. */
 void olui_draw(olui *ui, const olui_rect *area, olui_draw_fn draw, void *userdata);
 
-/* 1 when something changed that needs drawing, with the area it is in;
- * olui_draw clears it. */
+/* 1 when something changed that needs drawing, with the area it is in: a
+ * hover, press or focus that changes no size, where it changed; else the
+ * window. olui_draw clears it. */
 int olui_damaged(const olui *ui, olui_rect *area);
 
 /* ---- Input ----------------------------------------------------------------- */
