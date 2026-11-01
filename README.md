@@ -195,4 +195,4 @@ See `DESIGN.md` and `docs/LIGHTWEIGHT_BROWSER.md`.
 
 ## Licence
 
-MIT. Copyright (c) 2026 AmigaChrome Team.
+MIT. Copyright (c) 2026 AmiCradle Team.

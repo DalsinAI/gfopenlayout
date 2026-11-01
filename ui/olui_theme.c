@@ -3,7 +3,7 @@
  * built in from OGT_ROOT), so a window described in HTML and CSS takes the
  * same colours, gradients and corners as every GadTools window. The
  * program's own CSS, added after, can still change any of it.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "olui_internal.h"
 
 #include "ogt_theme.h"

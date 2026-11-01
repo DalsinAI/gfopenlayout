@@ -1,7 +1,7 @@
 /* GFOpenLayout 0.9: web boxes. Per-side borders, widths in thousandths with
  * their least and most, auto side margins, inline-blocks, cells' vertical
  * alignment and table headers repeated on the pages a table goes on to.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfopenlayout.h"
 
 #include <stdio.h>

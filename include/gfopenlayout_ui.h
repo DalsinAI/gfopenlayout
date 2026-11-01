@@ -13,7 +13,7 @@
  * on GFOpenGfx, the IDCMP loop) is gfopenlayout_ui_amiga.h. All sizes and
  * positions here are pixels; GFOpenLayout's units stay inside.
  *
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #ifndef OPENLAYOUT_UI_H
 #define OPENLAYOUT_UI_H
 

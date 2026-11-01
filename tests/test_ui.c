@@ -3,7 +3,7 @@
  * With an argument, writes the window's draw ops there as lines of text
  * (tests/ui_render.py draws them as a picture); a second, the window as it
  * opens; a third, 0.3's widgets' window.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfopenlayout_ui.h"
 
 #include <stdio.h>

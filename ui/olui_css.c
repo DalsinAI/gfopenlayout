@@ -2,7 +2,7 @@
  * descendant and child combinators, and the properties a program's window
  * needs (GFOpenLayout-UI.md lists them). Written for GFOpenLayout UI; the
  * selector parser follows GFOpenBrowser Lite's (ob_css_lite.c).
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "olui_internal.h"
 
 #include <ctype.h>
