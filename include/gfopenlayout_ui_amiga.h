@@ -13,7 +13,7 @@
  *         int r = olui_amiga_event(a, m); ReplyMsg(m); if (r == OLUI_AMIGA_CLOSE) ...; }
  *         olui_amiga_draw(a); }
  *
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #ifndef OPENLAYOUT_UI_AMIGA_H
 #define OPENLAYOUT_UI_AMIGA_H
 

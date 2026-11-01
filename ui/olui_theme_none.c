@@ -1,6 +1,6 @@
 /* GFOpenLayout UI built without GFOpenGadTools' theme reader (no OGT_ROOT):
  * olui_theme_css says so, and the built-in look stands.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "olui_internal.h"
 
 #include <stdio.h>

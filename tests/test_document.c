@@ -2,7 +2,7 @@
  * GFOpenLayout 0.2's document layout: alignment and justification, shared
  * baselines, font numbers, grid tables, frames, pages, and the caret and
  * character hit-testing an editor needs.
- * MIT, Copyright (c) 2026 AmigaChrome Team.
+ * MIT, Copyright (c) 2026 AmiCradle Team.
  */
 #include "gfopenlayout.h"
 

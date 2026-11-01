@@ -1,5 +1,5 @@
 /* GFOpenLayout UI's insides, shared by its files.
- * MIT, Copyright (c) 2026 AmigaChrome Team. */
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
 #ifndef OLUI_INTERNAL_H
 #define OLUI_INTERNAL_H
 

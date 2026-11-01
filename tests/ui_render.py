@@ -4,7 +4,7 @@ the host: python3 tests/ui_render.py ops.txt window.png
 
 Boxes, gradients, borders, marks and clips as olui_draw hands them over;
 text in DejaVu Sans at each op's pixel size. Not the Amiga's drawing: that
-is amiga/olui_amiga.c on OpenGfx. MIT, Copyright (c) 2026 AmigaChrome Team.
+is amiga/olui_amiga.c on OpenGfx. MIT, Copyright (c) 2026 AmiCradle Team.
 """
 import sys
 

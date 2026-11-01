@@ -1,5 +1,5 @@
 /* Minimal process-free runtime for resident gfopenlayout.library.
- * Copyright (c) 2026 AmigaChrome Team. MIT.
+ * Copyright (c) 2026 AmiCradle Team. MIT.
  */
 #include <exec/types.h>
 #include <exec/memory.h>

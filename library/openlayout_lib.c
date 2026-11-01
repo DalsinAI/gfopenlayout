@@ -11,7 +11,7 @@
  * and the box style's width, height, grow, gap and align (GFOpenLayout 0.8,
  * programs' windows), with no new calls.
  * Programs built for 2 to 7 keep working.
- * Copyright (c) 2026 AmigaChrome Team. MIT.
+ * Copyright (c) 2026 AmiCradle Team. MIT.
  */
 #include <exec/types.h>
 #include <exec/resident.h>
