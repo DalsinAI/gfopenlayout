@@ -26,7 +26,7 @@
 extern "C" {
 #endif
 
-#define OLUI_VERSION "0.2"
+#define OLUI_VERSION "0.3"
 
 typedef struct olui olui;
 typedef struct olui_el olui_el;
@@ -34,13 +34,16 @@ typedef struct olui_el olui_el;
 /* What happened (olui_event.type) */
 enum {
     OLUI_CLICK = 1,     /* a button was pressed (mouse, Return or space) */
-    OLUI_CHANGE,        /* a checkbox or radio button changed, or a field's text */
+    OLUI_CHANGE,        /* a checkbox or radio button changed, a field's or textarea's text, a select's choice */
     OLUI_SUBMIT,        /* Return in a field */
     OLUI_SELECT,        /* a list's selected item changed; a tab was chosen */
     OLUI_ACTIVATE,      /* a list item double-clicked, or Return on it */
     OLUI_EXPAND,        /* a tree item opened */
     OLUI_COLLAPSE,      /* and closed */
     OLUI_FOCUS,         /* a widget took the keyboard */
+    OLUI_CUT,           /* text to put on the clipboard (value), taken out of the field after */
+    OLUI_COPY,          /* text to put on the clipboard (value) */
+    OLUI_PASTE,         /* the field wants the clipboard's text: give it with olui_insert_text */
     OLUI_EVENT_COUNT
 };
 
@@ -49,8 +52,10 @@ typedef struct {
     olui_el *el;        /* the widget: the button, field, list, tabs */
     const char *id;     /* its id attribute ("" when it has none) */
     olui_el *item;      /* a list's item, a tabs' tab; else NULL */
-    const char *value;  /* a field's text; an item's or a tab's value (its id when it has no value); a radio's value */
-    int index;          /* an item's place among the visible rows, a tab's number; else -1 */
+    const char *value;  /* a field's text (none for a password); an item's or a tab's value (its id when it has no value); a radio's value;
+                         * a select's option's value (its text when it has none); what to copy or cut */
+    int index;          /* an item's place among the visible rows, a tab's number, a select's option's from 0,
+                         * a slider's or number field's value; else -1 */
     int checked;        /* a checkbox's or radio button's state */
 } olui_event;
 
@@ -106,7 +111,10 @@ enum {
     OLUI_MARK_DOT,      /* a radio button's dot */
     OLUI_MARK_OPEN,     /* a tree item's arrow, open (pointing down) */
     OLUI_MARK_CLOSED,   /* and closed (pointing right) */
-    OLUI_MARK_CARET     /* a field's caret: a thin bar */
+    OLUI_MARK_CARET,    /* a field's caret: a thin bar */
+    OLUI_MARK_DROPDOWN, /* a select's mark: an arrow pointing down */
+    OLUI_MARK_SPIN_UP,  /* a number field's buttons: an arrow pointing up */
+    OLUI_MARK_SPIN_DOWN /* and down */
 };
 
 #define OLUI_MAX_STOPS 4
@@ -179,11 +187,22 @@ enum {
     OLUI_KEY_ESCAPE
 };
 #define OLUI_QUAL_SHIFT 1u
+#define OLUI_QUAL_COMMAND 2u    /* the Amiga key (Ctrl on the host): with x, c, v and a, cut, copy, paste and all */
 
 /* The pointer, in the window's inner box's pixels. 1 when it was used. */
 int olui_mouse(olui *ui, int x, int y, int what);
-/* A key for the widget with the keyboard (Tab moves between them). 1 when it was used. */
+/* A key for the widget with the keyboard (Tab moves between them). 1 when it was used.
+ * Shift with an arrow is a textarea's selection; elsewhere Shift-Up and
+ * Shift-Down are PageUp and PageDown, Shift-Left and Shift-Right Home and End. */
 int olui_key(olui *ui, unsigned code, unsigned qualifiers);
+
+/* Time going by, ms since the last call: the program calls it now and then
+ * (the Amiga glue on IDCMP_INTUITICKS, about every 100 ms). A tooltip shows
+ * when the pointer has rested on an element with a title for
+ * OLUI_TIP_DELAY ms, and a number field's held arrow button repeats. 1 when
+ * something needs drawing (olui_damaged says where). */
+#define OLUI_TIP_DELAY 700
+int olui_tick(olui *ui, unsigned ms);
 
 /* ---- The widgets ------------------------------------------------------------- */
 
@@ -191,7 +210,8 @@ olui_el *olui_find(olui *ui, const char *id);
 const char *olui_id(const olui_el *el);
 const char *olui_tag(const olui_el *el);
 
-/* A label's, button's, checkbox's or item's text; a field's contents. */
+/* A label's, button's, checkbox's or item's text; a field's or textarea's
+ * contents (a password's too); a select's chosen option's text. */
 const char *olui_get_text(const olui_el *el);
 int olui_set_text(olui *ui, olui_el *el, const char *utf8);
 /* value attribute (an item's, a radio's, a tab's) */
@@ -213,6 +233,51 @@ void olui_set_slider(olui *ui, olui_el *el, int value);
 int olui_box(olui *ui, const olui_el *el, olui_rect *r);
 /* Gives the keyboard to a widget. */
 void olui_focus(olui *ui, olui_el *el);
+/* The widget with the keyboard, or NULL. */
+olui_el *olui_focused(const olui *ui);
+
+/* A list's, textarea's, list box's or scrolling box's (overflow auto,
+ * scroll or hidden) scroll, in pixels from the top; set, it is kept inside
+ * what it holds. */
+int32_t olui_get_scroll(const olui_el *el);
+void olui_set_scroll(olui *ui, olui_el *el, int32_t y);
+
+/* Selects: the chosen option, from 0 among the options (-1: none), the
+ * number of options, and an option's value (its text when it has none) or
+ * text; NULL past the end. Choosing it from the program sends no event. */
+int olui_select_index(const olui_el *select);
+void olui_select_set(olui *ui, olui_el *select, int index);
+int olui_select_count(const olui_el *select);
+const char *olui_select_option_value(const olui_el *select, int index);
+const char *olui_select_option_text(const olui_el *select, int index);
+/* Options added by the program (value may be NULL), and all taken away */
+olui_el *olui_select_add(olui *ui, olui_el *select, const char *text, const char *value);
+void olui_select_clear(olui *ui, olui_el *select);
+/* 1 while its pop-up list is open; opened and closed by the program */
+int olui_select_is_open(const olui *ui, const olui_el *select);
+void olui_select_open(olui *ui, olui_el *select, int open);
+
+/* A number field (input type=number, spinner): its value times
+ * 10^decimals (the places its value, min, max and step are written with,
+ * 4 at most), held from min to max. Setting it sends no event. */
+int olui_number_value(const olui_el *el);
+int olui_number_decimals(const olui_el *el);
+void olui_set_number(olui *ui, olui_el *el, int value);
+
+/* A field's or textarea's selection, in bytes of its text (from == to: the
+ * caret, no selection); 1 when something is selected. Set, it is kept to
+ * the text and its characters, and the caret (at to) is scrolled into view. */
+int olui_get_selection(const olui_el *el, size_t *from, size_t *to);
+void olui_set_selection(olui *ui, olui_el *el, size_t from, size_t to);
+/* Text put in a field or textarea where its selection is (or at the
+ * caret), as typed: maxlength and readonly hold, a field takes one line.
+ * OLUI_CHANGE follows. 1 when something went in. */
+int olui_insert_text(olui *ui, olui_el *el, const char *utf8);
+/* Cut, copy or paste (OLUI_CUT, OLUI_COPY, OLUI_PASTE) in the widget with
+ * the keyboard, as the Amiga key with x, c and v does: a menu's Edit items
+ * call it. It sends the event the program puts on, or takes from, the
+ * clipboard; 1 when it did. A password is never copied. */
+int olui_edit(olui *ui, int what);
 
 /* Lists and trees: items under a list or another item (parent NULL: the
  * list's own); value may be NULL. */

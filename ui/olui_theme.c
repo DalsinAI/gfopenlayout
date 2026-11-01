@@ -130,9 +130,9 @@ char *olui_theme_css(const char *theme_text, int dark, char *err, size_t errlen)
         sprintf(part, "font-size:%dpx;", t.font_size);
         put(&b, part);
     }
-    put(&b, "}\nlabel,h1,h2,h3{");
+    put(&b, "}\nlabel,h1,h2,h3,legend{");
     colour(&b, &t, mode, "color", "label");
-    put(&b, "}\nbutton{");
+    put(&b, "}\nbutton,select{");
     gradient(&b, &t, mode, "button", 0);
     colour(&b, &t, mode, "color", "button.text");
     border(&b, &t, mode, "button.border");
@@ -148,20 +148,21 @@ char *olui_theme_css(const char *theme_text, int dark, char *err, size_t errlen)
     colour(&b, &t, mode, "mark-border-color", "accent");
     put(&b, "}\nbutton:active{");
     gradient(&b, &t, mode, "button", 1);
-    put(&b, "}\nbutton:focus,checkbox:focus,radio:focus,list:focus,tabbutton:focus,input:focus{");
+    put(&b, "}\nbutton:focus,checkbox:focus,radio:focus,list:focus,tabbutton:focus,input:focus,"
+             "select:focus,textarea:focus,spinner:focus{");
     colour(&b, &t, mode, "border-color", "accent");
-    put(&b, "}\ninput{");
+    put(&b, "}\ninput,textarea,spinner{");
     colour(&b, &t, mode, "background", "string");
     colour(&b, &t, mode, "color", "text");
     border(&b, &t, mode, "string.shadow");
     radius(&b, &t, mode, "string.radius");
-    put(&b, "}\ninput:focus{");
+    put(&b, "}\ninput:focus,textarea:focus,spinner:focus{");
     colour(&b, &t, mode, "background", "string.active");
-    put(&b, "}\nlist,tree{");
+    put(&b, "}\nlist,tree,select.listbox,popup{");
     colour(&b, &t, mode, "background", "list");
     colour(&b, &t, mode, "color", "text");
     border(&b, &t, mode, "string.shadow");
-    put(&b, "}\nitem:selected,li:selected{");
+    put(&b, "}\nitem:selected,li:selected,option:selected{");
     colour(&b, &t, mode, "background", "accent");
     colour(&b, &t, mode, "color", "accent.text");
     put(&b, "}\nprogress{");
@@ -176,7 +177,7 @@ char *olui_theme_css(const char *theme_text, int dark, char *err, size_t errlen)
     put(&b, "}\ntabbutton:selected{");
     gradient(&b, &t, mode, "window", 0);
     colour(&b, &t, mode, "color", "text");
-    put(&b, "}\ntab{");
+    put(&b, "}\ntab,fieldset{");
     border(&b, &t, mode, "group.line");
     radius(&b, &t, mode, "group.radius");
     put(&b, "}\nhr{");

@@ -275,7 +275,8 @@ static struct TextFont *font_for(olui_amiga *a, int px, unsigned style)
     return tf;
 }
 
-/* UTF-8 to Latin-1 for the bitmap fonts: what Latin-1 lacks is '?' */
+/* UTF-8 to Latin-1 for the bitmap fonts: what Latin-1 lacks is '?', but a
+ * password's bullet (U+2022) is the middle dot */
 static size_t latin1(const char *s, size_t n, char *out, size_t room)
 {
     size_t i = 0, k = 0;
@@ -290,7 +291,7 @@ static size_t latin1(const char *s, size_t n, char *out, size_t room)
         else { u = '?'; more = 0; }
         ++i;
         while (more-- && i < n && ((unsigned char)s[i] & 0xc0) == 0x80) u = (u << 6) | ((unsigned char)s[i++] & 0x3f);
-        out[k++] = (char)(u < 0x100 ? u : '?');
+        out[k++] = (char)(u < 0x100 ? u : u == 0x2022 ? 0xb7 : '?');
     }
     out[k] = 0;
     return k;
@@ -407,8 +408,14 @@ static void draw_mark(olui_amiga *a, const olui_draw_op *op)
         break;
     }
     case OLUI_MARK_OPEN:            /* pointing down */
+    case OLUI_MARK_DROPDOWN:
+    case OLUI_MARK_SPIN_DOWN:
         for (i = 0; i < h / 2 + 1; ++i)
             span(a, x + i, y + h / 4 + i, w - 2 * i, 1, op->argb | 0xff000000UL);
+        break;
+    case OLUI_MARK_SPIN_UP:         /* pointing up */
+        for (i = 0; i < h / 2 + 1; ++i)
+            span(a, x + i, y + h - 1 - h / 4 - i, w - 2 * i, 1, op->argb | 0xff000000UL);
         break;
     case OLUI_MARK_CLOSED:          /* pointing right */
         for (i = 0; i < h; ++i) {
@@ -611,7 +618,7 @@ static void draw_area(olui_amiga *a, const olui_rect *area)
 ULONG olui_amiga_idcmp(void)
 {
     return IDCMP_CLOSEWINDOW | IDCMP_NEWSIZE | IDCMP_REFRESHWINDOW | IDCMP_MOUSEBUTTONS | IDCMP_MOUSEMOVE |
-           IDCMP_VANILLAKEY | IDCMP_RAWKEY;
+           IDCMP_VANILLAKEY | IDCMP_RAWKEY | IDCMP_INTUITICKS;
 }
 
 olui_amiga *olui_amiga_new(olui *ui, struct Window *win)
@@ -753,12 +760,14 @@ void olui_amiga_draw(olui_amiga *a)
 
 int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
 {
-    int x, y, used = 0;
-    unsigned shift;
+    int x, y, used = 0, alt;
+    unsigned shift, command;
     if (!a || !m) return OLUI_AMIGA_NONE;
     x = m->MouseX - a->win->BorderLeft;
     y = m->MouseY - a->win->BorderTop;
     shift = (m->Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT)) ? OLUI_QUAL_SHIFT : 0;
+    command = (m->Qualifier & (IEQUALIFIER_LCOMMAND | IEQUALIFIER_RCOMMAND)) ? OLUI_QUAL_COMMAND : 0;
+    alt = (m->Qualifier & (IEQUALIFIER_LALT | IEQUALIFIER_RALT)) != 0;
     switch (m->Class) {
     case IDCMP_CLOSEWINDOW:
         return OLUI_AMIGA_CLOSE;
@@ -796,15 +805,21 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
         case 127: code = OLUI_KEY_DELETE; break;
         default: break;                         /* Latin-1 is Unicode's first 256 */
         }
-        used = olui_key(a->ui, code, shift);
+        used = olui_key(a->ui, code, shift | command);
         break;
     }
+    case IDCMP_INTUITICKS:
+        /* about ten a second while the window is active: tooltips, a held arrow button */
+        used = olui_tick(a->ui, 100);
+        break;
     case IDCMP_RAWKEY:
         switch (m->Code) {
-        case RAW_UP: used = olui_key(a->ui, shift ? OLUI_KEY_PAGEUP : OLUI_KEY_UP, 0); break;
-        case RAW_DOWN: used = olui_key(a->ui, shift ? OLUI_KEY_PAGEDOWN : OLUI_KEY_DOWN, 0); break;
-        case RAW_LEFT: used = olui_key(a->ui, shift ? OLUI_KEY_HOME : OLUI_KEY_LEFT, 0); break;
-        case RAW_RIGHT: used = olui_key(a->ui, shift ? OLUI_KEY_END : OLUI_KEY_RIGHT, 0); break;
+        /* Shift goes with the arrow (a textarea's selection; elsewhere olui makes it a page or an
+         * end, as before); Alt with an arrow is a page or an end everywhere */
+        case RAW_UP: used = olui_key(a->ui, alt ? OLUI_KEY_PAGEUP : OLUI_KEY_UP, alt ? 0u : shift); break;
+        case RAW_DOWN: used = olui_key(a->ui, alt ? OLUI_KEY_PAGEDOWN : OLUI_KEY_DOWN, alt ? 0u : shift); break;
+        case RAW_LEFT: used = olui_key(a->ui, alt ? OLUI_KEY_HOME : OLUI_KEY_LEFT, alt ? 0u : shift); break;
+        case RAW_RIGHT: used = olui_key(a->ui, alt ? OLUI_KEY_END : OLUI_KEY_RIGHT, alt ? 0u : shift); break;
         case RAW_WHEEL_UP: used = olui_mouse(a->ui, x, y, OLUI_WHEEL_UP); break;
         case RAW_WHEEL_DOWN: used = olui_mouse(a->ui, x, y, OLUI_WHEEL_DOWN); break;
         default: break;

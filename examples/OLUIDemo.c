@@ -1,6 +1,9 @@
 /* OLUIDemo: a window described in HTML and CSS, in the GadTools theme,
  * with its events in C. Every widget GFOpenLayout UI has: a field, buttons,
- * a tree, tabs, a checkbox, radio buttons, a progress bar.
+ * a tree, tabs, a checkbox, radio buttons, a progress bar; and 0.3's: a
+ * drop-down with groups, a password and a number field, a textarea, a
+ * fieldset with its legend, labels that work their controls, a box that
+ * scrolls, and tooltips.
  *
  *     OLUIDemo [FILE=markup.html] [CSS=style.css] [THEME=x.theme]
  *
@@ -19,7 +22,7 @@
 #include "gfopenlayout_ui.h"
 #include "gfopenlayout_ui_amiga.h"
 
-static const char version[] = "$VER: OLUIDemo 0.1 (30.10.2026) AmiCradle Team";
+static const char version[] = "$VER: OLUIDemo 0.2 (1.11.2026) AmiCradle Team";
 
 static const char markup[] =
     "<row>"
@@ -40,6 +43,27 @@ static const char markup[] =
     "      <radio name=sort id=byname value=sender>By sender</radio>"
     "      <label id=status>Nothing chosen yet.</label>"
     "    </tab>"
+    "    <tab title=Form>"
+    "      <fieldset><legend>Account</legend>"
+    "        <row><label for=user style='width:64px'>Name</label><input id=user style='flex:1' title='Your name'></row>"
+    "        <row><label for=pass style='width:64px'>Password</label>"
+    "          <input type=password id=pass maxlength=32 style='flex:1'></row>"
+    "        <row><label for=size style='width:64px'>Size</label>"
+    "          <select id=size title='The text size'><option>Small<option selected>Normal<option>Large"
+    "            <optgroup label=Bigger><option>Poster<option>Banner</optgroup></select>"
+    "          <label for=copies style='width:56px;padding-left:8px'>Copies</label>"
+    "          <spinner id=copies min=1 max=99 value=1></row>"
+    "      </fieldset>"
+    "      <textarea id=notes rows=4 placeholder='Notes: lines wrap at words' style='flex:1'></textarea>"
+    "    </tab>"
+    "    <tab title=Long>"
+    "      <div style='height:120px;overflow:auto;border:1px solid #909090;padding:4px'>"
+    "        <p>A box with a height and overflow:auto scrolls what it holds: the wheel, or Tab to a button in it.</p>"
+    "        <p>GFOpenLayout lays out what it holds in full, and olui draws it moved by the scroll and cut to the box.</p>"
+    "        <p>Each paragraph here is one more line to scroll through.</p>"
+    "        <button id=deep title='A button in a box that scrolls'>A button down here</button>"
+    "      </div>"
+    "    </tab>"
     "    <tab title=About>"
     "      <h2>GFOpenLayout UI</h2>"
     "      <p>This window is HTML and CSS, laid out by GFOpenLayout and drawn in the theme.</p>"
@@ -48,7 +72,7 @@ static const char markup[] =
     "</row>"
     "<progress id=bar max=10></progress>"
     "<row style='justify-content:end'>"
-    "  <button id=step>Step</button><button id=quit>Quit</button>"
+    "  <button id=step title='Fills the bar a tenth more'>Step</button><button id=quit title='Closes the window'>Quit</button>"
     "</row>";
 
 static int done;
@@ -71,13 +95,32 @@ static void on_step(olui *ui, const olui_event *ev, void *userdata)
 static void on_any(olui *ui, const olui_event *ev, void *userdata)
 {
     static const char *const names[] = { "", "click", "change", "submit", "select", "activate", "expand",
-                                         "collapse", "focus" };
+                                         "collapse", "focus", "cut", "copy", "paste" };
     char line[160];
     (void)userdata;
     if (ev->type == OLUI_FOCUS) return;
     snprintf(line, sizeof(line), "%s on %s%s%s", ev->type < OLUI_EVENT_COUNT ? names[ev->type] : "?",
              ev->id[0] ? ev->id : olui_tag(ev->el), ev->value ? ": " : "", ev->value ? ev->value : "");
     olui_set_text(ui, olui_find(ui, "status"), line);
+}
+
+/* The clipboard, as the program keeps it: a program for others would use
+ * clipboard.device (iffparse.library's FTXT) here */
+static char *clip;
+
+static void on_clip(olui *ui, const olui_event *ev, void *userdata)
+{
+    (void)userdata;
+    if (ev->type == OLUI_CUT || ev->type == OLUI_COPY) {
+        size_t n = strlen(ev->value);
+        char *s = (char *)malloc(n + 1);
+        if (!s) return;
+        memcpy(s, ev->value, n + 1);
+        free(clip);
+        clip = s;
+    } else if (ev->type == OLUI_PASTE && clip) {
+        olui_insert_text(ui, ev->el, clip);
+    }
 }
 
 static void on_find(olui *ui, const olui_event *ev, void *userdata)
@@ -117,7 +160,7 @@ int main(void)
         if (args[0]) file_markup = load((const char *)args[0]);
         if (args[1]) file_css = load((const char *)args[1]);
     }
-    win = OpenWindowTags(NULL, WA_Title, (ULONG)"GFOpenLayout UI", WA_Width, 520, WA_Height, 360,
+    win = OpenWindowTags(NULL, WA_Title, (ULONG)"GFOpenLayout UI", WA_Width, 560, WA_Height, 400,
                          WA_MinWidth, 300, WA_MinHeight, 220, WA_MaxWidth, ~0UL, WA_MaxHeight, ~0UL,
                          WA_DragBar, TRUE, WA_DepthGadget, TRUE, WA_CloseGadget, TRUE, WA_SizeGadget, TRUE,
                          WA_Activate, TRUE, WA_SimpleRefresh, TRUE, WA_ReportMouse, TRUE,
@@ -143,6 +186,9 @@ int main(void)
     olui_on(ui, "step", OLUI_CLICK, on_step, NULL);
     olui_on(ui, "go", OLUI_CLICK, on_find, NULL);
     olui_on(ui, "find", OLUI_SUBMIT, on_find, NULL);
+    olui_on(ui, NULL, OLUI_CUT, on_clip, NULL);
+    olui_on(ui, NULL, OLUI_COPY, on_clip, NULL);
+    olui_on(ui, NULL, OLUI_PASTE, on_clip, NULL);
     if (!olui_amiga_layout(amiga)) {
         PutStr((STRPTR)"OLUIDemo: out of memory\n");
         goto free;
@@ -166,6 +212,7 @@ free:
 out:
     free(file_markup);
     free(file_css);
+    free(clip);
     if (rda) FreeArgs(rda);
     return rc;
 }

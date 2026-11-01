@@ -1,4 +1,4 @@
-/* gfopenlayout.library 8.0: version 3 adds pages, tables, frames and the
+/* gfopenlayout.library 9.0: version 3 adds pages, tables, frames and the
  * caret (GFOpenLayout 0.2) after version 2's calls, which are unchanged;
  * version 4 adds tab stops that align and their leaders (GFOpenLayout 0.3);
  * version 5 places frames anchored to their pages (GFOpenLayout 0.4, the
@@ -9,8 +9,12 @@
  * revision 7.1 lays out OL_BOX_EXACT_LINES (exact line spacing,
  * GFOpenLayout 0.7), a flag that 7.0 leaves out; version 8 lays out rows
  * and the box style's width, height, grow, gap and align (GFOpenLayout 0.8,
- * programs' windows), with no new calls.
- * Programs built for 2 to 7 keep working.
+ * programs' windows), with no new calls; version 9 lays out web boxes (the
+ * box style's per-side borders, widths in thousandths, least and most
+ * widths and valign, auto side margins, inline-blocks and repeated table
+ * headers, GFOpenLayout 0.9), with no new calls.
+ * Programs built for 2 to 8 keep working: a box style of an older size
+ * has the fields after it 0, as ol_node_set_box copies only its size.
  * Copyright (c) 2026 AmiCradle Team. MIT.
  */
 #include <exec/types.h>
@@ -24,7 +28,7 @@
 #include "../include/libraries/gfopenlayout.h"
 
 #define REG(r, decl) register decl __asm(#r)
-#define LIB_VERSION 8
+#define LIB_VERSION 9
 #define LIB_REVISION 0
 
 struct OpenLayoutLibBase {
@@ -38,10 +42,10 @@ int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "gfopenlayout.library 8.0 (30.10.2026) GFOpenLayout 0.8, AmiCradle Team\r\n";
+    "gfopenlayout.library 9.0 (1.11.2026) GFOpenLayout 0.9, AmiCradle Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: gfopenlayout.library 8.0 (30.10.2026) GFOpenLayout 0.8, AmiCradle Team";
+    "$VER: gfopenlayout.library 9.0 (1.11.2026) GFOpenLayout 0.9, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),
@@ -377,8 +381,8 @@ static CONST_STRPTR OL_NodeValue(REG(a0, const ol_node *node), REG(a6, struct Op
 /* ---- version 3 ------------------------------------------------------------ */
 
 /* 5.0: only the box style programs built for 3 and 4 have, so this never writes past theirs; a program
- * that anchors a frame (or, with 7.0, wraps text round it) sets size to sizeof(ol_box_style) and the
- * fields after it */
+ * that anchors a frame (or, with 7.0, wraps text round it; with 8.0 sets a width; with 9.0 a web box's
+ * fields) sets size to sizeof(ol_box_style) and the fields after it */
 static void OL_BoxStyleInit(REG(a0, ol_box_style *box), REG(a6, struct OpenLayoutLibBase *base))
 {
     ol_box_style full;

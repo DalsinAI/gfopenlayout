@@ -78,8 +78,59 @@ On them sits **GFOpenLayout UI** (`include/gfopenlayout_ui.h`, `ui/`, `amiga/`):
 a program's window described in HTML and CSS, laid out by GFOpenLayout,
 drawn in the GFOpenGadTools theme, with its events in the program's C
 functions. Buttons, checkboxes, radio buttons, fields, lists and trees,
-tabs and progress bars. [docs/GFOpenLayout-UI.md](docs/GFOpenLayout-UI.md)
+tabs and progress bars; and since 0.3 what a word processor's windows and
+a web browser's forms need: drop-downs and list boxes (`select`), text of
+many lines (`textarea`), password and number fields, group boxes
+(`fieldset`), labels that work their controls, Tab's order (`tabindex`),
+boxes that scroll (`overflow:auto`) and tooltips (`title`, through
+`olui_tick`). [docs/GFOpenLayout-UI.md](docs/GFOpenLayout-UI.md)
 describes it; `examples/OLUIDemo.c` is a whole program.
+
+## Web boxes (0.9)
+
+0.9 adds the boxes a web browser and a word processor need, with seven more
+fields at the end of `ol_box_style`, four flags and a display value
+(`OL_HAS_WEB_BOXES`):
+
+- per-side borders: with `OL_BOX_SIDE_BORDERS` each side has its own width
+  and colour (`border_widths` and `border_argbs`: top, right, bottom,
+  left; a side 0 wide has none). They take room as CSS borders do: the
+  padding and content are inside them, and each is a rule along its side,
+  drawn within the box (`ol_draw_page`'s box for it is that side's strip).
+  `border_width`, `border_argb` and `border_sides` work as before, on the
+  box's edges and taking no room;
+- widths in thousandths: `width_permille` of the containing block's content
+  width (a cell's: the table's; a row's child's: the row's; an
+  inline-block's: the line's) when there is no `width`, and the least and
+  most a box is wide, `min_width`, `max_width` and `max_width_permille`
+  (the narrower of the two). The least wins over the most, as in CSS, and
+  only the least may make a block wider than its containing block. A
+  document's own blocks now take their `width` too (0.8 gave them the
+  galley's width);
+- auto side margins: `OL_BOX_AUTO_LEFT` puts a block narrower than its
+  containing block at its right, and with `OL_BOX_AUTO_RIGHT` in its
+  middle, as `margin: 0 auto` does;
+- inline-blocks: `OL_DISPLAY_INLINE_BLOCK` puts a box in the line like a
+  picture, laid out as a block: as wide as it asks, or as its content up
+  to the line's width. It stands on the baseline by its bottom, or at the
+  line's top, middle or bottom (`valign`), and goes to the next line, as a
+  word does, when it does not fit. It is laid out twice, once for its
+  height and once where its line puts it;
+- table cells: without the table's column widths, a cell's `width`,
+  `width_permille` or `min_width` gives its column's (the widest of a
+  column's cells that span it alone; the others share what is left), and
+  `valign` puts its content at the top, middle or bottom of a taller row;
+- repeated table headers: rows with `OL_BOX_REPEAT_HEADER` from a table's
+  first row on are drawn again at the top of every page the table goes on
+  to, the rest of the page below them, and the header never stands alone
+  at a page's foot. A header as high as a page or higher is not repeated.
+  The copies are ops of the header's own nodes, so a renderer draws them
+  as it draws the header; `ol_hit_test_page` finds nothing over them.
+
+All of it is whole numbers: a thousandth is worked out with 32 bit
+divisions, which a 68040 does itself. `tests/test_web.c` covers each of
+them. `gfopenlayout.library` 9.0 lays these out, with no new calls
+(`OPENLAYOUTLIB_WEB_VERSION`).
 
 ## Build and test
 
@@ -127,7 +178,7 @@ Resident Amiga library and ABI test:
 ./build-library.sh
 ```
 
-The resident build produces `build-amiga/lib/gfopenlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `gfopenlayout.library` 8.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those; version 5 places frames anchored to their pages (`box.anchor`, GFOpenLayout 0.4) with no new calls; version 6 adds `OL_DocumentReserve` (GFOpenLayout 0.5); version 7 wraps text round anchored frames (`box.wrap`, GFOpenLayout 0.6) and adds `OL_FramePlace` (where a frame went); revision 7.1 lays a block's lines out exactly its line height with `OL_BOX_EXACT_LINES` (GFOpenLayout 0.7), a flag 7.0 ignores; version 8 lays out rows and the box style's width, height, grow, gap and align (GFOpenLayout 0.8), with no new calls. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4), one that anchors frames `OPENLAYOUTLIB_ANCHOR_VERSION` (5), one that reserves the display list's room `OPENLAYOUTLIB_RESERVE_VERSION` (6), one that wraps text round frames `OPENLAYOUTLIB_WRAP_VERSION` (7), and one that lays out rows `OPENLAYOUTLIB_ROW_VERSION` (8). The library's `OL_BoxStyleInit` fills only the `ol_box_style` that programs built for 3 and 4 have (`OL_BOX_STYLE_SIZE_0_3` bytes), so it never writes past theirs; a program that anchors a frame then sets `size` to `sizeof(ol_box_style)` and `anchor` (and `wrap` and `wrap_gap`).
+The resident build produces `build-amiga/lib/gfopenlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `gfopenlayout.library` 9.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those; version 5 places frames anchored to their pages (`box.anchor`, GFOpenLayout 0.4) with no new calls; version 6 adds `OL_DocumentReserve` (GFOpenLayout 0.5); version 7 wraps text round anchored frames (`box.wrap`, GFOpenLayout 0.6) and adds `OL_FramePlace` (where a frame went); revision 7.1 lays a block's lines out exactly its line height with `OL_BOX_EXACT_LINES` (GFOpenLayout 0.7), a flag 7.0 ignores; version 8 lays out rows and the box style's width, height, grow, gap and align (GFOpenLayout 0.8), with no new calls; version 9 lays out web boxes (GFOpenLayout 0.9): per-side borders, widths in thousandths with their least and most, auto side margins, inline-blocks, cells' vertical alignment and repeated table headers, again with no new calls. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4), one that anchors frames `OPENLAYOUTLIB_ANCHOR_VERSION` (5), one that reserves the display list's room `OPENLAYOUTLIB_RESERVE_VERSION` (6), one that wraps text round frames `OPENLAYOUTLIB_WRAP_VERSION` (7), one that lays out rows `OPENLAYOUTLIB_ROW_VERSION` (8), and one that uses web boxes `OPENLAYOUTLIB_WEB_VERSION` (9). The library's `OL_BoxStyleInit` fills only the `ol_box_style` that programs built for 3 and 4 have (`OL_BOX_STYLE_SIZE_0_3` bytes), so it never writes past theirs; a program that anchors a frame then sets `size` to `sizeof(ol_box_style)` and `anchor` (and `wrap` and `wrap_gap`, 0.8's fields and 0.9's). A box style of an older size has the fields after it 0, so a program built for 8 has no side borders, widths in thousandths or `valign` (`OL_BOX_STYLE_SIZE_0_8`).
 
 The OS 3.2.3 / AC090 68040 qualification opens the library from `LIBS:` and runs both the normal ABI test and a 48-node stress test covering allocation growth, metadata, image nodes, layout and display-list access.
 

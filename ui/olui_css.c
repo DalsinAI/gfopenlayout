@@ -567,6 +567,14 @@ static void apply(olui_cs *cs, const char *prop, const char *v, const olui_cs *p
         else if (is(v, "justify")) cs->ol.text_align = OL_ALIGN_JUSTIFY;
         else cs->ol.text_align = OL_ALIGN_START;
     }
+    /* ---- GFOpenLayout UI 0.3: what its new widgets need (all of it here) ---- */
+    else if (!strcmp(prop, "overflow") || !strcmp(prop, "overflow-y")) {
+        if (is(v, "auto")) cs->overflow = O_AUTO;
+        else if (is(v, "scroll")) cs->overflow = O_SCROLL;
+        else if (is(v, "hidden") || is(v, "clip")) cs->overflow = O_HIDDEN;
+        else cs->overflow = O_VISIBLE;
+    }
+    /* ---- end of 0.3's ---- */
 }
 
 void olui_style_apply_decls(olui_cs *cs, const char *decls, const olui_cs *parent)
