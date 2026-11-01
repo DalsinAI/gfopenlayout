@@ -71,7 +71,7 @@ struct olui {
     ol_scale scale;
     int stale;                  /* must be laid out again */
     int damaged;                /* all of it must be drawn again */
-    olui_rect part;             /* else this part (w 0: none): what a hover, press or focus changed */
+    olui_rect part;             /* else this part (w 0: none): what a hover, press, focus, check or selection changed */
     handler handlers[MAX_HANDLERS];
     int nhandlers;
     olui_el *focus, *hover, *pressed;
@@ -93,8 +93,8 @@ static void touch(olui *ui)
 }
 
 /* The states that change only how a widget looks, unless its style says
- * otherwise (restyle_paint) */
-#define S_PAINT (S_HOVER | S_ACTIVE | S_FOCUS)
+ * otherwise (restyle_paint). Open shows or hides items: laid out again. */
+#define S_PAINT (S_HOVER | S_ACTIVE | S_FOCUS | S_CHECKED | S_SELECTED)
 
 static int restyle_paint(olui *ui, olui_el *el, unsigned bit);
 
@@ -362,11 +362,14 @@ static int build_items(olui *ui, olui_el *list, olui_el *from, ol_node *parent, 
 {
     olui_el *c;
     for (c = from->first; c; c = c->next) {
+        /* an item styled again: so are the items under it (rules reach them through it) */
+        int again;
         if (c->kind != K_ITEM) continue;
         c->depth = depth;
+        again = restyle || c->styled_gen != ui->style_gen || c->styled_state != c->state;
         if (!build(ui, c, parent, &list->cs, shown, restyle)) return 0;
         if (!build_items(ui, list, c, parent, depth + 1, shown && (c->state & S_OPEN) && visible(c),
-                         restyle))
+                         again))
             return 0;
     }
     return 1;
@@ -1480,7 +1483,7 @@ int olui_damaged(const olui *ui, olui_rect *area)
     return 1;
 }
 
-/* ---- A hover, press or focus, drawn again without a layout ----------------------- */
+/* ---- A hover, press, focus, check or selection, drawn again without a layout ------ */
 
 static void grow_to(olui_rect *a, olui_rect r)
 {
@@ -1592,7 +1595,7 @@ static int restyle_tree(olui *ui, olui_el *el, olui_rect *area)
     return 1;
 }
 
-/* A hover, press or focus on el changed: el and what is under it are
+/* A hover, press, focus, check or selection on el changed: el and what is under it are
  * styled again (rules reach them through el), and while none of them lays
  * out differently, only where one looks different is damaged. 0: it must
  * be laid out again. */
@@ -1608,10 +1611,12 @@ static int restyle_paint(olui *ui, olui_el *el, unsigned bit)
         el->styled_state = ~el->state;  /* the layout styles it, and what is under it, again */
         return 0;
     }
-    if (bit & S_FOCUS) {
-        /* a field's caret and placeholder, a checkbox's edge: drawn from the state itself */
+    if (bit & (S_FOCUS | S_CHECKED | S_SELECTED)) {
+        /* a field's caret and placeholder, a checkbox's edge and tick, a radio button's dot: drawn from
+         * the state itself; and the node says it, as build would */
         uint32_t s = ol_node_states(el->node);
-        ol_node_set_states(el->node, (el->state & S_FOCUS) ? s | OL_STATE_FOCUSED : s & ~(uint32_t)OL_STATE_FOCUSED);
+        uint32_t b = (bit & S_FOCUS) ? OL_STATE_FOCUSED : (bit & S_CHECKED) ? OL_STATE_CHECKED : OL_STATE_SELECTED;
+        ol_node_set_states(el->node, (el->state & bit) ? s | b : s & ~b);
         add_extent(ui, el, &area);
     }
     win.x = win.y = 0;
