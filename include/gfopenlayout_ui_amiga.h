@@ -32,7 +32,8 @@ enum {
     OLUI_AMIGA_CLOSE        /* the close gadget */
 };
 
-/* The window's IDCMP for olui: the mouse, keys, size, refresh and close. */
+/* The window's IDCMP for olui: the mouse, keys, size, refresh, close, and
+ * IntuiTicks (olui_tick: tooltips, a number field's held arrow). */
 ULONG olui_amiga_idcmp(void);
 
 /* Draws ui in win, measuring with the window's screen font (olui_set_measure
@@ -71,7 +72,10 @@ void olui_amiga_fonts(olui_amiga *a, const char *font, const char *mono);
 int olui_amiga_layout(olui_amiga *a);
 /* Draws what changed, if anything did. */
 void olui_amiga_draw(olui_amiga *a);
-/* One IDCMP message, before it is replied. */
+/* One IDCMP message, before it is replied. The Amiga key with x, c and v
+ * is cut, copy and paste (OLUI_CUT, OLUI_COPY, OLUI_PASTE: the program
+ * puts the text on the clipboard, or gives it from there); Alt with an
+ * arrow is PageUp, PageDown, Home and End. */
 int olui_amiga_event(olui_amiga *a, struct IntuiMessage *msg);
 
 #endif
