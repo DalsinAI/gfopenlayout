@@ -8,7 +8,11 @@
 extern "C" {
 #endif
 
-#define OL_VERSION "0.8"
+#define OL_VERSION "0.9"
+/* 0.9: per-side borders, widths in thousandths with their least and most,
+ * auto side margins, inline-blocks, cells' vertical alignment and table
+ * headers repeated on every page (a browser's and a word processor's boxes) */
+#define OL_HAS_WEB_BOXES 1
 
 /*
  * GFOpenLayout logical units are exact across the three worlds we care about:
@@ -59,7 +63,13 @@ typedef enum {
 typedef enum {
     OL_DISPLAY_BLOCK = 0,
     OL_DISPLAY_INLINE,
-    OL_DISPLAY_NONE
+    OL_DISPLAY_NONE,
+    /* 0.9: in the line like a picture, its box laid out as a block: as
+     * wide as box.width (or width_permille of the line), or as its content
+     * up to the line's width; standing on the baseline by its bottom (its
+     * margin's), or at the line's top, middle or bottom (box.valign). It
+     * goes to the next line, as a word does, when it does not fit. */
+    OL_DISPLAY_INLINE_BLOCK
 } ol_display;
 
 typedef enum {
@@ -260,7 +270,30 @@ enum {
      * room is left by box.grow (or giving up room in proportion when there
      * is too little); as tall as the row (box.align); gap apart. A row
      * with nothing that grows puts its children at its text_align. */
-    OL_BOX_ROW               = 1u << 6
+    OL_BOX_ROW               = 1u << 6,
+    /* 0.9: each side its own border, box.border_widths and border_argbs
+     * (top, right, bottom, left), in place of border_width, border_argb and
+     * border_sides. These borders take room: they are inside the box, its
+     * padding and content inside them (CSS's border box), and each is drawn
+     * as a rule along its side within the box. A side 0 wide has none. */
+    OL_BOX_SIDE_BORDERS      = 1u << 7,
+    /* 0.9: CSS's margin-left and margin-right auto: a block narrower than
+     * its containing block (box.width, width_permille or max_width) goes to
+     * its right (OL_BOX_AUTO_LEFT alone) or in its middle (both). */
+    OL_BOX_AUTO_LEFT         = 1u << 8,
+    OL_BOX_AUTO_RIGHT        = 1u << 9,
+    /* 0.9: on a table's row: a header, drawn again at the top of every page
+     * the table goes on to (ol_layout_pages). The header is the rows that
+     * have it from the table's first row on, one after another; it is kept
+     * on the page of the first row after it, and not repeated when it is
+     * as high as a page or higher. The copies are ops of the header's
+     * nodes, whose bounds stay where the header first is: ol_hit_test_page
+     * finds nothing over a copy. Not in an inline-block or a frame
+     * anchored to its page. A frame placed from its block moves down with
+     * it below a copy; the body's text on a page that starts with a copy
+     * goes round a frame placed from the page or its margins as if the
+     * copy were not there. */
+    OL_BOX_REPEAT_HEADER     = 1u << 10
 };
 
 /* 0.8: how a row's children stand across it (box.align) */
@@ -269,6 +302,17 @@ enum {
     OL_CROSS_START   = 1,      /* at its top */
     OL_CROSS_CENTRE  = 2,
     OL_CROSS_END     = 3
+};
+
+/* 0.9: where a table cell's content stands in a row taller than it, and
+ * where an inline-block stands in its line (box.valign). A cell's
+ * OL_VALIGN_BASELINE is its top, as before 0.9; an inline-block's is its
+ * bottom on the line's baseline, as a picture's is. */
+enum {
+    OL_VALIGN_BASELINE = 0,
+    OL_VALIGN_TOP,
+    OL_VALIGN_MIDDLE,
+    OL_VALIGN_BOTTOM
 };
 
 enum {
@@ -323,6 +367,27 @@ typedef struct {
     int32_t grow;
     ol_unit gap;
     uint32_t align;
+    /* 0.9: web boxes (CSS's per-side borders, percentage widths, min-width,
+     * max-width and vertical-align, for a browser and a word processor).
+     * Through gfopenlayout.library, a program sets size to
+     * sizeof(ol_box_style) and opens version 9; with an older size these
+     * are 0 (not set).
+     * - border_widths, border_argbs: each side's border, with
+     *   OL_BOX_SIDE_BORDERS;
+     * - min_width, max_width: the least and the most the box is wide, its
+     *   margins outside them; the least wins over the most, as in CSS;
+     * - width_permille: its width in thousandths of its containing block's
+     *   content width (a table cell's: the table's), when it has no width;
+     * - max_width_permille: the most, the same way; with max_width too, the
+     *   narrower;
+     * - valign: a table cell's content in its row, an inline-block in its
+     *   line (OL_VALIGN_...). */
+    ol_unit border_widths[4];   /* top, right, bottom, left; used when flags has OL_BOX_SIDE_BORDERS */
+    uint32_t border_argbs[4];   /* AARRGGBB each */
+    ol_unit min_width, max_width;      /* 0: none */
+    int32_t width_permille;            /* of the containing block's content width; 0: none; an explicit width wins */
+    int32_t max_width_permille;        /* 0: none */
+    uint32_t valign;                   /* OL_VALIGN_... */
 } ol_box_style;
 
 /* An anchored frame (box.anchor not 0) is laid out on its own and placed
@@ -382,6 +447,9 @@ enum {
 /* The size of an ol_box_style before 0.8's width, height, grow, gap and
  * align, as programs built for gfopenlayout.library 7 have it */
 #define OL_BOX_STYLE_SIZE_0_7 offsetof(ol_box_style, width)
+/* The size of an ol_box_style before 0.9's web boxes, as programs built for
+ * gfopenlayout.library 8 have it */
+#define OL_BOX_STYLE_SIZE_0_8 offsetof(ol_box_style, border_widths)
 
 /* 0.6: where an anchored frame went after ol_layout_pages (or ol_layout,
  * in the galley): its page and its rectangle on it, the frame's width and
