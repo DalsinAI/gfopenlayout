@@ -47,7 +47,7 @@ echo "$OUT/lib/gfopenlayout.library ($(wc -c < "$OUT/lib/gfopenlayout.library") 
 "$CC" -m68040 -m68881 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -Wall -Wextra -Werror -noixemul \
   -I"$HERE/include" -o "$OUT/tests/LayoutLibStress" "$HERE/tests/test_library_stress.c"
 # the C API through the library, and the UI's tests and demo linked with it
-LINKF="-m68040 -noixemul -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -Wall -Wextra -Werror -I$HERE/include"
+LINKF="-m68040 -noixemul -Uamiga -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -Wall -Wextra -Werror -I$HERE/include"
 # shellcheck disable=SC2086
 "$CC" $LINKF -c "$HERE/library/link/gfopenlayout_link.c" -o "$OUT/obj/gfopenlayout_link.o"
 # shellcheck disable=SC2086
