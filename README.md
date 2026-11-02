@@ -199,7 +199,43 @@ Resident Amiga library and ABI test:
 ./build-library.sh
 ```
 
-The resident build produces `build-amiga/lib/gfopenlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `gfopenlayout.library` 9.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those; version 5 places frames anchored to their pages (`box.anchor`, GFOpenLayout 0.4) with no new calls; version 6 adds `OL_DocumentReserve` (GFOpenLayout 0.5); version 7 wraps text round anchored frames (`box.wrap`, GFOpenLayout 0.6) and adds `OL_FramePlace` (where a frame went); revision 7.1 lays a block's lines out exactly its line height with `OL_BOX_EXACT_LINES` (GFOpenLayout 0.7), a flag 7.0 ignores; version 8 lays out rows and the box style's width, height, grow, gap and align (GFOpenLayout 0.8), with no new calls; version 9 lays out web boxes (GFOpenLayout 0.9): per-side borders, widths in thousandths with their least and most, auto side margins, inline-blocks, cells' vertical alignment and repeated table headers, again with no new calls. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4), one that anchors frames `OPENLAYOUTLIB_ANCHOR_VERSION` (5), one that reserves the display list's room `OPENLAYOUTLIB_RESERVE_VERSION` (6), one that wraps text round frames `OPENLAYOUTLIB_WRAP_VERSION` (7), one that lays out rows `OPENLAYOUTLIB_ROW_VERSION` (8), and one that uses web boxes `OPENLAYOUTLIB_WEB_VERSION` (9). The library's `OL_BoxStyleInit` fills only the `ol_box_style` that programs built for 3 and 4 have (`OL_BOX_STYLE_SIZE_0_3` bytes), so it never writes past theirs; a program that anchors a frame then sets `size` to `sizeof(ol_box_style)` and `anchor` (and `wrap` and `wrap_gap`, 0.8's fields and 0.9's). A box style of an older size has the fields after it 0, so a program built for 8 has no side borders, widths in thousandths or `valign` (`OL_BOX_STYLE_SIZE_0_8`).
+The resident build produces `build-amiga/lib/gfopenlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `gfopenlayout.library` 10.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those; version 5 places frames anchored to their pages (`box.anchor`, GFOpenLayout 0.4) with no new calls; version 6 adds `OL_DocumentReserve` (GFOpenLayout 0.5); version 7 wraps text round anchored frames (`box.wrap`, GFOpenLayout 0.6) and adds `OL_FramePlace` (where a frame went); revision 7.1 lays a block's lines out exactly its line height with `OL_BOX_EXACT_LINES` (GFOpenLayout 0.7), a flag 7.0 ignores; version 8 lays out rows and the box style's width, height, grow, gap and align (GFOpenLayout 0.8), with no new calls; version 9 lays out web boxes (GFOpenLayout 0.9): per-side borders, widths in thousandths with their least and most, auto side margins, inline-blocks, cells' vertical alignment and repeated table headers, again with no new calls; version 10 (GFOpenLayout 0.10) is one library for documents, web pages and programs' windows: it adds GFCSS's document calls, GFOpenLayout UI and its Intuition glue (83 calls, below). A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4), one that anchors frames `OPENLAYOUTLIB_ANCHOR_VERSION` (5), one that reserves the display list's room `OPENLAYOUTLIB_RESERVE_VERSION` (6), one that wraps text round frames `OPENLAYOUTLIB_WRAP_VERSION` (7), one that lays out rows `OPENLAYOUTLIB_ROW_VERSION` (8), and one that uses web boxes `OPENLAYOUTLIB_WEB_VERSION` (9). The library's `OL_BoxStyleInit` fills only the `ol_box_style` that programs built for 3 and 4 have (`OL_BOX_STYLE_SIZE_0_3` bytes), so it never writes past theirs; a program that anchors a frame then sets `size` to `sizeof(ol_box_style)` and `anchor` (and `wrap` and `wrap_gap`, 0.8's fields and 0.9's). A box style of an older size has the fields after it 0, so a program built for 8 has no side borders, widths in thousandths or `valign` (`OL_BOX_STYLE_SIZE_0_8`).
+
+### One library (10)
+
+Version 10 has GFOpenLayout, GFCSS, GFOpenLayout UI and its Intuition glue in
+`gfopenlayout.library` (about 243 KB), so programs share one copy instead of
+each linking `libolui.a` (OLUIDemo is 22 KB through the library, 245 KB
+linked). Its 83 new calls are the C API under library names, made from the
+headers by `tools/gen-library.py`:
+
+| C API | Library call |
+|---|---|
+| `ol_node_set_tag` … `ol_document_add_import` (GFCSS in documents) | `OL_NodeSetTag` … `OL_DocumentAddImport` |
+| `olui_new` … `olui_theme_css` (GFOpenLayout UI) | `OLUI_New` … `OLUI_ThemeCss` |
+| `olui_amiga_idcmp` … `olui_amiga_event` (the Intuition glue) | `OLUI_AmigaIdcmp` … `OLUI_AmigaEvent` |
+
+Arguments are in registers (pointers a0 to a3, then d0 to d7), and the
+generator writes the sfd, the inline calls and the library's side from the
+one list, which only grows. `make test` checks they are as it would write
+them, and the library's build checks its call table against the last bias.
+A program written to the C API needn't change: it links
+`libgfopenlayout_link.a` where it linked `libolui.a`, and that opens
+`gfopenlayout.library` 10 before `main()` (or stops with RETURN_FAIL and
+says so). Callbacks (measure, draw, event handlers) are the program's C
+functions, called with the C calling convention; a program built with
+`-fbaserel` gives them `__saveds`. The library opens dos, graphics,
+intuition and layers (version 39) when it is loaded, and diskfont when it
+can; without diskfont the glue uses the screen's font. Build it with
+GFOpenGadTools' theme reader and soft float programs:
+
+```sh
+OGT_ROOT=<opengadtools> SPECS=<SDK>/Lib/m68k-soft-m68040.specs ./build-library.sh
+```
+
+That also builds `OLUITestLib`, `OLUICSSTestLib` and `OLUIDemoLib`, the UI's
+tests and demo through the library. `gfcss_*` (the engine on its own) is not
+in the library yet: programs reach it through documents.
 
 The OS 3.2.3 / AC090 68040 qualification opens the library from `LIBS:` and runs both the normal ABI test and a 48-node stress test covering allocation growth, metadata, image nodes, layout and display-list access.
 

@@ -68,6 +68,7 @@ test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/te
 	./$(BUILD)/test_ui
 	./$(BUILD)/test_css
 	./$(BUILD)/test_ui_css
+	python3 tools/gen-library.py --check
 
 clean:
 	rm -rf $(BUILD)
