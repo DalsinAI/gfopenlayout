@@ -2,7 +2,7 @@
 # gfopenlayout.library 10: GFOpenLayout, GFCSS, GFOpenLayout UI and its
 # Intuition glue in one library, with the os32 stove; libgfopenlayout_link.a,
 # the C API through it; and the tests, the UI's linked through the library.
-#   OGT_ROOT=.../amigachrome-guest/libraries/opengadtools ./build-library.sh
+#   OGT_ROOT=.../amicradle-guest/libraries/opengadtools ./build-library.sh
 # Without OGT_ROOT the library has no GFOpenGadTools theme reader
 # (OLUI_ThemeCss and OLUI_AmigaTheme say so). SPECS (the GFOpen SDK's
 # Lib/m68k-soft-m68040.specs) builds the programs linked through the library

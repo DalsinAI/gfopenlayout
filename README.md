@@ -159,13 +159,13 @@ Host:
 
 ```sh
 make test                                   # GFOpenLayout, and the UI without a theme reader
-make test OGT_ROOT=<opengadtools>           # the UI with GFOpenGadTools' theme reader
+make test OGT_ROOT=<gfopengadtools>           # the UI with GFOpenGadTools' theme reader
 ```
 
 GFOpenLayout UI for the Amiga (`libolui.a`, `OLUIDemo`, `OLUITest`, `OLRowsTest`), soft float:
 
 ```sh
-OGT_ROOT=<opengadtools> SPECS=<SDK>/Lib/m68k-soft-m68040.specs ./build-ui-amiga.sh
+OGT_ROOT=<gfopengadtools> SPECS=<SDK>/Lib/m68k-soft-m68040.specs ./build-ui-amiga.sh
 ```
 
 Amiga static target:
@@ -230,7 +230,7 @@ can; without diskfont the glue uses the screen's font. Build it with
 GFOpenGadTools' theme reader and soft float programs:
 
 ```sh
-OGT_ROOT=<opengadtools> SPECS=<SDK>/Lib/m68k-soft-m68040.specs ./build-library.sh
+OGT_ROOT=<gfopengadtools> SPECS=<SDK>/Lib/m68k-soft-m68040.specs ./build-library.sh
 ```
 
 That also builds `OLUITestLib`, `OLUICSSTestLib` and `OLUIDemoLib`, the UI's

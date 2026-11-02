@@ -276,13 +276,13 @@ the start in about 270 µs with it, 365 µs with the UI's first CSS
 
 ## Building
 
-Host tests: `make test`, or `make test OGT_ROOT=<opengadtools>` with the
+Host tests: `make test`, or `make test OGT_ROOT=<gfopengadtools>` with the
 theme reader; `tests/test_ui.c` runs the widgets, the keyboard and the
 events, and with `OLUI_THEME_FILE` set, a theme; `tests/test_ui_css.c` the
 CSS GFCSS gives the UI. `tests/ui_render.py` draws
 `test_ui`'s ops as a picture, to look at a window on the host.
 
-Amiga: `OGT_ROOT=<opengadtools> SPECS=<SDK>/Lib/m68k-soft-m68040.specs
+Amiga: `OGT_ROOT=<gfopengadtools> SPECS=<SDK>/Lib/m68k-soft-m68040.specs
 ./build-ui-amiga.sh` builds `libolui.a`, `OLUIDemo`, `OLUITest` and
 `OLRowsTest` with the os32 stove.
 
