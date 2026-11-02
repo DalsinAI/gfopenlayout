@@ -28,7 +28,7 @@
                                                program sets (OL_BoxStyleInit stops before them) */
 #define OPENLAYOUTLIB_UI_VERSION 10         /* one library: GFCSS in documents (OL_NodeSetTag to
                                                OL_DocumentAddImport), GFOpenLayout UI (OLUI_New to
-                                               OLUI_ThemeCss) and its Intuition glue (OLUI_AmigaNew to
+                                               OLUI_FreeCss) and its Intuition glue (OLUI_AmigaNew to
                                                OLUI_AmigaEvent), the C API's calls by their library
                                                names (olui_set_text is OLUI_SetText). Callbacks
                                                (measure, draw, handlers) are the program's C

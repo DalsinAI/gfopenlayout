@@ -212,7 +212,7 @@ headers by `tools/gen-library.py`:
 | C API | Library call |
 |---|---|
 | `ol_node_set_tag` … `ol_document_add_import` (GFCSS in documents) | `OL_NodeSetTag` … `OL_DocumentAddImport` |
-| `olui_new` … `olui_theme_css` (GFOpenLayout UI) | `OLUI_New` … `OLUI_ThemeCss` |
+| `olui_new` … `olui_free_css` (GFOpenLayout UI) | `OLUI_New` … `OLUI_FreeCss` |
 | `olui_amiga_idcmp` … `olui_amiga_event` (the Intuition glue) | `OLUI_AmigaIdcmp` … `OLUI_AmigaEvent` |
 
 Arguments are in registers (pointers a0 to a3, then d0 to d7), and the
