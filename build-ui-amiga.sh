@@ -4,7 +4,7 @@
 # os32 stove. Soft float (one binary with or without an FPU): give SPECS the
 # GFOpen SDK's Lib/m68k-soft-m68040.specs. GFOpenLayout and the UI use no
 # floating point at all.
-#   OGT_ROOT=.../amigachrome-guest/libraries/opengadtools SPECS=.../m68k-soft-m68040.specs ./build-ui-amiga.sh
+#   OGT_ROOT=.../amicradle-guest/libraries/opengadtools SPECS=.../m68k-soft-m68040.specs ./build-ui-amiga.sh
 # MIT, Copyright (c) 2026 AmiCradle Team.
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -12,7 +12,7 @@ STOVE=${STOVE:-"$HOME/AmiCradle/stoves/os32-gcc16"}
 CC=${CC:-"$STOVE/prefix/bin/m68k-amigaos-gcc"}
 AR=${AR:-"$STOVE/prefix/bin/m68k-amigaos-ar"}
 OUT=${OUT:-"$HERE/build-amiga/ui"}
-OGT_ROOT=${OGT_ROOT:?"OGT_ROOT: GFOpenGadTools (amigachrome-guest libraries/opengadtools), for its theme reader"}
+OGT_ROOT=${OGT_ROOT:?"OGT_ROOT: GFOpenGadTools (amicradle-guest libraries/opengadtools), for its theme reader"}
 SPECS=${SPECS:-}
 SPECFLAG=""
 [ -n "$SPECS" ] && SPECFLAG="-specs=$SPECS"
