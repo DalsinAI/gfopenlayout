@@ -248,6 +248,11 @@ What the UI needed in GFOpenLayout itself, for any program:
 `ol_box_style.size` to `sizeof(ol_box_style)` and opens version 8
 (`OPENLAYOUTLIB_ROW_VERSION`). `tests/test_rows.c` tests them.
 
+From `gfopenlayout.library` 10 the UI itself is in the library: every
+`olui_` call is an `OLUI_` one (`olui_set_text` is `OLUI_SetText`), and a
+program written to this API links `libgfopenlayout_link.a` instead of
+`libolui.a` to use it (README, "One library").
+
 ## Size and speed
 
 Measured 30 October 2026, for 0.2 (0.3's widgets add to the UI's code, and
@@ -301,7 +306,7 @@ A program links `libolui.a` and includes `gfopenlayout_ui.h` and
 - A box that scrolls scrolls down only (no `overflow-x`), and its bar is not
   dragged.
 - An `img` directly in a `row` or `column` keeps no place: put it in a line (a `div`, a `button`).
-- A resident library: it is a link library for now.
+- `gfcss_*` on its own in the library: the UI and documents reach GFCSS inside it.
 - Laying out only what changed: a change that can move things (text, items, a style that changes a
   size, an item opened or closed) lays the whole window out. A hover, press, focus, check or selection
   that changes only how widgets look is drawn again only where it changed, with no layout.

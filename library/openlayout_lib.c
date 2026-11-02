@@ -12,7 +12,11 @@
  * programs' windows), with no new calls; version 9 lays out web boxes (the
  * box style's per-side borders, widths in thousandths, least and most
  * widths and valign, auto side margins, inline-blocks and repeated table
- * headers, GFOpenLayout 0.9), with no new calls.
+ * headers, GFOpenLayout 0.9), with no new calls; version 10 folds in
+ * GFCSS's document calls, GFOpenLayout UI 0.3 and its Intuition glue
+ * (GFOpenLayout 0.10), 81 calls made from the C API by
+ * tools/gen-library.py (openlayout_lib_v10.h): one library for documents,
+ * web pages and programs' windows.
  * Programs built for 2 to 8 keep working: a box style of an older size
  * has the fields after it 0, as ol_node_set_box copies only its size.
  * Copyright (c) 2026 AmiCradle Team. MIT.
@@ -26,9 +30,14 @@
 #include <proto/exec.h>
 
 #include "../include/libraries/gfopenlayout.h"
+#include <proto/dos.h>
+#include <proto/graphics.h>
+#include <proto/intuition.h>
+#include <proto/layers.h>
+#include <proto/diskfont.h>
 
 #define REG(r, decl) register decl __asm(#r)
-#define LIB_VERSION 9
+#define LIB_VERSION 10
 #define LIB_REVISION 0
 
 struct OpenLayoutLibBase {
@@ -37,15 +46,23 @@ struct OpenLayoutLibBase {
 };
 
 struct ExecBase *SysBase;
+/* what version 10's Intuition glue draws and reads with: the ROM's, opened
+   when the library is loaded; diskfont.library's, when it can be (without
+   it the glue takes the screen's own font) */
+struct DosLibrary *DOSBase;
+struct GfxBase *GfxBase;
+struct IntuitionBase *IntuitionBase;
+struct Library *LayersBase;
+struct Library *DiskfontBase;
 
 int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "gfopenlayout.library 9.0 (1.11.2026) GFOpenLayout 0.9, AmiCradle Team\r\n";
+    "gfopenlayout.library 10.0 (2.11.2026) GFOpenLayout 0.10, AmiCradle Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: gfopenlayout.library 9.0 (1.11.2026) GFOpenLayout 0.9, AmiCradle Team";
+    "$VER: gfopenlayout.library 10.0 (2.11.2026) GFOpenLayout 0.10, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),
@@ -107,6 +124,8 @@ static BOOL OL_DocumentReserve(REG(a0, struct OLDocumentReserve *r), REG(a6, str
 static ol_document *OL_DocumentNewReserved(REG(d0, ULONG ops), REG(a6, struct OpenLayoutLibBase *base));
 static BOOL OL_FramePlace(REG(a0, struct OLFramePlace *r), REG(a6, struct OpenLayoutLibBase *base));
 
+#include "openlayout_lib_v10.h"
+
 static const APTR lib_vectors[] = {
     (APTR)lib_open, (APTR)lib_close, (APTR)lib_expunge, (APTR)lib_null,
     (APTR)OL_Version, (APTR)OL_VersionString,
@@ -132,8 +151,15 @@ static const APTR lib_vectors[] = {
     (APTR)OL_DocumentReserve, (APTR)OL_DocumentNewReserved,
     /* version 7 */
     (APTR)OL_FramePlace,
+    /* version 10 */
+    OL_V10_VECTORS,
     (APTR)-1
 };
+
+/* each call where its bias says (the four the library itself has first, the
+   -1 last): a call put in or taken out without its bias stops the build */
+typedef char lib_vectors_match_biases[
+    sizeof(lib_vectors) / sizeof(lib_vectors[0]) == OL_V10_LAST_BIAS / 6 + 1 ? 1 : -1];
 
 static const struct {
     ULONG size;
@@ -150,11 +176,34 @@ const struct Resident lib_romtag = {
     (char *)lib_name, (char *)lib_id, (APTR)&lib_inittable
 };
 
+static void close_bases(void)
+{
+    if (DiskfontBase) CloseLibrary(DiskfontBase);
+    if (LayersBase) CloseLibrary(LayersBase);
+    if (IntuitionBase) CloseLibrary((struct Library *)IntuitionBase);
+    if (GfxBase) CloseLibrary((struct Library *)GfxBase);
+    if (DOSBase) CloseLibrary((struct Library *)DOSBase);
+    DiskfontBase = LayersBase = NULL;
+    IntuitionBase = NULL;
+    GfxBase = NULL;
+    DOSBase = NULL;
+}
+
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),
                                 REG(a6, struct ExecBase *sys))
 {
     SysBase = sys;
+    DOSBase = (struct DosLibrary *)OpenLibrary((STRPTR)"dos.library", 39);
+    GfxBase = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library", 39);
+    IntuitionBase = (struct IntuitionBase *)OpenLibrary((STRPTR)"intuition.library", 39);
+    LayersBase = OpenLibrary((STRPTR)"layers.library", 39);
+    DiskfontBase = OpenLibrary((STRPTR)"diskfont.library", 39);
+    if (!DOSBase || !GfxBase || !IntuitionBase || !LayersBase) {
+        close_bases();
+        FreeMem((UBYTE *)base - base->lib.lib_NegSize, base->lib.lib_NegSize + base->lib.lib_PosSize);
+        return NULL;
+    }
     base->seglist = seglist;
     base->lib.lib_Revision = LIB_REVISION;
     return &base->lib;
@@ -184,6 +233,7 @@ static BPTR lib_expunge(REG(a6, struct OpenLayoutLibBase *base))
     }
     seglist = base->seglist;
     Remove(&base->lib.lib_Node);
+    close_bases();
     FreeMem((UBYTE *)base - base->lib.lib_NegSize,
             base->lib.lib_NegSize + base->lib.lib_PosSize);
     return seglist;
