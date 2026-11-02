@@ -301,8 +301,14 @@ void *olui_user(const olui_el *el);
 /* Turns a GFOpenGadTools theme file's text (THEME_SPEC.md, version 1) into
  * CSS for olui_add_css, light or dark (the theme's light when it has no
  * dark). Returns a malloc'd string, or NULL with why in err. Built in
- * when GFOpenGadTools' theme reader is linked (OLUI_THEME: see the README). */
+ * when GFOpenGadTools' theme reader is linked (OLUI_THEME: see the README).
+ * The program's free() takes it back, through gfopenlayout.library too
+ * (libgfopenlayout_link.a copies it to the program's own memory). */
 char *olui_theme_css(const char *theme_text, int dark, char *err, size_t errlen);
+/* Frees what olui_theme_css returned with the allocator that made it: what
+ * free() does when the UI is linked in, and OLUI_ThemeCss's in the library
+ * (a program calling OLUI_ThemeCss itself gives it back with OLUI_FreeCss). */
+void olui_free_css(char *css);
 
 #ifdef __cplusplus
 }

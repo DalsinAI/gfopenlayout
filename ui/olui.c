@@ -3859,3 +3859,8 @@ void olui_set_number(olui *ui, olui_el *el, int value)
     set_node_value(el);
     damage_el(ui, el);
 }
+
+void olui_free_css(char *css)
+{
+    free(css);
+}

@@ -152,7 +152,7 @@ int main(void)
     char *file_markup = NULL, *file_css = NULL, err[128];
     struct Window *win;
     olui *ui;
-    olui_amiga *amiga;
+    olui_amiga *glue;   /* not "amiga": the compiler defines that */
     int rc = RETURN_FAIL;
     (void)version;
 
@@ -170,12 +170,12 @@ int main(void)
         goto out;
     }
     ui = olui_new();
-    amiga = ui ? olui_amiga_new(ui, win) : NULL;
-    if (!amiga) {
+    glue = ui ? olui_amiga_new(ui, win) : NULL;
+    if (!glue) {
         PutStr((STRPTR)"OLUIDemo: out of memory\n");
         goto free;
     }
-    if (!olui_amiga_theme(amiga, args[2] ? (const char *)args[2] : NULL))
+    if (!olui_amiga_theme(glue, args[2] ? (const char *)args[2] : NULL))
         PutStr((STRPTR)"OLUIDemo: no theme found, the built-in look\n");
     if (!olui_load(ui, file_markup ? file_markup : markup, file_css, err, sizeof(err))) {
         Printf((STRPTR)"OLUIDemo: %s\n", (ULONG)err);
@@ -189,7 +189,7 @@ int main(void)
     olui_on(ui, NULL, OLUI_CUT, on_clip, NULL);
     olui_on(ui, NULL, OLUI_COPY, on_clip, NULL);
     olui_on(ui, NULL, OLUI_PASTE, on_clip, NULL);
-    if (!olui_amiga_layout(amiga)) {
+    if (!olui_amiga_layout(glue)) {
         PutStr((STRPTR)"OLUIDemo: out of memory\n");
         goto free;
     }
@@ -198,15 +198,15 @@ int main(void)
         ULONG sig = Wait((1UL << win->UserPort->mp_SigBit) | SIGBREAKF_CTRL_C);
         if (sig & SIGBREAKF_CTRL_C) break;
         while ((m = (struct IntuiMessage *)GetMsg(win->UserPort))) {
-            int r = olui_amiga_event(amiga, m);
+            int r = olui_amiga_event(glue, m);
             ReplyMsg(&m->ExecMessage);
             if (r == OLUI_AMIGA_CLOSE) done = 1;
         }
-        olui_amiga_draw(amiga);
+        olui_amiga_draw(glue);
     }
     rc = RETURN_OK;
 free:
-    olui_amiga_free(amiga);
+    olui_amiga_free(glue);
     olui_free(ui);
     CloseWindow(win);
 out:
