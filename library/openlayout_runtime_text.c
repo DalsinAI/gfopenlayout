@@ -9,10 +9,34 @@
  */
 #include <stddef.h>
 #include <stdarg.h>
-#include <ctype.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
+#include <ctype.h>   /* for its class bits (_U, _L ...) */
+
+/* not string.h, stdlib.h or stdio.h: libnix's have some of these as inline
+   functions of their own; these are what is called when one is not inlined */
+size_t strlen(const char *s);
+int strncmp(const char *a, const char *b, size_t n);
+char *strcpy(char *d, const char *s);
+char *strncpy(char *d, const char *s, size_t n);
+char *strcat(char *d, const char *s);
+char *strncat(char *d, const char *s, size_t n);
+char *strchr(const char *s, int c);
+char *strrchr(const char *s, int c);
+char *strstr(const char *h, const char *n);
+size_t strcspn(const char *s, const char *reject);
+int memcmp(const void *a, const void *b, size_t n);
+void *memmove(void *dst, const void *src, size_t n);
+void *memchr(const void *p, int c, size_t n);
+const char *__locale_ctype_ptr(void);
+unsigned long strtoul(const char *s, char **end, int base);
+long strtol(const char *s, char **end, int base);
+int atoi(const char *s);
+long atol(const char *s);
+int vsnprintf(char *s, size_t size, const char *f, va_list ap);
+int snprintf(char *s, size_t size, const char *f, ...);
+int sprintf(char *s, const char *f, ...);
+#ifndef NULL
+#define NULL ((void *)0)
+#endif
 
 int strncmp(const char *a, const char *b, size_t n)
 {
