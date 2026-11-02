@@ -42,7 +42,7 @@ olui_set_zoom olui_layout olui_draw olui_damaged olui_mouse olui_key olui_tick
 olui_find olui_id olui_tag olui_get_text olui_set_text olui_get_value
 olui_get_checked olui_set_checked olui_set_disabled olui_set_hidden
 olui_set_progress olui_slider_value olui_set_slider olui_box olui_focus
-olui_focused olui_set_scroll olui_select_index olui_select_set
+olui_focused olui_get_scroll olui_set_scroll olui_select_index olui_select_set
 olui_select_count olui_select_option_value olui_select_option_text
 olui_select_add olui_select_clear olui_select_is_open olui_select_open
 olui_number_value olui_number_decimals olui_set_number olui_get_selection
@@ -50,7 +50,7 @@ olui_set_selection olui_insert_text olui_edit olui_list_add olui_list_clear
 olui_list_selected olui_list_select olui_item_open olui_item_is_open
 olui_tabs_current olui_tabs_select olui_set_user olui_user
 olui_theme_css""".split()
-AMIGA = """olui_amiga_new olui_amiga_free olui_amiga_theme olui_amiga_own
+AMIGA = """olui_amiga_idcmp olui_amiga_new olui_amiga_free olui_amiga_theme olui_amiga_own
 olui_amiga_images olui_amiga_fonts olui_amiga_layout olui_amiga_draw
 olui_amiga_event""".split()
 CALLS = [("core", n) for n in CORE] + [("ui", n) for n in UI] + [("amiga", n) for n in AMIGA]
@@ -72,6 +72,11 @@ def prototypes():
         text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
         for m in re.finditer(r"^([A-Za-z_][\w \*]*?[\s\*])([a-z_][a-z0-9_]*)\s*\(([^;{]*?)\)\s*;", text, re.M):
             found[(part, m.group(2))] = (" ".join(m.group(1).split()).replace(" *", " *"), m.group(3))
+    # every call the UI's headers declare is in the library
+    listed = {n for _, n in CALLS}
+    for part, name in sorted(found):
+        if part != "core" and name.startswith("olui_") and name not in listed:
+            sys.exit(f"gen-library: {HEADERS[part]} declares {name}, which is not in CALLS")
     calls = []
     for part, name in CALLS:
         if (part, name) not in found:

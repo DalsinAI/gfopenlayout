@@ -225,6 +225,11 @@ olui_el * olui_focused(const olui *ui)
     return OLUI_Focused(ui);
 }
 
+int32_t olui_get_scroll(const olui_el *el)
+{
+    return OLUI_GetScroll(el);
+}
+
 void olui_set_scroll(olui *ui, olui_el *el, int32_t y)
 {
     OLUI_SetScroll(ui, el, y);
@@ -363,6 +368,11 @@ void * olui_user(const olui_el *el)
 char * olui_theme_css(const char *theme_text, int dark, char *err, size_t errlen)
 {
     return OLUI_ThemeCss(theme_text, dark, err, errlen);
+}
+
+ULONG olui_amiga_idcmp(void)
+{
+    return OLUI_AmigaIdcmp();
 }
 
 olui_amiga * olui_amiga_new(olui *ui, struct Window *win)

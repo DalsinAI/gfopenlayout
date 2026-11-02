@@ -272,6 +272,12 @@ static olui_el * OLUI_Focused(REG(a0, const olui * ui), REG(a6, struct OpenLayou
     return olui_focused(ui);
 }
 
+static int32_t OLUI_GetScroll(REG(a0, const olui_el * el), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_get_scroll(el);
+}
+
 static void OLUI_SetScroll(REG(a0, olui * ui), REG(a1, olui_el * el), REG(d0, int32_t y), REG(a6, struct OpenLayoutLibBase *base))
 {
     (void)base;
@@ -442,6 +448,12 @@ static char * OLUI_ThemeCss(REG(a0, const char * theme_text), REG(d0, int dark),
 
 /* ---- GFOpenLayout UI's Amiga glue ---- */
 
+static ULONG OLUI_AmigaIdcmp(REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_amiga_idcmp();
+}
+
 static olui_amiga * OLUI_AmigaNew(REG(a0, olui * ui), REG(a1, struct Window * win), REG(a6, struct OpenLayoutLibBase *base))
 {
     (void)base;
@@ -511,16 +523,17 @@ static int OLUI_AmigaEvent(REG(a0, olui_amiga * a), REG(a1, struct IntuiMessage 
     (APTR)OLUI_GetValue, (APTR)OLUI_GetChecked, (APTR)OLUI_SetChecked, \
     (APTR)OLUI_SetDisabled, (APTR)OLUI_SetHidden, (APTR)OLUI_SetProgress, \
     (APTR)OLUI_SliderValue, (APTR)OLUI_SetSlider, (APTR)OLUI_Box, \
-    (APTR)OLUI_Focus, (APTR)OLUI_Focused, (APTR)OLUI_SetScroll, \
-    (APTR)OLUI_SelectIndex, (APTR)OLUI_SelectSet, (APTR)OLUI_SelectCount, \
-    (APTR)OLUI_SelectOptionValue, (APTR)OLUI_SelectOptionText, (APTR)OLUI_SelectAdd, \
-    (APTR)OLUI_SelectClear, (APTR)OLUI_SelectIsOpen, (APTR)OLUI_SelectOpen, \
-    (APTR)OLUI_NumberValue, (APTR)OLUI_NumberDecimals, (APTR)OLUI_SetNumber, \
-    (APTR)OLUI_GetSelection, (APTR)OLUI_SetSelection, (APTR)OLUI_InsertText, \
-    (APTR)OLUI_Edit, (APTR)OLUI_ListAdd, (APTR)OLUI_ListClear, \
-    (APTR)OLUI_ListSelected, (APTR)OLUI_ListSelect, (APTR)OLUI_ItemOpen, \
-    (APTR)OLUI_ItemIsOpen, (APTR)OLUI_TabsCurrent, (APTR)OLUI_TabsSelect, \
-    (APTR)OLUI_SetUser, (APTR)OLUI_User, (APTR)OLUI_ThemeCss, \
-    (APTR)OLUI_AmigaNew, (APTR)OLUI_AmigaFree, (APTR)OLUI_AmigaTheme, \
-    (APTR)OLUI_AmigaOwn, (APTR)OLUI_AmigaImages, (APTR)OLUI_AmigaFonts, \
-    (APTR)OLUI_AmigaLayout, (APTR)OLUI_AmigaDraw, (APTR)OLUI_AmigaEvent
+    (APTR)OLUI_Focus, (APTR)OLUI_Focused, (APTR)OLUI_GetScroll, \
+    (APTR)OLUI_SetScroll, (APTR)OLUI_SelectIndex, (APTR)OLUI_SelectSet, \
+    (APTR)OLUI_SelectCount, (APTR)OLUI_SelectOptionValue, (APTR)OLUI_SelectOptionText, \
+    (APTR)OLUI_SelectAdd, (APTR)OLUI_SelectClear, (APTR)OLUI_SelectIsOpen, \
+    (APTR)OLUI_SelectOpen, (APTR)OLUI_NumberValue, (APTR)OLUI_NumberDecimals, \
+    (APTR)OLUI_SetNumber, (APTR)OLUI_GetSelection, (APTR)OLUI_SetSelection, \
+    (APTR)OLUI_InsertText, (APTR)OLUI_Edit, (APTR)OLUI_ListAdd, \
+    (APTR)OLUI_ListClear, (APTR)OLUI_ListSelected, (APTR)OLUI_ListSelect, \
+    (APTR)OLUI_ItemOpen, (APTR)OLUI_ItemIsOpen, (APTR)OLUI_TabsCurrent, \
+    (APTR)OLUI_TabsSelect, (APTR)OLUI_SetUser, (APTR)OLUI_User, \
+    (APTR)OLUI_ThemeCss, (APTR)OLUI_AmigaIdcmp, (APTR)OLUI_AmigaNew, \
+    (APTR)OLUI_AmigaFree, (APTR)OLUI_AmigaTheme, (APTR)OLUI_AmigaOwn, \
+    (APTR)OLUI_AmigaImages, (APTR)OLUI_AmigaFonts, (APTR)OLUI_AmigaLayout, \
+    (APTR)OLUI_AmigaDraw, (APTR)OLUI_AmigaEvent
