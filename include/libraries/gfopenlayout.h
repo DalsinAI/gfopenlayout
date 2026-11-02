@@ -3,6 +3,8 @@
 
 #include <exec/types.h>
 #include <gfopenlayout.h>
+#include <gfopenlayout_ui.h>
+#include <gfopenlayout_ui_amiga.h>
 
 #define OPENLAYOUTLIB_NAME "gfopenlayout.library"
 #define OPENLAYOUTLIB_VERSION 2             /* the calls up to OL_NodeValue */
@@ -24,6 +26,16 @@
                                                border_widths, border_argbs, min_width, max_width,
                                                width_permille, max_width_permille and valign, with the size the
                                                program sets (OL_BoxStyleInit stops before them) */
+#define OPENLAYOUTLIB_UI_VERSION 10         /* one library: GFCSS in documents (OL_NodeSetTag to
+                                               OL_DocumentAddImport), GFOpenLayout UI (OLUI_New to
+                                               OLUI_ThemeCss) and its Intuition glue (OLUI_AmigaNew to
+                                               OLUI_AmigaEvent), the C API's calls by their library
+                                               names (olui_set_text is OLUI_SetText). Callbacks
+                                               (measure, draw, handlers) are the program's C
+                                               functions, called with the C calling convention:
+                                               a program built with -fbaserel gives them __saveds.
+                                               libgfopenlayout_link.a is the C API through the
+                                               library, for a program written to it. */
 
 struct OLNodeAppend {
     ol_document *document;

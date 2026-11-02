@@ -255,8 +255,9 @@ static struct TextFont *font_for(olui_amiga *a, int px, unsigned style)
     ta.ta_YSize = (UWORD)px;
     ta.ta_Style = (style & OL_TEXT_BOLD) ? FSF_BOLD : FS_NORMAL;
     ta.ta_Flags = 0;
-    tf = OpenDiskFont(&ta);
-    if (!tf) {
+    /* in gfopenlayout.library diskfont.library may not have opened */
+    tf = DiskfontBase ? OpenDiskFont(&ta) : NULL;
+    if (!tf && DiskfontBase) {
         ta.ta_Style = FS_NORMAL;
         tf = OpenDiskFont(&ta);
     }
