@@ -3,6 +3,8 @@
  * gfopenlayout.library 10: a program links this (libgfopenlayout_link.a) where it
  * linked libolui.a; gfopenlayout_link_base.c opens the library for it.
  * MIT, Copyright (c) 2026 AmiCradle Team. */
+#include <stdlib.h>
+#include <string.h>
 #include <proto/gfopenlayout.h>
 
 int ol_node_set_tag(ol_node *node, const char *tag)
@@ -367,7 +369,20 @@ void * olui_user(const olui_el *el)
 
 char * olui_theme_css(const char *theme_text, int dark, char *err, size_t errlen)
 {
-    return OLUI_ThemeCss(theme_text, dark, err, errlen);
+    char *lib = OLUI_ThemeCss(theme_text, dark, err, errlen), *mine;
+    size_t n;
+    if (!lib) return NULL;
+    n = strlen(lib) + 1;
+    mine = (char *)malloc(n);
+    if (mine) memcpy(mine, lib, n);
+    else if (err && errlen) strncpy(err, "out of memory", errlen - 1), err[errlen - 1] = 0;
+    OLUI_FreeCss(lib);
+    return mine;
+}
+
+void olui_free_css(char *css)
+{
+    free(css);   /* olui_theme_css's copy, in the program's memory */
 }
 
 ULONG olui_amiga_idcmp(void)

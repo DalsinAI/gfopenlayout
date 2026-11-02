@@ -137,17 +137,18 @@
 #define OLUI_SetUser(el,user) LP2NR(0x2f4, OLUI_SetUser, olui_el *, (el), a0, void *, (user), a1, , OPENLAYOUT_BASE_NAME)
 #define OLUI_User(el) LP1(0x2fa, void *, OLUI_User, const olui_el *, (el), a0, , OPENLAYOUT_BASE_NAME)
 #define OLUI_ThemeCss(theme_text,dark,err,errlen) LP4(0x300, char *, OLUI_ThemeCss, const char *, (theme_text), a0, int, (dark), d0, char *, (err), a1, size_t, (errlen), d1, , OPENLAYOUT_BASE_NAME)
+#define OLUI_FreeCss(css) LP1NR(0x306, OLUI_FreeCss, char *, (css), a0, , OPENLAYOUT_BASE_NAME)
 /* version 10: GFOpenLayout UI's Amiga glue */
-#define OLUI_AmigaIdcmp() LP0(0x306, ULONG, OLUI_AmigaIdcmp, , OPENLAYOUT_BASE_NAME)
-#define OLUI_AmigaNew(ui,win) LP2(0x30c, olui_amiga *, OLUI_AmigaNew, olui *, (ui), a0, struct Window *, (win), a1, , OPENLAYOUT_BASE_NAME)
-#define OLUI_AmigaFree(a) LP1NR(0x312, OLUI_AmigaFree, olui_amiga *, (a), a0, , OPENLAYOUT_BASE_NAME)
-#define OLUI_AmigaTheme(a,path) LP2(0x318, int, OLUI_AmigaTheme, olui_amiga *, (a), a0, const char *, (path), a1, , OPENLAYOUT_BASE_NAME)
-#define OLUI_AmigaOwn(a,el,fn,userdata) LP4(0x31e, int, OLUI_AmigaOwn, olui_amiga *, (a), a0, const olui_el *, (el), a1, olui_amiga_own_fn, (fn), a2, void *, (userdata), a3, , OPENLAYOUT_BASE_NAME)
-#define OLUI_AmigaImages(a,fn,userdata) LP3NR(0x324, OLUI_AmigaImages, olui_amiga *, (a), a0, olui_amiga_image_fn, (fn), a1, void *, (userdata), a2, , OPENLAYOUT_BASE_NAME)
-#define OLUI_AmigaFonts(a,font,mono) LP3NR(0x32a, OLUI_AmigaFonts, olui_amiga *, (a), a0, const char *, (font), a1, const char *, (mono), a2, , OPENLAYOUT_BASE_NAME)
-#define OLUI_AmigaLayout(a) LP1(0x330, int, OLUI_AmigaLayout, olui_amiga *, (a), a0, , OPENLAYOUT_BASE_NAME)
-#define OLUI_AmigaDraw(a) LP1NR(0x336, OLUI_AmigaDraw, olui_amiga *, (a), a0, , OPENLAYOUT_BASE_NAME)
-#define OLUI_AmigaEvent(a,msg) LP2(0x33c, int, OLUI_AmigaEvent, olui_amiga *, (a), a0, struct IntuiMessage *, (msg), a1, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaIdcmp() LP0(0x30c, ULONG, OLUI_AmigaIdcmp, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaNew(ui,win) LP2(0x312, olui_amiga *, OLUI_AmigaNew, olui *, (ui), a0, struct Window *, (win), a1, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaFree(a) LP1NR(0x318, OLUI_AmigaFree, olui_amiga *, (a), a0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaTheme(a,path) LP2(0x31e, int, OLUI_AmigaTheme, olui_amiga *, (a), a0, const char *, (path), a1, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaOwn(a,el,fn,userdata) LP4(0x324, int, OLUI_AmigaOwn, olui_amiga *, (a), a0, const olui_el *, (el), a1, olui_amiga_own_fn, (fn), a2, void *, (userdata), a3, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaImages(a,fn,userdata) LP3NR(0x32a, OLUI_AmigaImages, olui_amiga *, (a), a0, olui_amiga_image_fn, (fn), a1, void *, (userdata), a2, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaFonts(a,font,mono) LP3NR(0x330, OLUI_AmigaFonts, olui_amiga *, (a), a0, const char *, (font), a1, const char *, (mono), a2, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaLayout(a) LP1(0x336, int, OLUI_AmigaLayout, olui_amiga *, (a), a0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaDraw(a) LP1NR(0x33c, OLUI_AmigaDraw, olui_amiga *, (a), a0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaEvent(a,msg) LP2(0x342, int, OLUI_AmigaEvent, olui_amiga *, (a), a0, struct IntuiMessage *, (msg), a1, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif

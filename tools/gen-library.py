@@ -49,11 +49,27 @@ olui_number_value olui_number_decimals olui_set_number olui_get_selection
 olui_set_selection olui_insert_text olui_edit olui_list_add olui_list_clear
 olui_list_selected olui_list_select olui_item_open olui_item_is_open
 olui_tabs_current olui_tabs_select olui_set_user olui_user
-olui_theme_css""".split()
+olui_theme_css olui_free_css""".split()
 AMIGA = """olui_amiga_idcmp olui_amiga_new olui_amiga_free olui_amiga_theme olui_amiga_own
 olui_amiga_images olui_amiga_fonts olui_amiga_layout olui_amiga_draw
 olui_amiga_event""".split()
 CALLS = [("core", n) for n in CORE] + [("ui", n) for n in UI] + [("amiga", n) for n in AMIGA]
+
+# the program's side, where a call's plain one won't do: olui_theme_css's
+# string is the program's to free(), so it is copied out of the library's
+# memory into the program's own
+LINK_BODY = {
+    "olui_theme_css": """    char *lib = OLUI_ThemeCss(theme_text, dark, err, errlen), *mine;
+    size_t n;
+    if (!lib) return NULL;
+    n = strlen(lib) + 1;
+    mine = (char *)malloc(n);
+    if (mine) memcpy(mine, lib, n);
+    else if (err && errlen) strncpy(err, "out of memory", errlen - 1), err[errlen - 1] = 0;
+    OLUI_FreeCss(lib);
+    return mine;""",
+    "olui_free_css": """    free(css);   /* olui_theme_css's copy, in the program's memory */""",
+}
 
 HEADERS = {"core": "include/gfopenlayout.h", "ui": "include/gfopenlayout_ui.h",
            "amiga": "include/gfopenlayout_ui_amiga.h"}
@@ -147,7 +163,10 @@ def generate():
         # the program's side: the C call through the library
         cargs = ", ".join(f"{t} {n}" if not t.endswith("*") else f"{t}{n}" for t, n in params) or "void"
         cbody = f"{L}({', '.join(n for _, n in params)});"
-        link.append(f"{ret} {name}({cargs})\n{{\n    {'' if is_void(ret) else 'return '}{cbody}\n}}")
+        if name in LINK_BODY:
+            link.append(f"{ret} {name}({cargs})\n{{\n{LINK_BODY[name]}\n}}")
+        else:
+            link.append(f"{ret} {name}({cargs})\n{{\n    {'' if is_void(ret) else 'return '}{cbody}\n}}")
         bias += 6
     v = ", \\\n    ".join(", ".join(vectors[i:i + 3]) for i in range(0, len(vectors), 3))
     libh = ("/* Made by tools/gen-library.py from the headers: don't edit. gfopenlayout.library\n"
@@ -163,7 +182,7 @@ def generate():
              " * gfopenlayout.library 10: a program links this (libgfopenlayout_link.a) where it\n"
              " * linked libolui.a; gfopenlayout_link_base.c opens the library for it.\n"
              " * MIT, Copyright (c) 2026 AmiCradle Team. */\n"
-             "#include <proto/gfopenlayout.h>\n\n"
+             "#include <stdlib.h>\n#include <string.h>\n#include <proto/gfopenlayout.h>\n\n"
              + "\n\n".join(link) + "\n")
     return "\n".join(sfd), "\n".join(inline), libh, linkc, len(calls), bias - 6
 

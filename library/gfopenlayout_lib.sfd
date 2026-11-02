@@ -138,6 +138,7 @@ void OLUI_TabsSelect(olui *ui, olui_el *tabs, int index)(a0,a1,d0)
 void OLUI_SetUser(olui_el *el, void *user)(a0,a1)
 void * OLUI_User(const olui_el *el)(a0)
 char * OLUI_ThemeCss(const char *theme_text, int dark, char *err, size_t errlen)(a0,d0,a1,d1)
+void OLUI_FreeCss(char *css)(a0)
 * version 10: GFOpenLayout UI's Amiga glue
 ULONG OLUI_AmigaIdcmp()()
 olui_amiga * OLUI_AmigaNew(olui *ui, struct Window *win)(a0,a1)

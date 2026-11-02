@@ -446,6 +446,12 @@ static char * OLUI_ThemeCss(REG(a0, const char * theme_text), REG(d0, int dark),
     return olui_theme_css(theme_text, dark, err, errlen);
 }
 
+static void OLUI_FreeCss(REG(a0, char * css), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    olui_free_css(css);
+}
+
 /* ---- GFOpenLayout UI's Amiga glue ---- */
 
 static ULONG OLUI_AmigaIdcmp(REG(a6, struct OpenLayoutLibBase *base))
@@ -509,7 +515,7 @@ static int OLUI_AmigaEvent(REG(a0, olui_amiga * a), REG(a1, struct IntuiMessage 
 }
 
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x33c
+#define OL_V10_LAST_BIAS 0x342
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -536,7 +542,7 @@ static int OLUI_AmigaEvent(REG(a0, olui_amiga * a), REG(a1, struct IntuiMessage 
     (APTR)OLUI_ListClear, (APTR)OLUI_ListSelected, (APTR)OLUI_ListSelect, \
     (APTR)OLUI_ItemOpen, (APTR)OLUI_ItemIsOpen, (APTR)OLUI_TabsCurrent, \
     (APTR)OLUI_TabsSelect, (APTR)OLUI_SetUser, (APTR)OLUI_User, \
-    (APTR)OLUI_ThemeCss, (APTR)OLUI_AmigaIdcmp, (APTR)OLUI_AmigaNew, \
-    (APTR)OLUI_AmigaFree, (APTR)OLUI_AmigaTheme, (APTR)OLUI_AmigaOwn, \
-    (APTR)OLUI_AmigaImages, (APTR)OLUI_AmigaFonts, (APTR)OLUI_AmigaLayout, \
-    (APTR)OLUI_AmigaDraw, (APTR)OLUI_AmigaEvent
+    (APTR)OLUI_ThemeCss, (APTR)OLUI_FreeCss, (APTR)OLUI_AmigaIdcmp, \
+    (APTR)OLUI_AmigaNew, (APTR)OLUI_AmigaFree, (APTR)OLUI_AmigaTheme, \
+    (APTR)OLUI_AmigaOwn, (APTR)OLUI_AmigaImages, (APTR)OLUI_AmigaFonts, \
+    (APTR)OLUI_AmigaLayout, (APTR)OLUI_AmigaDraw, (APTR)OLUI_AmigaEvent
