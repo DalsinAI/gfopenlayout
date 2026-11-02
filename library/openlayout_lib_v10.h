@@ -508,6 +508,9 @@ static int OLUI_AmigaEvent(REG(a0, olui_amiga * a), REG(a1, struct IntuiMessage 
     return olui_amiga_event(a, msg);
 }
 
+/* the last call's bias: lib_vectors is checked against it */
+#define OL_V10_LAST_BIAS 0x33c
+
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
     (APTR)OL_NodeAttr, (APTR)OL_NodeSetCssState, (APTR)OL_NodeCssState, \

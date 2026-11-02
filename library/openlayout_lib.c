@@ -156,6 +156,11 @@ static const APTR lib_vectors[] = {
     (APTR)-1
 };
 
+/* each call where its bias says (the four the library itself has first, the
+   -1 last): a call put in or taken out without its bias stops the build */
+typedef char lib_vectors_match_biases[
+    sizeof(lib_vectors) / sizeof(lib_vectors[0]) == OL_V10_LAST_BIAS / 6 + 1 ? 1 : -1];
+
 static const struct {
     ULONG size;
     const APTR *vectors;

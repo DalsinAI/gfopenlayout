@@ -155,7 +155,9 @@ def generate():
             " * MIT, Copyright (c) 2026 AmiCradle Team. */\n"
             "#include <gfopenlayout_ui.h>\n#include <gfopenlayout_ui_amiga.h>\n\n"
             + "\n\n".join(lib)
-            + "\n\n#define OL_V10_VECTORS \\\n    " + v + "\n")
+            + "\n\n/* the last call's bias: lib_vectors is checked against it */\n"
+            + f"#define OL_V10_LAST_BIAS 0x{bias - 6:x}\n"
+            + "\n#define OL_V10_VECTORS \\\n    " + v + "\n")
     linkc = ("/* Made by tools/gen-library.py from the headers: don't edit. The C API of\n"
              " * GFOpenLayout's CSS calls, GFOpenLayout UI and its Amiga glue through\n"
              " * gfopenlayout.library 10: a program links this (libgfopenlayout_link.a) where it\n"
