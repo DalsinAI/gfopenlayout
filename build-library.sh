@@ -4,7 +4,10 @@
 # the C API through it; and the tests, the UI's linked through the library.
 #   OGT_ROOT=.../amigachrome-guest/libraries/opengadtools ./build-library.sh
 # Without OGT_ROOT the library has no GFOpenGadTools theme reader
-# (OLUI_ThemeCss and OLUI_AmigaTheme say so).
+# (OLUI_ThemeCss and OLUI_AmigaTheme say so). SPECS (the GFOpen SDK's
+# Lib/m68k-soft-m68040.specs) builds the programs linked through the library
+# soft float, as build-ui-amiga.sh does: libnix's printf has FPU code
+# otherwise. The library itself has no floating point at all.
 # MIT, Copyright (c) 2026 AmiCradle Team.
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -14,6 +17,9 @@ CC=${CC:-"$P/bin/m68k-amigaos-gcc"}
 OUT=${OUT:-"$HERE/build-amiga"}
 
 OGT_ROOT=${OGT_ROOT:-}
+SPECS=${SPECS:-}
+SPECFLAG=""
+[ -n "$SPECS" ] && SPECFLAG="-specs=$SPECS"
 mkdir -p "$OUT/include/libraries" "$OUT/include/inline" "$OUT/include/proto" "$OUT/lib" "$OUT/tests" "$OUT/obj"
 python3 "$HERE/tools/gen-library.py" --check
 cp "$HERE/include/gfopenlayout.h" "$HERE/include/gfopenlayout_css.h" "$HERE/include/gfopenlayout_ui.h" \
@@ -47,7 +53,7 @@ echo "$OUT/lib/gfopenlayout.library ($(wc -c < "$OUT/lib/gfopenlayout.library") 
 "$CC" -m68040 -m68881 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -Wall -Wextra -Werror -noixemul \
   -I"$HERE/include" -o "$OUT/tests/LayoutLibStress" "$HERE/tests/test_library_stress.c"
 # the C API through the library, and the UI's tests and demo linked with it
-LINKF="-m68040 -noixemul -Uamiga -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -Wall -Wextra -Werror -I$HERE/include"
+LINKF="-m68040 $SPECFLAG -noixemul -Uamiga -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -Wall -Wextra -Werror -I$HERE/include"
 # shellcheck disable=SC2086
 "$CC" $LINKF -c "$HERE/library/link/gfopenlayout_link.c" -o "$OUT/obj/gfopenlayout_link.o"
 # shellcheck disable=SC2086
