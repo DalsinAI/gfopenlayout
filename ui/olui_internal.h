@@ -76,6 +76,16 @@ typedef struct {
     /* 0.4 */
     int positioned;             /* P_...: position absolute or fixed is a frame at left and top (box.frame) */
     int32_t z;                  /* z-index (auto: 0): its layer among its parent's children */
+    int opacity;                /* 0 to 255: how much of it shows (its own; drawing multiplies those it is in) */
+    int shadows;                /* text-shadow: how many, the first on top */
+    ol_unit shadow_x[OLUI_MAX_SHADOWS], shadow_y[OLUI_MAX_SHADOWS];
+    uint32_t shadow_argb[OLUI_MAX_SHADOWS];
+    ol_unit outline;            /* outline's width (0: none), drawn round the border box */
+    uint32_t outline_argb;
+    int bg_image;               /* background-image's picture: url(N), or a name the program gave N; -1: none */
+    int bg_name;                /* its url's text, interned in the sheet (olui_sheet_name), from 1; 0: none */
+    int bg_repeat;              /* OLUI_REPEAT_... */
+    int bg_align_x, bg_align_y; /* background-position in thousandths of the room left (500: the middle) */
 } olui_cs;
 
 /* position (olui_cs.positioned) */
@@ -135,7 +145,11 @@ int olui_sheet_add(olui_sheet *sheet, const char *css);
  * state changes no element's style */
 unsigned olui_sheet_states(const olui_sheet *sheet);
 /* el's style from its parent's (NULL: the defaults) and the rules that match it */
-void olui_style_compute(const olui_sheet *sheet, olui_el *el, const olui_cs *parent);
+void olui_style_compute(olui_sheet *sheet, olui_el *el, const olui_cs *parent);
+/* 0.4: background-image's names: the program's number for a name (olui_image_name), and a name's text
+ * from its index (cs.bg_name) */
+int olui_sheet_name_image(olui_sheet *sheet, const char *name, int image);
+const char *olui_sheet_name(const olui_sheet *sheet, int index);
 /* one declaration list ("color: red; padding: 2px") on cs */
 void olui_style_apply_decls(olui_cs *cs, const char *decls, const olui_cs *parent);
 int olui_parse_colour(const char *s, uint32_t *argb);

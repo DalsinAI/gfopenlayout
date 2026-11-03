@@ -2830,7 +2830,17 @@ typedef struct {
     olui_draw_fn fn;
     void *userdata;
     const olui_rect *area;
+    int alpha;                  /* 0.4: how much shows of what is drawn now (opacity, multiplied down) */
 } drawer;
+
+/* What every op says of the element it is drawn for (0.4) */
+static void op_start(drawer *d, olui_draw_op *op, int kind, const olui_el *el)
+{
+    memset(op, 0, sizeof(*op));
+    op->kind = kind;
+    op->el = el;
+    op->alpha = d->alpha;
+}
 
 static int crosses(olui_rect a, const olui_rect *b)
 {
@@ -2856,8 +2866,7 @@ static void out_box(drawer *d, const olui_el *el, olui_rect r, const olui_cs *cs
     int i;
     if (!cs->stops && cs->border <= 0) return;
     if (!crosses(r, d->area)) return;
-    memset(&op, 0, sizeof(op));
-    op.kind = OLUI_DRAW_BOX;
+    op_start(d, &op, OLUI_DRAW_BOX, el);
     op.box = r;
     op.stops = cs->stops;
     for (i = 0; i < cs->stops; ++i) {
@@ -2867,7 +2876,6 @@ static void out_box(drawer *d, const olui_el *el, olui_rect r, const olui_cs *cs
     op.border = cs->border > 0 ? px(d->ui, cs->border) : 0;
     op.border_argb = cs->border_argb;
     op.radius = cs->radius > 0 ? px(d->ui, cs->radius) : 0;
-    op.el = el;
     d->fn(d->userdata, &op);
 }
 
@@ -2875,15 +2883,13 @@ static void out_flat(drawer *d, const olui_el *el, olui_rect r, uint32_t fill, u
 {
     olui_draw_op op;
     if (!crosses(r, d->area)) return;
-    memset(&op, 0, sizeof(op));
-    op.kind = OLUI_DRAW_BOX;
+    op_start(d, &op, OLUI_DRAW_BOX, el);
     op.box = r;
     op.stops = (fill >> 24) ? 1 : 0;
     op.stop_argb[0] = fill;
     op.border = bw;
     op.border_argb = border;
     op.radius = radius;
-    op.el = el;
     d->fn(d->userdata, &op);
 }
 
@@ -2891,20 +2897,18 @@ static void out_mark(drawer *d, const olui_el *el, olui_rect r, int mark, uint32
 {
     olui_draw_op op;
     if (!crosses(r, d->area)) return;
-    memset(&op, 0, sizeof(op));
-    op.kind = OLUI_DRAW_MARK;
+    op_start(d, &op, OLUI_DRAW_MARK, el);
     op.box = r;
     op.mark = mark;
     op.argb = argb;
-    op.el = el;
     d->fn(d->userdata, &op);
 }
 
 static void out_clip(drawer *d, const olui_rect *clip)
 {
     olui_draw_op op;
-    memset(&op, 0, sizeof(op));
-    op.kind = OLUI_DRAW_CLIP;
+    op_start(d, &op, OLUI_DRAW_CLIP, NULL);
+    op.alpha = 255;
     if (clip) op.clip = *clip;
     d->fn(d->userdata, &op);
 }
@@ -2913,17 +2917,42 @@ static void out_text(drawer *d, const olui_el *el, olui_rect box, int32_t baseli
                      const ol_style *st, uint32_t argb)
 {
     olui_draw_op op;
-    if (!n || !crosses(ink(box, px(d->ui, st->font_size)), d->area)) return;
-    memset(&op, 0, sizeof(op));
-    op.kind = OLUI_DRAW_TEXT;
+    int k;
+    olui_rect reach;
+    if (!n) return;
+    reach = ink(box, px(d->ui, st->font_size));
+    if (el) {
+        /* 0.4: its shadows' ink too */
+        for (k = 0; k < el->cs.shadows; ++k) {
+            olui_rect sh = reach;
+            sh.x += ol_scale_x(&d->ui->scale, el->cs.shadow_x[k]);
+            sh.y += ol_scale_y(&d->ui->scale, el->cs.shadow_y[k]);
+            grow_to(&reach, sh);
+        }
+    }
+    if (!crosses(reach, d->area)) return;
+    op_start(d, &op, OLUI_DRAW_TEXT, el);
     op.box = box;
     op.baseline = baseline;
     op.text = s;
     op.length = n;
     op.font_pixels = px(d->ui, st->font_size);
     op.text_flags = st->text_flags;
+    if (el) {
+        /* 0.4: text-shadow: the last shadow first, the text over them all */
+        for (k = el->cs.shadows - 1; k >= 0; --k) {
+            int32_t dx = ol_scale_x(&d->ui->scale, el->cs.shadow_x[k]);
+            int32_t dy = ol_scale_y(&d->ui->scale, el->cs.shadow_y[k]);
+            olui_draw_op sh = op;
+            if (!(el->cs.shadow_argb[k] >> 24)) continue;
+            sh.box.x += dx;
+            sh.box.y += dy;
+            sh.baseline += dy;
+            sh.argb = el->cs.shadow_argb[k];
+            d->fn(d->userdata, &sh);
+        }
+    }
     op.argb = argb;
-    op.el = el;
     d->fn(d->userdata, &op);
 }
 
@@ -2949,11 +2978,9 @@ static void node_ops(drawer *d, const olui_el *el, int32_t dy)
         } else if (op->type == OL_OP_IMAGE) {
             ol_pixel_rect p = ol_scale_rect(&ui->scale, op->u.image.bounds);
             olui_draw_op o;
-            memset(&o, 0, sizeof(o));
-            o.kind = OLUI_DRAW_IMAGE;
+            op_start(d, &o, OLUI_DRAW_IMAGE, el);
             o.box.x = p.x; o.box.y = p.y - dy; o.box.w = p.width; o.box.h = p.height;
             o.image = op->u.image.image_id;
-            o.el = el;
             if (crosses(o.box, d->area)) d->fn(d->userdata, &o);
         }
     }
@@ -3281,7 +3308,48 @@ static void draw_items(drawer *d, const olui_el *from, int32_t dy, const olui_re
     }
 }
 
+/* 0.4: background-image over the background, in the padding box */
+static void out_background_image(drawer *d, const olui_el *el, olui_rect r)
+{
+    olui_draw_op op;
+    if (el->cs.bg_image < 0 && !el->cs.bg_name) return;
+    r = inside(d->ui, el, r);
+    if (r.w <= 0 || r.h <= 0 || !crosses(r, d->area)) return;
+    op_start(d, &op, OLUI_DRAW_IMAGE, el);
+    op.box = r;
+    op.image = el->cs.bg_image;
+    op.image_name = olui_sheet_name(d->ui->sheet, el->cs.bg_name);
+    op.image_repeat = el->cs.bg_repeat;
+    op.image_align_x = el->cs.bg_align_x;
+    op.image_align_y = el->cs.bg_align_y;
+    d->fn(d->userdata, &op);
+}
+
+static void draw_el_in(drawer *d, const olui_el *el, int32_t dy, const olui_rect *clip);
+
+/* 0.4: an element with its opacity, and its outline over what it holds */
 static void draw_el(drawer *d, const olui_el *el, int32_t dy, const olui_rect *clip)
+{
+    int was = d->alpha;
+    olui_rect r;
+    if (!visible(el)) return;
+    r = rect_of_node(d->ui, el->node);
+    r.y -= dy;
+    if (clip && !crosses(r, clip) && el->cs.outline <= 0) return;
+    d->alpha = was * el->cs.opacity / 255;
+    draw_el_in(d, el, dy, clip);
+    if (el->cs.outline > 0 && el->kind != K_TEXT) {
+        int32_t w = px(d->ui, el->cs.outline);
+        r.x -= w;
+        r.y -= w;
+        r.w += 2 * w;
+        r.h += 2 * w;
+        out_flat(d, el, r, 0, el->cs.outline_argb, w, 0);
+    }
+    d->alpha = was;
+}
+
+static void draw_el_in(drawer *d, const olui_el *el, int32_t dy, const olui_rect *clip)
 {
     olui *ui = d->ui;
     olui_rect r;
@@ -3291,6 +3359,7 @@ static void draw_el(drawer *d, const olui_el *el, int32_t dy, const olui_rect *c
     if (clip && !crosses(r, clip)) return;
     if (el->kind == K_BOX && !strcmp(el->tag, "fieldset")) draw_fieldset(d, el, r);
     else if (el->kind != K_TEXT && el->kind != K_SLIDER) out_box(d, el, r, &el->cs);   /* a slider's box is its knob */
+    if (el->kind != K_TEXT) out_background_image(d, el, r);
 
     switch (el->kind) {
     case K_CHECK:
@@ -3446,6 +3515,7 @@ void olui_draw(olui *ui, const olui_rect *area, olui_draw_fn fn, void *userdata)
     d.fn = fn;
     d.userdata = userdata;
     d.area = area;
+    d.alpha = 255;
     draw_el(&d, ui->root, 0, NULL);
     draw_over(&d);
     ui->damaged = 0;
@@ -3506,6 +3576,7 @@ static void add_extent(olui *ui, olui_el *el, olui_rect *area)
     d.fn = extent_op;
     d.userdata = &e;
     d.area = NULL;
+    d.alpha = 255;
     if (!el->node) return;
     clipped = view_of(ui, el, &dy, &clip);
     if (el->kind == K_INPUT || el->kind == K_TEXTAREA || el->kind == K_SELECT) {
@@ -4024,3 +4095,11 @@ olui_el *olui_hit(olui *ui, int x, int y)
 olui_el *olui_parent(const olui_el *el) { return el ? el->parent : NULL; }
 olui_el *olui_first_child(const olui_el *el) { return el ? el->first : NULL; }
 olui_el *olui_next(const olui_el *el) { return el ? el->next : NULL; }
+
+int olui_image_name(olui *ui, const char *name, int image)
+{
+    if (!ui || !name || !olui_sheet_name_image(ui->sheet, name, image)) return 0;
+    ++ui->style_gen;            /* what names it is styled again, with its number */
+    touch(ui);
+    return 1;
+}

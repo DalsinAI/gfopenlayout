@@ -537,6 +537,10 @@ static void copy_prop(gfcss_computed *d, const gfcss_computed *s, int p)
     case GFCSS_P_CONTENT: d->content = s->content; break;
     case GFCSS_P_TOP: case GFCSS_P_RIGHT: case GFCSS_P_BOTTOM: case GFCSS_P_LEFT:
         k = p - GFCSS_P_TOP; d->inset[k] = s->inset[k]; break;
+    case GFCSS_P_TEXT_SHADOW:
+        d->text_shadows = s->text_shadows;
+        memcpy(d->text_shadow, s->text_shadow, sizeof(d->text_shadow));
+        break;
     default: break;
     }
 }
@@ -764,6 +768,12 @@ static void apply_value(const gres *r, gfcss_computed *cs, const gfcss_computed 
     case GFCSS_P_TOP: case GFCSS_P_RIGHT: case GFCSS_P_BOTTOM: case GFCSS_P_LEFT:
         resolve_len(r, d, &cs->inset[p - GFCSS_P_TOP]);
         break;
+    case GFCSS_P_TEXT_SHADOW:
+        /* its lengths of the font size, currentColor the colour (both are worked out first) */
+        cs->text_shadows = d->unit == V_KW ? 0
+                         : g_shadows(r->base + d->v, (size_t)d->w, r->fs, r->rem, cs->color, cs->text_shadow,
+                                     GFCSS_MAX_SHADOWS);
+        break;
     case GFCSS_P_CONTENT:
         if (d->unit == V_TEXT) cs->content = text_of(r, d, GFCSS_TEXT_STRING);
         else {
@@ -883,6 +893,8 @@ static void inherit_from(const gfcss_engine *e, gfcss_computed *cs, const gfcss_
     cs->border_spacing[0] = parent->border_spacing[0];
     cs->border_spacing[1] = parent->border_spacing[1];
     cs->caption_side = parent->caption_side;
+    cs->text_shadows = parent->text_shadows;
+    memcpy(cs->text_shadow, parent->text_shadow, sizeof(cs->text_shadow));
     for (k = 0; k < e->next; ++k)
         if (e->ext[k].flags & GFCSS_INHERITED) cs->ext[k] = parent->ext[k];
 }

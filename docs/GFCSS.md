@@ -181,6 +181,7 @@ A unit is needed but on 0, as CSS says.
 | `vertical-align` | the keywords, a length or a percentage |
 | `list-style` and its longhands | the usual counter styles (others as `decimal`), `inside`, `outside`, an image |
 | `letter-spacing`, `word-spacing` | `normal` (0) or a length |
+| `text-shadow` (1.1) | `none`, or shadows by commas, each two or three lengths (`px` and the other absolute units, `em`, `rem`, `ex`, `ch`) and a colour before or after them; the first four kept, resolved (`gfcss_shadow`: across, down, blur, colour, `currentColor` worked out), inherited |
 | `cursor` | the keywords, after any `url()`s |
 | `overflow`, `overflow-x`, `overflow-y` | `visible`, `hidden`, `scroll`, `auto`, `clip` |
 | `flex`, `flex-grow`, `flex-shrink`, `flex-basis`, `flex-direction`, `flex-wrap`, `flex-flow` | as CSS reads them (`flex: 2` is 2 1 0) |
