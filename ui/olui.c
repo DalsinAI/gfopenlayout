@@ -64,7 +64,9 @@ static const char ua_css[] =
     "option:selected{background:#3366cc;color:#ffffff}"
     "fieldset{display:flex;flex-direction:column;gap:6px;padding:0 8px 6px;border:1px solid #909090}"
     "legend{padding:0 3px}"
-    "tooltip{padding:2px 5px;border:1px solid #606060;background:#ffffe1;color:#000000;font-size:12px;font-weight:normal}";
+    "tooltip{padding:2px 5px;border:1px solid #606060;background:#ffffe1;color:#000000;font-size:12px;font-weight:normal}"
+    /* 0.4 */
+    "band{border:1px solid #3366cc;background:rgba(51,102,204,0.25)}";
 
 typedef struct {
     char *id;
@@ -112,6 +114,21 @@ struct olui {
     olui_rect tip_rect;
     olui_el *spin;              /* a number field's arrow button held */
     int spin_dir, spin_wait;
+    /* 0.4: selecting and dragging */
+    unsigned qual;              /* the qualifiers of the mouse event being handled */
+    int ptr_x, ptr_y;           /* and where the pointer was */
+    olui_el *desk_down;         /* a selectable or draggable element pressed */
+    olui_el *collapse;          /* pressed when selected with others: selected alone when let go, unless dragged */
+    int press_x, press_y;
+    olui_el **dragged;          /* what is dragged (ndragged: none, not dragging) */
+    int ndragged, dragged_cap;
+    int drag_dx, drag_dy;       /* the pointer from where it was pressed */
+    olui_el *drop;              /* the drop target under it */
+    olui_el *band_scope;        /* a band dragged in it */
+    olui_el *band_box;          /* made: what styles the band (band, under its scope) */
+    int band_x0, band_y0;
+    olui_rect band_rect;        /* where it is, cut to the scope */
+    int band_changed;           /* the selection changed while it was dragged */
 };
 
 /* ---- Small things ---------------------------------------------------------- */
@@ -166,7 +183,7 @@ static void damage(olui *ui, olui_rect r)
 
 /* The states that change only how a widget looks, unless its style says
  * otherwise (restyle_paint). Open shows or hides items: laid out again. */
-#define S_PAINT (S_HOVER | S_ACTIVE | S_FOCUS | S_CHECKED | S_SELECTED)
+#define S_PAINT (S_HOVER | S_ACTIVE | S_FOCUS | S_CHECKED | S_SELECTED | S_DRAGGING | S_DROP)
 
 static int restyle_paint(olui *ui, olui_el *el, unsigned bit);
 
@@ -220,6 +237,11 @@ static void emit(olui *ui, int type, olui_el *el, olui_el *item, const char *val
     ev.value = value;
     ev.index = index;
     ev.checked = checked;
+    ev.x = ui->ptr_x;
+    ev.y = ui->ptr_y;
+    ev.qualifiers = ui->qual;
+    ev.dx = ui->drag_dx;
+    ev.dy = ui->drag_dy;
     ++ui->busy;
     for (i = ui->nhandlers - 1; i >= 0; --i) {
         const handler *h = &ui->handlers[i];
@@ -256,6 +278,8 @@ void olui_free(olui *ui)
     olui_el_free(ui->root);
     olui_el_free(ui->popup_box);
     olui_el_free(ui->tip_box);
+    olui_el_free(ui->band_box);
+    free(ui->dragged);
     ol_document_free(ui->doc);
     free(ui->map);
     free(ui->op_first);
@@ -409,6 +433,8 @@ int olui_load(olui *ui, const char *markup, const char *css, char *err, size_t e
     ui->root = root;
     ui->focus = ui->hover = ui->pressed = NULL;
     ui->popup = ui->drag = ui->label_down = ui->tip_for = ui->spin = NULL;
+    ui->desk_down = ui->collapse = ui->drop = ui->band_scope = NULL;
+    ui->ndragged = 0;
     ui->tip_on = 0;
     ++ui->style_gen;
     touch(ui);
@@ -941,7 +967,7 @@ static olui_el *hit(olui *ui, olui_el *el, int x, int y)
     olui_el *c, *best = NULL, **order;
     int n, i;
     olui_rect r;
-    if (!visible(el)) return NULL;
+    if (!visible(el) || (el->state & S_DRAGGING)) return NULL;     /* 0.4: what is dragged is not under it */
     r = rect_of(ui, el);
     if (scroller(el) && el->kind != K_LIST && !in_rect(r, x, y)) return NULL;  /* what it holds is cut to it */
     if (el->kind == K_LIST) {
@@ -968,10 +994,11 @@ static olui_el *hit(olui *ui, olui_el *el, int x, int y)
     return in_rect(r, x, y) ? el : NULL;
 }
 
-/* What a press on el works: the widget it is part of */
+/* What a press on el works: the widget it is part of (0.4: or a selectable or draggable element) */
 static olui_el *widget_of(olui_el *el)
 {
     for (; el; el = el->parent) {
+        if (el->flags & (F_SELECTABLE | F_DRAGGABLE)) return el;
         switch (el->kind) {
         case K_BUTTON: case K_CHECK: case K_RADIO: case K_INPUT: case K_ITEM:
         case K_TABBTN: case K_LIST: case K_SLIDER: case K_SELECT: case K_TEXTAREA:
@@ -2357,13 +2384,302 @@ static olui_el *wheel_target(olui *ui, olui_el *el)
     return NULL;
 }
 
+/* ---- Selecting and dragging (0.4) ------------------------------------------------- */
+
+static int under(const olui_el *el, const olui_el *a);
+static olui_rect ghost_extent(olui *ui);
+
+/* A selectable element's scope: the nearest marquee it is in, or its parent */
+static olui_el *scope_of(olui_el *el)
+{
+    olui_el *p;
+    for (p = el->parent; p; p = p->parent)
+        if (p->flags & F_MARQUEE) return p;
+    return el->parent;
+}
+
+/* The element after el under top, depth first (el == top: its first) */
+static olui_el *walk_next(const olui_el *top, const olui_el *el)
+{
+    if (el->first) return el->first;
+    while (el && el != top) {
+        if (el->next) return el->next;
+        el = el->parent;
+    }
+    return NULL;
+}
+
+/* The next selectable element whose scope is scope (NULL: any), after el under top */
+static olui_el *next_selectable(const olui_el *top, const olui_el *scope, const olui_el *el)
+{
+    olui_el *e;
+    for (e = walk_next(top, el); e; e = walk_next(top, e))
+        if ((e->flags & F_SELECTABLE) && (!scope || scope_of(e) == scope)) return e;
+    return NULL;
+}
+
+static int count_selected(olui *ui, olui_el *scope)
+{
+    const olui_el *top = scope ? scope : ui->root;
+    olui_el *e;
+    int n = 0;
+    for (e = next_selectable(top, scope, top); e; e = next_selectable(top, scope, e))
+        if (e->state & S_SELECTED) ++n;
+    return n;
+}
+
+/* keep selected alone in scope (NULL: none); how many changed */
+static int select_only(olui *ui, olui_el *scope, olui_el *keep)
+{
+    const olui_el *top = scope ? scope : ui->root;
+    olui_el *e;
+    int n = 0;
+    for (e = next_selectable(top, scope, top); e; e = next_selectable(top, scope, e)) {
+        int on = e == keep;
+        if (((e->state & S_SELECTED) != 0) != on) {
+            set_state(ui, e, S_SELECTED, on);
+            ++n;
+        }
+    }
+    return n;
+}
+
+static void selection_changed(olui *ui, olui_el *scope, olui_el *item)
+{
+    emit(ui, OLUI_SELECTION, scope, item, item ? (item->value ? item->value : (item->id ? item->id : "")) : NULL,
+         count_selected(ui, scope), 0);
+}
+
+static olui_rect moved(olui_rect r, int dx, int dy)
+{
+    r.x += dx;
+    r.y += dy;
+    return r;
+}
+
+static const char *value_of(const olui_el *el)
+{
+    return el->value ? el->value : el->id ? el->id : "";
+}
+
+/* What is dragged: el, or with it every selected draggable element in its scope */
+static int drag_begin(olui *ui, olui_el *el)
+{
+    olui_el *scope = scope_of(el), *e;
+    const olui_el *top = scope ? scope : ui->root;
+    int n = 1, i;
+    if ((el->flags & F_SELECTABLE) && (el->state & S_SELECTED))
+        n = count_selected(ui, scope);
+    if (n < 1) n = 1;
+    if (n > ui->dragged_cap) {
+        olui_el **v = (olui_el **)realloc(ui->dragged, (size_t)n * sizeof(*v));
+        if (!v) return 0;
+        ui->dragged = v;
+        ui->dragged_cap = n;
+    }
+    i = 0;
+    ui->dragged[i++] = el;      /* the one pressed first */
+    if ((el->flags & F_SELECTABLE) && (el->state & S_SELECTED))
+        for (e = next_selectable(top, scope, top); e && i < n; e = next_selectable(top, scope, e))
+            if (e != el && (e->state & S_SELECTED) && (e->flags & F_DRAGGABLE)) ui->dragged[i++] = e;
+    ui->ndragged = i;
+    ui->collapse = NULL;
+    set_state(ui, el, S_ACTIVE, 0);
+    for (i = 0; i < ui->ndragged; ++i) set_state(ui, ui->dragged[i], S_DRAGGING, 1);
+    damage(ui, ghost_extent(ui));      /* where they were: they are drawn on top now */
+    emit(ui, OLUI_DRAG_START, el, NULL, value_of(el), ui->ndragged, 0);
+    return 1;
+}
+
+static void drag_move(olui *ui, int x, int y)
+{
+    olui_rect base = ghost_extent(ui);
+    olui_el *t;
+    damage(ui, moved(base, ui->drag_dx, ui->drag_dy));
+    ui->drag_dx = x - ui->press_x;
+    ui->drag_dy = y - ui->press_y;
+    damage(ui, moved(base, ui->drag_dx, ui->drag_dy));
+    for (t = hit(ui, ui->root, x, y); t && !(t->flags & F_DROPPABLE); t = t->parent) ;
+    if (t != ui->drop) {
+        set_state(ui, ui->drop, S_DROP, 0);
+        ui->drop = t;
+        set_state(ui, t, S_DROP, 1);
+    }
+    if (ui->ndragged)
+        emit(ui, OLUI_DRAG_MOVE, ui->dragged[0], t, value_of(ui->dragged[0]), ui->ndragged, 0);
+}
+
+/* let go (drop) or Escape */
+static void drag_end(olui *ui, int drop)
+{
+    olui_rect base;
+    int i;
+    if (!ui->ndragged) return;
+    base = ghost_extent(ui);
+    damage(ui, moved(base, ui->drag_dx, ui->drag_dy));
+    damage(ui, base);
+    emit(ui, drop ? OLUI_DROP : OLUI_DRAG_CANCEL, ui->dragged[0], drop ? ui->drop : NULL,
+         value_of(ui->dragged[0]), ui->ndragged, 0);
+    for (i = 0; i < ui->ndragged; ++i) set_state(ui, ui->dragged[i], S_DRAGGING, 0);
+    set_state(ui, ui->drop, S_DROP, 0);
+    ui->ndragged = 0;
+    ui->drop = NULL;
+    ui->drag_dx = ui->drag_dy = 0;
+    ui->desk_down = ui->collapse = NULL;
+}
+
+static olui_el *marquee_of(olui_el *el)
+{
+    for (; el; el = el->parent)
+        if (el->flags & F_MARQUEE) return el;
+    return NULL;
+}
+
+static void band_begin(olui *ui, olui_el *scope, int x, int y)
+{
+    olui_el *e;
+    int shift = (ui->qual & OLUI_QUAL_SHIFT) != 0;
+    if (!ui->band_box && !(ui->band_box = olui_el_new(K_BOX, "band"))) return;
+    ui->band_box->parent = scope;
+    olui_style_compute(ui->sheet, ui->band_box, &scope->cs);
+    ui->band_scope = scope;
+    ui->band_changed = 0;
+    ui->band_x0 = x;
+    ui->band_y0 = y;
+    memset(&ui->band_rect, 0, sizeof(ui->band_rect));
+    for (e = next_selectable(scope, scope, scope); e; e = next_selectable(scope, scope, e))
+        e->band_base = shift && (e->state & S_SELECTED);
+    /* a click on the space selects nothing, but with Shift */
+    if (!shift && select_only(ui, scope, NULL)) selection_changed(ui, scope, NULL);
+}
+
+static void band_select(olui *ui, int *changed)
+{
+    olui_el *scope = ui->band_scope, *e;
+    olui_rect b = ui->band_rect;
+    for (e = next_selectable(scope, scope, scope); e; e = next_selectable(scope, scope, e)) {
+        int on = e->band_base;
+        if (!on && b.w > 0 && b.h > 0 && visible(e)) {
+            olui_rect r = rect_of(ui, e);
+            on = r.x < b.x + b.w && b.x < r.x + r.w && r.y < b.y + b.h && b.y < r.y + r.h;
+        }
+        if (((e->state & S_SELECTED) != 0) != on) {
+            set_state(ui, e, S_SELECTED, on);
+            *changed = 1;
+        }
+    }
+}
+
+static void band_move(olui *ui, int x, int y)
+{
+    olui_rect r, in = inside(ui, ui->band_scope, rect_of(ui, ui->band_scope));
+    int changed = 0;
+    r.x = x < ui->band_x0 ? x : ui->band_x0;
+    r.y = y < ui->band_y0 ? y : ui->band_y0;
+    r.w = (x < ui->band_x0 ? ui->band_x0 - x : x - ui->band_x0) + 1;
+    r.h = (y < ui->band_y0 ? ui->band_y0 - y : y - ui->band_y0) + 1;
+    damage(ui, ui->band_rect);
+    ui->band_rect = cut(r, in);
+    damage(ui, ui->band_rect);
+    band_select(ui, &changed);
+    if (changed) ui->band_changed = 1;
+}
+
+static void band_end(olui *ui)
+{
+    olui_el *scope = ui->band_scope;
+    int changed = ui->band_changed;
+    damage(ui, ui->band_rect);
+    memset(&ui->band_rect, 0, sizeof(ui->band_rect));
+    ui->band_scope = NULL;
+    if (changed) selection_changed(ui, scope, NULL);
+}
+
+/* A press on a selectable or draggable element */
+static int desk_press(olui *ui, olui_el *w, int x, int y, int what)
+{
+    olui_el *scope = scope_of(w);
+    if (what == OLUI_MOUSE_DOUBLE) {
+        ui->desk_down = ui->collapse = NULL;
+        emit(ui, OLUI_ACTIVATE, w, NULL, value_of(w), -1, 0);
+        return 1;
+    }
+    if (w->flags & F_SELECTABLE) {
+        if (ui->qual & OLUI_QUAL_SHIFT) {
+            set_state(ui, w, S_SELECTED, !(w->state & S_SELECTED));
+            selection_changed(ui, scope, w);
+        } else if (!(w->state & S_SELECTED)) {
+            if (select_only(ui, scope, w)) selection_changed(ui, scope, w);
+        } else if (count_selected(ui, scope) > 1) {
+            ui->collapse = w;           /* the others stay selected for a drag; let go, it is alone */
+        }
+    }
+    ui->desk_down = w;
+    ui->press_x = x;
+    ui->press_y = y;
+    ui->drag_dx = ui->drag_dy = 0;
+    set_state(ui, w, S_ACTIVE, 1);
+    return 1;
+}
+
+static int mouse_in(olui *ui, int x, int y, int what);
+
 int olui_mouse(olui *ui, int x, int y, int what)
+{
+    return olui_mouse_qual(ui, x, y, what, 0);
+}
+
+int olui_mouse_qual(olui *ui, int x, int y, int what, unsigned qualifiers)
+{
+    if (!ui) return 0;
+    ui->qual = qualifiers;
+    ui->ptr_x = x;
+    ui->ptr_y = y;
+    return mouse_in(ui, x, y, what);
+}
+
+static int mouse_in(olui *ui, int x, int y, int what)
 {
     olui_el *under, *w;
     if (!ui || !ui->root || !fresh(ui)) return 0;
     if (ui->popup) {
         int r = popup_mouse(ui, x, y, what);
         if (r >= 0) return r;
+    }
+    /* 0.4: a drag, a band, or a press on a selectable or draggable element goes on */
+    if (what == OLUI_MOUSE_MOVE) {
+        if (ui->ndragged) {
+            drag_move(ui, x, y);
+            return 1;
+        }
+        if (ui->band_scope) {
+            band_move(ui, x, y);
+            return 1;
+        }
+        if (ui->desk_down && (ui->desk_down->flags & F_DRAGGABLE) &&
+            (x - ui->press_x > 3 || ui->press_x - x > 3 || y - ui->press_y > 3 || ui->press_y - y > 3)) {
+            if (drag_begin(ui, ui->desk_down)) drag_move(ui, x, y);
+            return 1;
+        }
+    } else if (what == OLUI_MOUSE_UP) {
+        if (ui->ndragged) {
+            drag_end(ui, 1);
+            return 1;
+        }
+        if (ui->band_scope) {
+            band_end(ui);
+            return 1;
+        }
+        if (ui->desk_down) {
+            olui_el *d = ui->desk_down;
+            ui->desk_down = NULL;
+            set_state(ui, d, S_ACTIVE, 0);
+            if (ui->collapse == d) {
+                ui->collapse = NULL;
+                if (select_only(ui, scope_of(d), d)) selection_changed(ui, scope_of(d), d);
+            }
+            return 1;
+        }
     }
     under = hit(ui, ui->root, x, y);
     w = widget_of(under);
@@ -2404,13 +2720,19 @@ int olui_mouse(olui *ui, int x, int y, int what)
     case OLUI_MOUSE_DOUBLE:
         tip_hide(ui, 1);
         if (!w) {
-            olui_el *lab = label_of(under);
+            olui_el *lab = label_of(under), *m;
             if (lab && label_target(ui, lab)) {
                 ui->label_down = lab;
                 return 1;
             }
+            /* 0.4: the space of a marquee: a band */
+            if ((m = marquee_of(under)) != NULL && enabled(m)) {
+                band_begin(ui, m, x, y);
+                return 1;
+            }
             return 0;
         }
+        if (w->flags & (F_SELECTABLE | F_DRAGGABLE)) return desk_press(ui, w, x, y, what);
         if (focusable(w)) set_focus(ui, w);
         else if (w->kind == K_ITEM) set_focus(ui, list_of(w));
         if (w->kind == K_INPUT) {
@@ -2579,6 +2901,13 @@ int olui_key(olui *ui, unsigned code, unsigned qual)
     if (!ui || !ui->root || !fresh(ui)) return 0;
     f = ui->focus;
     tip_hide(ui, 1);
+    if (code == OLUI_KEY_ESCAPE && (ui->ndragged || ui->band_scope)) {
+        /* 0.4: Escape: the drag goes back; a band stops where it is */
+        if (ui->ndragged) drag_end(ui, 0);
+        if (ui->band_scope) band_end(ui);
+        ui->desk_down = ui->collapse = NULL;
+        return 1;
+    }
     if (ui->popup) {
         if (code != OLUI_KEY_TAB) return popup_key(ui, code);
         popup_close(ui, 0);
@@ -2831,6 +3160,7 @@ typedef struct {
     void *userdata;
     const olui_rect *area;
     int alpha;                  /* 0.4: how much shows of what is drawn now (opacity, multiplied down) */
+    int ghost;                  /* 0.4: drawing what is dragged, on top */
 } drawer;
 
 /* What every op says of the element it is drawn for (0.4) */
@@ -3332,7 +3662,7 @@ static void draw_el(drawer *d, const olui_el *el, int32_t dy, const olui_rect *c
 {
     int was = d->alpha;
     olui_rect r;
-    if (!visible(el)) return;
+    if (!visible(el) || ((el->state & S_DRAGGING) && !d->ghost)) return;
     r = rect_of_node(d->ui, el->node);
     r.y -= dy;
     if (clip && !crosses(r, clip) && el->cs.outline <= 0) return;
@@ -3507,6 +3837,50 @@ static void draw_over(drawer *d)
     }
 }
 
+/* 0.4: what is dragged, moved by the pointer: each op moved on its way to the drawer */
+typedef struct {
+    olui_draw_fn fn;
+    void *userdata;
+    int32_t dx, dy;
+} shifter;
+
+static void shift_op(void *userdata, const olui_draw_op *op)
+{
+    shifter *sh = (shifter *)userdata;
+    olui_draw_op o = *op;
+    o.box.x += sh->dx;
+    o.box.y += sh->dy;
+    o.baseline += sh->dy;
+    if (o.kind == OLUI_DRAW_CLIP && o.clip.w > 0) {
+        o.clip.x += sh->dx;
+        o.clip.y += sh->dy;
+    }
+    sh->fn(sh->userdata, &o);
+}
+
+/* What is dragged, on top of the rest, moved by dx, dy (not cut by the boxes it is in) */
+static void draw_ghost(drawer *d, int32_t dx, int32_t dy)
+{
+    olui *ui = d->ui;
+    shifter sh;
+    drawer g = *d;
+    olui_rect area;
+    int i;
+    sh.fn = d->fn;
+    sh.userdata = d->userdata;
+    sh.dx = dx;
+    sh.dy = dy;
+    g.fn = shift_op;
+    g.userdata = &sh;
+    g.ghost = 1;
+    if (d->area) {
+        area = moved(*d->area, -dx, -dy);
+        g.area = &area;
+    }
+    for (i = 0; i < ui->ndragged; ++i)
+        if (ui->dragged[i]->node) draw_el(&g, ui->dragged[i], scroll_above(ui->dragged[i]), NULL);
+}
+
 void olui_draw(olui *ui, const olui_rect *area, olui_draw_fn fn, void *userdata)
 {
     drawer d;
@@ -3516,7 +3890,11 @@ void olui_draw(olui *ui, const olui_rect *area, olui_draw_fn fn, void *userdata)
     d.userdata = userdata;
     d.area = area;
     d.alpha = 255;
+    d.ghost = 0;
     draw_el(&d, ui->root, 0, NULL);
+    if (ui->band_scope && ui->band_rect.w > 0 && ui->band_rect.h > 0 && crosses(ui->band_rect, area))
+        out_box(&d, ui->band_box, ui->band_rect, &ui->band_box->cs);
+    if (ui->ndragged) draw_ghost(&d, ui->drag_dx, ui->drag_dy);
     draw_over(&d);
     ui->damaged = 0;
     ui->part.w = ui->part.h = 0;
@@ -3577,6 +3955,7 @@ static void add_extent(olui *ui, olui_el *el, olui_rect *area)
     d.userdata = &e;
     d.area = NULL;
     d.alpha = 255;
+    d.ghost = (el->state & S_DRAGGING) != 0;
     if (!el->node) return;
     clipped = view_of(ui, el, &dy, &clip);
     if (el->kind == K_INPUT || el->kind == K_TEXTAREA || el->kind == K_SELECT) {
@@ -3595,6 +3974,27 @@ static void add_extent(olui *ui, olui_el *el, olui_rect *area)
     } else {
         draw_el(&d, el, 0, NULL);
     }
+}
+
+/* 0.4: where what is dragged is drawn, not moved */
+static olui_rect ghost_extent(olui *ui)
+{
+    drawer d;
+    extent e;
+    olui_rect area;
+    int i;
+    memset(&e, 0, sizeof(e));
+    memset(&area, 0, sizeof(area));
+    e.area = &area;
+    d.ui = ui;
+    d.fn = extent_op;
+    d.userdata = &e;
+    d.area = NULL;
+    d.alpha = 255;
+    d.ghost = 1;
+    for (i = 0; i < ui->ndragged; ++i)
+        if (ui->dragged[i]->node) draw_el(&d, ui->dragged[i], scroll_above(ui->dragged[i]), NULL);
+    return area;
 }
 
 /* What GFOpenLayout lays out from a style: all of it but the text's colour
@@ -3794,6 +4194,17 @@ static void forget(olui *ui, olui_el *el)
     if (ui->tip_for == el) {
         ui->tip_for = NULL;
         ui->tip_on = 0;
+    }
+    /* 0.4 */
+    if (ui->desk_down == el) ui->desk_down = NULL;
+    if (ui->collapse == el) ui->collapse = NULL;
+    if (ui->drop == el) ui->drop = NULL;
+    if (ui->band_scope == el) ui->band_scope = NULL;
+    {
+        int i, k = 0;
+        for (i = 0; i < ui->ndragged; ++i)
+            if (ui->dragged[i] != el) ui->dragged[k++] = ui->dragged[i];
+        ui->ndragged = k;
     }
     for (c = el->first; c; c = c->next) forget(ui, c);
 }
@@ -4102,4 +4513,45 @@ int olui_image_name(olui *ui, const char *name, int image)
     ++ui->style_gen;            /* what names it is styled again, with its number */
     touch(ui);
     return 1;
+}
+
+void olui_set_selected(olui *ui, olui_el *el, int selected)
+{
+    if (ui && el) set_state(ui, el, S_SELECTED, selected != 0);
+}
+
+int olui_is_selected(const olui_el *el)
+{
+    return el && (el->state & S_SELECTED) != 0;
+}
+
+olui_el *olui_next_selected(olui *ui, const olui_el *scope, const olui_el *after)
+{
+    const olui_el *top;
+    olui_el *e;
+    if (!ui || !ui->root) return NULL;
+    top = scope ? scope : ui->root;
+    for (e = next_selectable(top, scope, after ? after : top); e; e = next_selectable(top, scope, e))
+        if (e->state & S_SELECTED) return e;
+    return NULL;
+}
+
+int olui_select_all(olui *ui, olui_el *scope, int selected)
+{
+    const olui_el *top;
+    olui_el *e;
+    int n = 0;
+    if (!ui || !ui->root) return 0;
+    top = scope ? scope : ui->root;
+    for (e = next_selectable(top, scope, top); e; e = next_selectable(top, scope, e))
+        if (((e->state & S_SELECTED) != 0) != (selected != 0)) {
+            set_state(ui, e, S_SELECTED, selected != 0);
+            ++n;
+        }
+    return n;
+}
+
+olui_el *olui_drag_item(const olui *ui, int index)
+{
+    return ui && index >= 0 && index < ui->ndragged ? ui->dragged[index] : NULL;
 }

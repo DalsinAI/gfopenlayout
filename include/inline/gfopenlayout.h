@@ -159,6 +159,12 @@
 #define OLUI_FirstChild(el) LP1(0x36c, olui_el *, OLUI_FirstChild, const olui_el *, (el), a0, , OPENLAYOUT_BASE_NAME)
 #define OLUI_Next(el) LP1(0x372, olui_el *, OLUI_Next, const olui_el *, (el), a0, , OPENLAYOUT_BASE_NAME)
 #define OLUI_ImageName(ui,name,image) LP3(0x378, int, OLUI_ImageName, olui *, (ui), a0, const char *, (name), a1, int, (image), d0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_MouseQual(ui,x,y,what,qualifiers) LP5(0x37e, int, OLUI_MouseQual, olui *, (ui), a0, int, (x), d0, int, (y), d1, int, (what), d2, unsigned, (qualifiers), d3, , OPENLAYOUT_BASE_NAME)
+#define OLUI_SetSelected(ui,el,selected) LP3NR(0x384, OLUI_SetSelected, olui *, (ui), a0, olui_el *, (el), a1, int, (selected), d0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_IsSelected(el) LP1(0x38a, int, OLUI_IsSelected, const olui_el *, (el), a0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_NextSelected(ui,scope,after) LP3(0x390, olui_el *, OLUI_NextSelected, olui *, (ui), a0, const olui_el *, (scope), a1, const olui_el *, (after), a2, , OPENLAYOUT_BASE_NAME)
+#define OLUI_SelectAll(ui,scope,selected) LP3(0x396, int, OLUI_SelectAll, olui *, (ui), a0, olui_el *, (scope), a1, int, (selected), d0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_DragItem(ui,index) LP2(0x39c, olui_el *, OLUI_DragItem, const olui *, (ui), a0, int, (index), d0, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif

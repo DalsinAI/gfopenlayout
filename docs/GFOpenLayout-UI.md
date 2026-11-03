@@ -288,6 +288,42 @@ backdrop is `window{background-image:url(1)}`. `olui_image_name(ui,
 "backdrop", 1)` lets the CSS say `url(backdrop)`. The Amiga glue leaves out
 what has `alpha` 0 and draws the rest whole: it doesn't blend yet.
 
+**Selecting and dragging.** Four attributes say what an element does
+with the pointer, so an icon needs no widget of its own:
+
+| Attribute | What it does |
+| --- | --- |
+| `selectable` | A click selects it alone (`:selected`), Shift with a click adds it or takes it away; pressed when selected with others, it is selected alone when let go, unless it was dragged. A double-click is `OLUI_ACTIVATE` |
+| `draggable` | Pressed and moved 3 pixels, it is dragged: `OLUI_DRAG_START`, `OLUI_DRAG_MOVE` as the pointer moves, `OLUI_DROP` when let go, `OLUI_DRAG_CANCEL` on Escape. A selected one takes the others selected in its scope with it (`olui_drag_item`). What is dragged is `:dragging`, drawn on top of everything, moved with the pointer (no layout while it moves), and the pointer finds what is under it |
+| `droppable` | A drop target: the event's `item`, and `:drop-target` while something is over it |
+| `marquee` | A scope (a desktop, a drawer's contents): a press on its space drags a band (the made element `band` under it, `band{...}`) that selects what it touches, Shift adding to what was selected; without Shift a click there selects nothing |
+
+A selectable element's scope is the nearest `marquee` it is in, or its
+parent. `OLUI_SELECTION` says a scope's selection changed (`el` the scope,
+`item` the element clicked, `index` how many are selected). The events
+have the pointer (`x`, `y`), the qualifiers held and, for a drag, how far
+it has gone (`dx`, `dy`). Nothing moves by itself when dropped: the
+program moves what was dragged, with `olui_set_place` by `dx` and `dy`, or
+`olui_remove` and `olui_add` into another window. `olui_mouse_qual` is
+`olui_mouse` with the qualifiers (the Amiga glue gives them);
+`olui_set_selected`, `olui_is_selected`, `olui_next_selected` and
+`olui_select_all` are the program's way to the selection.
+
+```c
+static void dropped(olui *ui, const olui_event *ev, void *data)
+{
+    olui_el *d;
+    int i;
+    for (i = 0; (d = olui_drag_item(ui, i)) != NULL; ++i) {
+        olui_rect r, p;
+        olui_box(ui, d, &r);
+        olui_box(ui, olui_parent(d), &p);
+        olui_set_place(ui, d, r.x - p.x + ev->dx, r.y - p.y + ev->dy);
+    }
+}
+olui_on(ui, "desk", OLUI_DROP, dropped, NULL);
+```
+
 ## GFOpenLayout 0.8
 
 What the UI needed in GFOpenLayout itself, for any program:
@@ -355,6 +391,9 @@ A program links `libolui.a` and includes `gfopenlayout_ui.h` and
   at most and scrolls the rest. A select is as wide as its widest option,
   measured at each layout.
 - Menus.
+- Dragging between windows: the program's. The drag events have the pointer even outside the
+  window (the Amiga sends it while the button is held), and `olui_hit` on the other window's `olui`
+  finds the target there.
 - A box that scrolls scrolls down only (no `overflow-x`), and its bar is not
   dragged.
 - An `img` directly in a `row` or `column` keeps no place: put it in a line (a `div`, a `button`).

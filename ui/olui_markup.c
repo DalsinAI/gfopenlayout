@@ -231,6 +231,10 @@ static int set_attr(olui_el *el, const char *name, const char *value, char *type
     else if (!strcmp(name, "step")) ok = olui_set_str(&el->num_attr[2], value);
     else if (!strcmp(name, "for")) ok = olui_set_str(&el->for_id, value);
     else if (!strcmp(name, "readonly")) el->flags |= F_READONLY;
+    else if (!strcmp(name, "selectable")) el->flags |= F_SELECTABLE;
+    else if (!strcmp(name, "draggable")) { if (strcmp(value, "false")) el->flags |= F_DRAGGABLE; }
+    else if (!strcmp(name, "droppable")) el->flags |= F_DROPPABLE;
+    else if (!strcmp(name, "marquee")) el->flags |= F_MARQUEE;
     else if (!strcmp(name, "wrap")) { if (!strcmp(value, "off")) el->flags |= F_NOWRAP; }
     else if (!strcmp(name, "tabindex")) el->tabindex = atoi(value);
     else if (!strcmp(name, "rows") || !strcmp(name, "size")) el->rows = atoi(value);

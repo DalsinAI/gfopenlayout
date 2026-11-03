@@ -570,8 +570,44 @@ static int OLUI_ImageName(REG(a0, olui * ui), REG(a1, const char * name), REG(d0
     return olui_image_name(ui, name, image);
 }
 
+static int OLUI_MouseQual(REG(a0, olui * ui), REG(d0, int x), REG(d1, int y), REG(d2, int what), REG(d3, unsigned qualifiers), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_mouse_qual(ui, x, y, what, qualifiers);
+}
+
+static void OLUI_SetSelected(REG(a0, olui * ui), REG(a1, olui_el * el), REG(d0, int selected), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    olui_set_selected(ui, el, selected);
+}
+
+static int OLUI_IsSelected(REG(a0, const olui_el * el), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_is_selected(el);
+}
+
+static olui_el * OLUI_NextSelected(REG(a0, olui * ui), REG(a1, const olui_el * scope), REG(a2, const olui_el * after), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_next_selected(ui, scope, after);
+}
+
+static int OLUI_SelectAll(REG(a0, olui * ui), REG(a1, olui_el * scope), REG(d0, int selected), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_select_all(ui, scope, selected);
+}
+
+static olui_el * OLUI_DragItem(REG(a0, const olui * ui), REG(d0, int index), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_drag_item(ui, index);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x378
+#define OL_V10_LAST_BIAS 0x39c
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -604,4 +640,6 @@ static int OLUI_ImageName(REG(a0, olui * ui), REG(a1, const char * name), REG(d0
     (APTR)OLUI_AmigaLayout, (APTR)OLUI_AmigaDraw, (APTR)OLUI_AmigaEvent, \
     (APTR)OLUI_Add, (APTR)OLUI_Remove, (APTR)OLUI_SetStyle, \
     (APTR)OLUI_SetPlace, (APTR)OLUI_Hit, (APTR)OLUI_Parent, \
-    (APTR)OLUI_FirstChild, (APTR)OLUI_Next, (APTR)OLUI_ImageName
+    (APTR)OLUI_FirstChild, (APTR)OLUI_Next, (APTR)OLUI_ImageName, \
+    (APTR)OLUI_MouseQual, (APTR)OLUI_SetSelected, (APTR)OLUI_IsSelected, \
+    (APTR)OLUI_NextSelected, (APTR)OLUI_SelectAll, (APTR)OLUI_DragItem
