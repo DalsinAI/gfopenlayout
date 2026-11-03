@@ -242,6 +242,21 @@ elements, drawn into the window's buffer with the rest. It draws into a buffer t
 inside, a simple layer on a bitmap like the window's, and copies it to the
 window in one blit, so nothing flickers.
 
+**A strip of a window (library 11).** A program that draws most of its
+window itself, such as the browser with its page, gives olui only a strip:
+`olui_amiga_strip(a, x, y, w, h)` from the window's inside, `w` or `h` 0 to
+its edge, so the strip follows the window's size (`0, 0, 0, 40` is a
+toolbar 40 pixels tall). The buffer is then the strip's size, not the
+window's. olui takes a press only inside the strip and keeps it until the
+button is let go, takes the hover off when the pointer leaves, and gives
+`IDCMP_REFRESHWINDOW` and `IDCMP_NEWSIZE` back as `OLUI_AMIGA_NONE` after
+drawing the strip, for the program's own refresh and layout.
+`olui_amiga_keys(a, OLUI_AMIGA_KEYS_FOCUS)` gives olui the keys only while
+one of its widgets has the focus; a press outside the strip takes the
+focus away. A window opened without `IDCMP_VANILLAKEY`, to have every key
+as a RAWKEY, works too: the glue maps the keys to characters with
+keymap.library's `MapRawKey`.
+
 ## Desktops and drawers (0.4)
 
 0.4 (in `gfopenlayout.library` 11) has what a desktop and its drawer

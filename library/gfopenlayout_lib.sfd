@@ -174,5 +174,8 @@ int OLUI_VlistCurrent(const olui_el *vlist)(a0)
 void OLUI_VlistSetCurrent(olui *ui, olui_el *vlist, int row)(a0,a1,d0)
 int OLUI_MenuOpen(olui *ui, olui_el *menu, int x, int y)(a0,a1,d0,d1)
 olui * OLUI_NewSharing(olui *from)(a0)
+* version 11: the Amiga glue in a strip of a window
+void OLUI_AmigaStrip(olui_amiga *a, int x, int y, int w, int h)(a0,d0,d1,d2,d3)
+void OLUI_AmigaKeys(olui_amiga *a, int keys)(a0,d0)
 * ---- end of version 10 ----
 ==end
