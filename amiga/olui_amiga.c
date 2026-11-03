@@ -679,20 +679,25 @@ void olui_amiga_free(olui_amiga *a)
     /* cybergraphics.library stays open with the program: the next window may want it */
 }
 
-void olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h)
+int olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h)
 {
-    if (!a) return;
+    if (!a) return 0;
     a->strip = x > 0 || y > 0 || w > 0 || h > 0;
     a->sx = x > 0 ? x : 0;
     a->sy = y > 0 ? y : 0;
     a->sw = w > 0 ? w : 0;
     a->sh = h > 0 ? h : 0;
     a->inside = a->held = 0;
+    /* laid out already: again at the strip's size, so the old buffer isn't drawn or hit */
+    if (a->bm) olui_amiga_layout(a);
+    return 1;
 }
 
-void olui_amiga_keys(olui_amiga *a, int keys)
+int olui_amiga_keys(olui_amiga *a, int keys)
 {
-    if (a) a->keys = keys;
+    if (!a) return 0;
+    a->keys = keys;
+    return 1;
 }
 
 int olui_amiga_own(olui_amiga *a, const olui_el *el, olui_amiga_own_fn fn, void *userdata)
@@ -861,7 +866,11 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
             if (m->Code == SELECTDOWN) {
                 if (!in) {
                     /* a press in the program's part takes the keys from olui's widgets */
-                    if (a->keys == OLUI_AMIGA_KEYS_FOCUS) olui_focus(a->ui, NULL);
+                    if (a->keys == OLUI_AMIGA_KEYS_FOCUS && olui_focused(a->ui)) {
+                        /* and the focus ring or cursor goes now, not at the next draw */
+                        olui_focus(a->ui, NULL);
+                        olui_amiga_draw(a);
+                    }
                     return OLUI_AMIGA_NONE;
                 }
                 a->held = 1;

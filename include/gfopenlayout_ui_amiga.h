@@ -75,8 +75,11 @@ void olui_amiga_fonts(olui_amiga *a, const char *font, const char *mono);
  * is let go), and leaves the window's refresh and the rest of the window to
  * the program: olui_amiga_event draws the strip and returns
  * OLUI_AMIGA_NONE for IDCMP_REFRESHWINDOW and IDCMP_NEWSIZE, so the
- * program does its BeginRefresh/EndRefresh and lays out the rest. */
-void olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h);
+ * program does its BeginRefresh/EndRefresh and lays out the rest. Called
+ * after the first layout, it lays out again at the strip's size. 1 when
+ * done; 0 from a library older than 11 (olui still has the whole window,
+ * so a program that needs the strip asks for version 11 or stops here). */
+int olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h);
 
 /* Who has the keys */
 enum {
@@ -84,7 +87,8 @@ enum {
     OLUI_AMIGA_KEYS_FOCUS       /* only while one of olui's widgets has the focus (olui_focus);
                                    otherwise OLUI_AMIGA_NONE, and the program has it */
 };
-void olui_amiga_keys(olui_amiga *a, int keys);
+/* 1 when done; 0 from a library older than 11, where olui has every key */
+int olui_amiga_keys(olui_amiga *a, int keys);
 /* A window opened without IDCMP_VANILLAKEY (to have every key as a RAWKEY)
  * works too: the keymap gives olui the characters. */
 

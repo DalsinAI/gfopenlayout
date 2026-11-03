@@ -253,9 +253,33 @@ button is let go, takes the hover off when the pointer leaves, and gives
 drawing the strip, for the program's own refresh and layout.
 `olui_amiga_keys(a, OLUI_AMIGA_KEYS_FOCUS)` gives olui the keys only while
 one of its widgets has the focus; a press outside the strip takes the
-focus away. A window opened without `IDCMP_VANILLAKEY`, to have every key
+focus away, and the glue draws the strip then so the focus ring or cursor
+goes at once. A window opened without `IDCMP_VANILLAKEY`, to have every key
 as a RAWKEY, works too: the glue maps the keys to characters with
 keymap.library's `MapRawKey`.
+
+Both calls return 1, and 0 from a library older than 11: there they do
+nothing, so olui still has the whole window and every key. A program that
+needs the strip opens `gfopenlayout.library` 11, or stops when
+`olui_amiga_strip` gives 0. Called after the first layout,
+`olui_amiga_strip` lays out again at the strip's size.
+
+What a strip doesn't do yet:
+
+- **Pop-ups stay in the strip.** A select's list, a `menu` and a tooltip
+  are placed in olui's own buffer, so in a 40-pixel toolbar a list has
+  room for about one row and a tooltip is cut off. Until the strip has an
+  overlay of its own, a toolbar keeps to buttons and text inputs, or
+  the program opens a window of its own for a pop-up.
+- **Tab doesn't come into the strip.** With `OLUI_AMIGA_KEYS_FOCUS`, the
+  keys go to the program until one of olui's widgets has the focus, so a
+  only a click there (or the program's own `olui_focus`) gives it the focus.
+- **A strip counts from the top and left.** One at the bottom (a status
+  bar) doesn't follow the window's height: on `IDCMP_NEWSIZE` the program
+  sets it again with `olui_amiga_strip` at the new place.
+- **IntuiTicks.** olui can return `OLUI_AMIGA_USED` for an
+  `IDCMP_INTUITICKS` (a tooltip, a held arrow button); a program that
+  wants the ticks too uses them whatever the glue returns.
 
 ## Desktops and drawers (0.4)
 
