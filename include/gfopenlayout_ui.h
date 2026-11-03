@@ -44,7 +44,14 @@ enum {
     OLUI_CUT,           /* text to put on the clipboard (value), taken out of the field after */
     OLUI_COPY,          /* text to put on the clipboard (value) */
     OLUI_PASTE,         /* the field wants the clipboard's text: give it with olui_insert_text */
-    OLUI_EVENT_COUNT
+    OLUI_EVENT_COUNT,   /* 0.3's: those after it are numbered from 16 */
+    /* 0.4: a desktop's (gfopenlayout.library 11) */
+    OLUI_SELECTION = 16,    /* the selection in a scope changed: el the scope, item the element clicked (NULL: a band),
+                               index how many are selected in it */
+    OLUI_DRAG_START,    /* el (draggable) is being dragged, with index elements in all (olui_drag_item) */
+    OLUI_DRAG_MOVE,     /* the pointer moved while dragging: item the drop target under it (droppable), or NULL */
+    OLUI_DROP,          /* let go: item the drop target, or NULL; x, y where, dx, dy how far from where it was pressed */
+    OLUI_DRAG_CANCEL    /* Escape while dragging: nothing moves */
 };
 
 typedef struct {
@@ -57,6 +64,10 @@ typedef struct {
     int index;          /* an item's place among the visible rows, a tab's number, a select's option's from 0,
                          * a slider's or number field's value; else -1 */
     int checked;        /* a checkbox's or radio button's state */
+    /* 0.4 (gfopenlayout.library 11) */
+    int x, y;           /* the pointer, in the window's inner box's pixels, when a mouse event caused it */
+    unsigned qualifiers;    /* OLUI_QUAL_... held then */
+    int dx, dy;         /* a drag's: how far the pointer is from where it was pressed */
 } olui_event;
 
 typedef void (*olui_handler)(olui *ui, const olui_event *ev, void *userdata);
@@ -209,6 +220,9 @@ enum {
 
 /* The pointer, in the window's inner box's pixels. 1 when it was used. */
 int olui_mouse(olui *ui, int x, int y, int what);
+/* 0.4: the same with the qualifiers held (OLUI_QUAL_...): Shift with a
+ * click adds to a selection or takes from it. The Amiga glue gives them. */
+int olui_mouse_qual(olui *ui, int x, int y, int what, unsigned qualifiers);
 /* A key for the widget with the keyboard (Tab moves between them). 1 when it was used.
  * Shift with an arrow is a textarea's selection; elsewhere Shift-Up and
  * Shift-Down are PageUp and PageDown, Shift-Left and Shift-Right Home and End. */
@@ -355,6 +369,37 @@ olui_el *olui_hit(olui *ui, int x, int y);
  * url("backdrop") alike), styling again what uses it. 1, or 0 when memory
  * ran out. */
 int olui_image_name(olui *ui, const char *name, int image);
+
+/* Selecting and dragging (0.4). Attributes say what an element does with
+ * the pointer:
+ * - selectable: a click selects it alone (:selected), Shift with a click
+ *   adds it or takes it away; a double-click is OLUI_ACTIVATE;
+ * - draggable: pressed and moved 3 pixels, it is dragged (OLUI_DRAG_START,
+ *   OLUI_DRAG_MOVE, OLUI_DROP); a selected one takes the others selected in
+ *   its scope with it. What is dragged is :dragging, drawn on top of
+ *   everything moved by the pointer (no layout while it moves), and left
+ *   out of the pointer's hits, so the drop target under it is found;
+ * - droppable: a drop target, :drop-target while something is dragged
+ *   over it;
+ * - marquee: a scope (a desktop, a drawer): a press on its empty space
+ *   drags a band (the made element band under it: band{...}) that selects
+ *   what it touches, Shift adding to what was selected; without Shift a
+ *   click there selects nothing.
+ * A selectable element's scope is the nearest marquee it is in, or its
+ * parent. Escape while dragging cancels it (OLUI_DRAG_CANCEL). The
+ * program moves what was dropped (olui_set_place by the event's dx, dy,
+ * or olui_remove and olui_add into another window). */
+void olui_set_selected(olui *ui, olui_el *el, int selected);
+int olui_is_selected(const olui_el *el);
+/* The selected elements in a scope (NULL: the window), after after (NULL:
+ * the first), in the markup's order; NULL after the last. */
+olui_el *olui_next_selected(olui *ui, const olui_el *scope, const olui_el *after);
+/* Every selectable element in a scope selected or not; how many changed.
+ * Sends no event. */
+int olui_select_all(olui *ui, olui_el *scope, int selected);
+/* While dragging (in the drag events' handlers): what is dragged, from 0;
+ * NULL past the last, or when nothing is. */
+olui_el *olui_drag_item(const olui *ui, int index);
 
 /* Walking the elements: the parent, the first child and the next sibling
  * (runs of text among other content are elements too, their tag ""). */

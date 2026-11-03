@@ -488,3 +488,39 @@ int olui_image_name(olui *ui, const char *name, int image)
     if (OpenLayoutBase->lib_Version < 11) return 0;
     return OLUI_ImageName(ui, name, image);
 }
+
+int olui_mouse_qual(olui *ui, int x, int y, int what, unsigned qualifiers)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_MouseQual(ui, x, y, what, qualifiers);
+}
+
+void olui_set_selected(olui *ui, olui_el *el, int selected)
+{
+    if (OpenLayoutBase->lib_Version < 11) return;
+    OLUI_SetSelected(ui, el, selected);
+}
+
+int olui_is_selected(const olui_el *el)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_IsSelected(el);
+}
+
+olui_el * olui_next_selected(olui *ui, const olui_el *scope, const olui_el *after)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_NextSelected(ui, scope, after);
+}
+
+int olui_select_all(olui *ui, olui_el *scope, int selected)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_SelectAll(ui, scope, selected);
+}
+
+olui_el * olui_drag_item(const olui *ui, int index)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_DragItem(ui, index);
+}

@@ -296,10 +296,227 @@ static void test_look(void)
     olui_free(ui);
 }
 
+/* ---- Selecting and dragging ---- */
+
+typedef struct {
+    int selections, starts, moves, drops, cancels, activates;
+    int last_index, dx, dy, x, y;
+    unsigned qual;
+    char target[16], el[16], value[16];
+    int dragged_seen;
+    char dragged[8][16];
+} drag_log;
+
+static void on_desk(olui *ui, const olui_event *ev, void *userdata)
+{
+    drag_log *g = (drag_log *)userdata;
+    int i;
+    switch (ev->type) {
+    case OLUI_SELECTION: ++g->selections; break;
+    case OLUI_DRAG_START: ++g->starts; break;
+    case OLUI_DRAG_MOVE: ++g->moves; break;
+    case OLUI_DROP: ++g->drops; break;
+    case OLUI_DRAG_CANCEL: ++g->cancels; break;
+    case OLUI_ACTIVATE: ++g->activates; break;
+    default: return;
+    }
+    g->last_index = ev->index;
+    g->dx = ev->dx;
+    g->dy = ev->dy;
+    g->x = ev->x;
+    g->y = ev->y;
+    g->qual = ev->qualifiers;
+    snprintf(g->el, sizeof g->el, "%s", ev->id);
+    snprintf(g->target, sizeof g->target, "%s", ev->item ? olui_id(ev->item) : "");
+    snprintf(g->value, sizeof g->value, "%s", ev->value ? ev->value : "");
+    if (ev->type == OLUI_DROP) {
+        olui_el *d;
+        g->dragged_seen = 0;
+        for (i = 0; (d = olui_drag_item(ui, i)) != NULL && i < 8; ++i) {
+            snprintf(g->dragged[i], 16, "%s", olui_id(d));
+            ++g->dragged_seen;
+        }
+        /* the program moves them: by dx, dy on the desk, or into the drawer */
+        if (ev->item && !strcmp(olui_id(ev->item), "trash")) {
+            for (i = 0; (d = olui_drag_item(ui, i)) != NULL; ++i) olui_set_hidden(ui, d, 1);
+        } else {
+            for (i = 0; (d = olui_drag_item(ui, i)) != NULL; ++i) {
+                olui_rect r, p;
+                olui_box(ui, d, &r);
+                olui_box(ui, olui_parent(d), &p);
+                olui_set_place(ui, d, r.x - p.x + ev->dx, r.y - p.y + ev->dy);
+            }
+        }
+    }
+}
+
+static int is_sel(olui *ui, const char *id)
+{
+    return olui_is_selected(olui_find(ui, id));
+}
+
+static const char drag_markup[] =
+    "<style>.icon{position:absolute;width:40px;height:40px;background:#cccccc}"
+    ".icon:selected{background:#3366cc}.icon:dragging{opacity:.6}#trash:drop-target{outline:2px solid red}</style>"
+    "<div id=desk marquee droppable style='flex:1'>"
+    "  <div id=i1 class=icon selectable draggable style='left:10px;top:10px' value=Work>Work</div>"
+    "  <div id=i2 class=icon selectable draggable style='left:60px;top:10px'>RAM</div>"
+    "  <div id=i3 class=icon selectable draggable style='left:110px;top:10px'>DF0</div>"
+    "  <div id=i4 class=icon selectable draggable style='left:10px;top:200px'>Far</div>"
+    "  <div id=trash class=icon droppable style='left:300px;top:200px'>Trash</div>"
+    "</div>";
+
+static void test_selection(void)
+{
+    olui *ui = olui_new();
+    char err[128];
+    drag_log g;
+    olui_el *e;
+    int n;
+    memset(&g, 0, sizeof g);
+    olui_set_measure(ui, measure, NULL);
+    CHECK(olui_load(ui, drag_markup, NULL, err, sizeof err));
+    CHECK(olui_on(ui, NULL, 0, on_desk, &g));
+    CHECK(olui_layout(ui, 400, 300));
+    /* icons at 16+, 66+, 116+ across, 16 down (the desk's corner is 6, 6) */
+    /* a click selects one alone */
+    CHECK(olui_mouse(ui, 20, 20, OLUI_MOUSE_DOWN) && olui_mouse(ui, 20, 20, OLUI_MOUSE_UP));
+    CHECK(is_sel(ui, "i1") && !is_sel(ui, "i2") && g.selections == 1 && !strcmp(g.el, "desk") && g.last_index == 1);
+    CHECK(olui_mouse(ui, 70, 20, OLUI_MOUSE_DOWN) && olui_mouse(ui, 70, 20, OLUI_MOUSE_UP));
+    CHECK(!is_sel(ui, "i1") && is_sel(ui, "i2") && g.selections == 2 && !strcmp(g.target, "i2"));
+    /* Shift adds, and takes away */
+    CHECK(olui_mouse_qual(ui, 120, 20, OLUI_MOUSE_DOWN, OLUI_QUAL_SHIFT));
+    olui_mouse_qual(ui, 120, 20, OLUI_MOUSE_UP, OLUI_QUAL_SHIFT);
+    CHECK(is_sel(ui, "i2") && is_sel(ui, "i3") && g.last_index == 2 && g.qual == OLUI_QUAL_SHIFT);
+    olui_mouse_qual(ui, 20, 20, OLUI_MOUSE_DOWN, OLUI_QUAL_SHIFT);
+    olui_mouse_qual(ui, 20, 20, OLUI_MOUSE_UP, OLUI_QUAL_SHIFT);
+    CHECK(is_sel(ui, "i1") && is_sel(ui, "i2") && is_sel(ui, "i3"));
+    olui_mouse_qual(ui, 70, 20, OLUI_MOUSE_DOWN, OLUI_QUAL_SHIFT);
+    olui_mouse_qual(ui, 70, 20, OLUI_MOUSE_UP, OLUI_QUAL_SHIFT);
+    CHECK(is_sel(ui, "i1") && !is_sel(ui, "i2") && is_sel(ui, "i3") && g.last_index == 2);
+    /* the selected, in order */
+    e = olui_next_selected(ui, olui_find(ui, "desk"), NULL);
+    CHECK(e == olui_find(ui, "i1"));
+    e = olui_next_selected(ui, NULL, e);
+    CHECK(e == olui_find(ui, "i3") && !olui_next_selected(ui, NULL, e));
+    /* a click on one of several selected: alone when let go */
+    n = g.selections;
+    olui_mouse(ui, 20, 20, OLUI_MOUSE_DOWN);
+    CHECK(is_sel(ui, "i3") && g.selections == n);
+    olui_mouse(ui, 20, 20, OLUI_MOUSE_UP);
+    CHECK(is_sel(ui, "i1") && !is_sel(ui, "i3") && g.selections == n + 1);
+    /* a click on the space: none */
+    olui_mouse(ui, 250, 120, OLUI_MOUSE_DOWN);
+    olui_mouse(ui, 250, 120, OLUI_MOUSE_UP);
+    CHECK(!is_sel(ui, "i1") && olui_next_selected(ui, NULL, NULL) == NULL);
+    /* a double-click: activated */
+    olui_mouse(ui, 70, 20, OLUI_MOUSE_DOWN);
+    olui_mouse(ui, 70, 20, OLUI_MOUSE_UP);
+    olui_mouse(ui, 70, 20, OLUI_MOUSE_DOUBLE);
+    olui_mouse(ui, 70, 20, OLUI_MOUSE_UP);
+    CHECK(g.activates == 1 && !strcmp(g.el, "i2") && !strcmp(g.value, "i2"));
+    /* the program's */
+    CHECK(olui_select_all(ui, NULL, 1) == 3 && olui_select_all(ui, olui_find(ui, "desk"), 1) == 0);
+    CHECK(olui_select_all(ui, NULL, 0) == 4);
+    olui_set_selected(ui, olui_find(ui, "i4"), 1);
+    CHECK(is_sel(ui, "i4"));
+
+    /* a band from the space: what it touches, as it moves */
+    n = g.selections;
+    olui_mouse(ui, 5 + 6 + 150, 5 + 6 + 60, OLUI_MOUSE_DOWN);
+    CHECK(!is_sel(ui, "i4") && g.selections == n + 1);   /* the click cleared it */
+    olui_mouse(ui, 60, 40, OLUI_MOUSE_MOVE);            /* touches i2 and i3 (66..106, 116..156), not i1 (16..56) */
+    CHECK(!is_sel(ui, "i1") && is_sel(ui, "i2") && is_sel(ui, "i3"));
+    {
+        olui_rect area;
+        seen s;
+        CHECK(olui_damaged(ui, &area));
+        draw_all(ui, &s);
+        CHECK(s.ops > 0);
+    }
+    olui_mouse(ui, 18, 40, OLUI_MOUSE_MOVE);            /* now i1 too */
+    CHECK(is_sel(ui, "i1") && is_sel(ui, "i2") && is_sel(ui, "i3"));
+    olui_mouse(ui, 18, 40, OLUI_MOUSE_UP);
+    CHECK(g.selections == n + 2 && g.last_index == 3 && !g.target[0]);
+    /* a Shift band adds */
+    olui_mouse_qual(ui, 8, 290, OLUI_MOUSE_DOWN, OLUI_QUAL_SHIFT);
+    olui_mouse_qual(ui, 30, 230, OLUI_MOUSE_MOVE, OLUI_QUAL_SHIFT);
+    olui_mouse_qual(ui, 30, 230, OLUI_MOUSE_UP, OLUI_QUAL_SHIFT);
+    CHECK(is_sel(ui, "i1") && is_sel(ui, "i3") && is_sel(ui, "i4"));
+
+    /* dragging i1 drags the four selected; nothing moves under 4 px */
+    olui_select_all(ui, NULL, 0);
+    olui_set_selected(ui, olui_find(ui, "i1"), 1);
+    olui_set_selected(ui, olui_find(ui, "i2"), 1);
+    olui_mouse(ui, 20, 20, OLUI_MOUSE_DOWN);
+    olui_mouse(ui, 22, 21, OLUI_MOUSE_MOVE);
+    CHECK(g.starts == 0);
+    olui_mouse(ui, 30, 30, OLUI_MOUSE_MOVE);
+    CHECK(g.starts == 1 && g.last_index == 2 && !strcmp(g.el, "i1") && g.moves == 1 && g.dx == 10 && g.dy == 10);
+    CHECK(olui_drag_item(ui, 0) == olui_find(ui, "i1") && olui_drag_item(ui, 1) == olui_find(ui, "i2") &&
+          !olui_drag_item(ui, 2));
+    /* over the trash: the drop target; the dragged aren't under the pointer */
+    olui_mouse(ui, 310, 210, OLUI_MOUSE_MOVE);
+    CHECK(!strcmp(g.target, "trash") && olui_hit(ui, 20, 20) == olui_find(ui, "desk"));
+    {
+        /* the ghost: drawn last, moved by the pointer, at the :dragging opacity */
+        log_t *l = (log_t *)calloc(1, sizeof(log_t));
+        const rec *r;
+        olui_rect at;
+        olui_draw(ui, NULL, log_op, l);
+        r = find_op(l, 0, OLUI_DRAW_BOX, "i1");
+        CHECK(r && r->box.x == 16 + 290 && r->box.y == 16 + 190 && r->alpha == 153);
+        CHECK(r && find_op(l, 0, OLUI_DRAW_BOX, "trash") < r);
+        r = find_op(l, 0, OLUI_DRAW_BOX, "trash");
+        CHECK(r && find_op(l, (int)(r - l->r), OLUI_DRAW_BOX, "trash"));  /* and its :drop-target outline */
+        /* a part drawn again: only what crosses it, ghost too */
+        at.x = 300; at.y = 200; at.w = 20; at.h = 20;
+        l->n = 0;
+        olui_draw(ui, &at, log_op, l);
+        CHECK(find_op(l, 0, OLUI_DRAW_BOX, "i1") && !find_op(l, 0, OLUI_DRAW_BOX, "i3"));
+        free(l);
+    }
+    olui_mouse(ui, 310, 210, OLUI_MOUSE_UP);
+    CHECK(g.drops == 1 && !strcmp(g.target, "trash") && g.dragged_seen == 2 && !strcmp(g.dragged[1], "i2"));
+    CHECK(!olui_drag_item(ui, 0));
+    CHECK(!olui_box(ui, olui_find(ui, "i1"), &(olui_rect){ 0, 0, 0, 0 }));   /* the program hid them */
+    /* dragged onto the desk: the program moves it by dx, dy */
+    olui_select_all(ui, NULL, 0);
+    olui_mouse(ui, 120, 20, OLUI_MOUSE_DOWN);
+    olui_mouse(ui, 150, 60, OLUI_MOUSE_MOVE);
+    olui_mouse(ui, 170, 120, OLUI_MOUSE_MOVE);
+    olui_mouse(ui, 170, 120, OLUI_MOUSE_UP);
+    CHECK(g.drops == 2 && !strcmp(g.target, "desk") && g.dx == 50 && g.dy == 100 && g.dragged_seen == 1);
+    {
+        olui_rect r;
+        CHECK(olui_box(ui, olui_find(ui, "i3"), &r) && r.x == 166 && r.y == 116);
+    }
+    /* Escape: nothing moves */
+    olui_mouse(ui, 20, 210, OLUI_MOUSE_DOWN);
+    olui_mouse(ui, 80, 250, OLUI_MOUSE_MOVE);
+    CHECK(g.starts == 3);
+    CHECK(olui_key(ui, OLUI_KEY_ESCAPE, 0));
+    CHECK(g.cancels == 1 && !olui_drag_item(ui, 0));
+    olui_mouse(ui, 80, 250, OLUI_MOUSE_UP);
+    CHECK(g.drops == 2);
+    {
+        olui_rect r;
+        CHECK(olui_box(ui, olui_find(ui, "i4"), &r) && r.x == 16 && r.y == 206);
+    }
+    /* taken away while dragged: the drag goes on without it */
+    olui_mouse(ui, 20, 210, OLUI_MOUSE_DOWN);
+    olui_mouse(ui, 80, 250, OLUI_MOUSE_MOVE);
+    CHECK(olui_remove(ui, olui_find(ui, "i4")) && !olui_drag_item(ui, 0));
+    olui_mouse(ui, 90, 250, OLUI_MOUSE_MOVE);
+    olui_mouse(ui, 90, 250, OLUI_MOUSE_UP);
+    olui_free(ui);
+}
+
 int main(void)
 {
     test_positions();
     test_look();
+    test_selection();
     printf("OLUI DESKTOP %d checks, %d failed\n", checks, failed);
     if (failed) return 20;
     printf("OLUI DESKTOP PASS version=%s\n", OLUI_VERSION);

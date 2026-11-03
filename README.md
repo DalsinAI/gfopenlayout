@@ -163,7 +163,9 @@ for drawing and for the pointer, and elements the program makes, places and
 takes away (`olui_add`, `olui_remove`, `olui_set_style`, `olui_set_place`,
 `olui_hit`); the look of icons on any backdrop (`opacity` as each draw
 op's `alpha`, `text-shadow`, `outline`, `background-image: url(N)` and
-`olui_image_name`). [docs/GFOpenLayout-UI.md](docs/GFOpenLayout-UI.md) says how;
+`olui_image_name`); and selecting and dragging (`selectable`, `draggable`,
+`droppable` and `marquee` attributes: clicks, Shift with a click, a band,
+drag and drop with the dragged on top, `olui_mouse_qual`). [docs/GFOpenLayout-UI.md](docs/GFOpenLayout-UI.md) says how;
 `tests/test_desktop.c` tests it. A program opens version 11
 (`OPENLAYOUTLIB_DESKTOP_VERSION`) for them; through
 `libgfopenlayout_link.a` a version 11 call on version 10 does nothing and

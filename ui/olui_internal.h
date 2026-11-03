@@ -34,7 +34,12 @@ enum {
     F_NUMBER = 1u << 1,      /* input type=number, spinner: a number with arrow buttons */
     F_READONLY = 1u << 2,    /* readonly: the caret moves and text is copied, not changed */
     F_NOWRAP = 1u << 3,      /* textarea wrap=off: lines break only at newlines */
-    F_COLS = 1u << 4         /* cols was given */
+    F_COLS = 1u << 4,        /* cols was given */
+    /* 0.4: a desktop's */
+    F_SELECTABLE = 1u << 5,  /* selectable: clicked, selected; Shift adds */
+    F_DRAGGABLE = 1u << 6,   /* draggable */
+    F_DROPPABLE = 1u << 7,   /* droppable: a drop target */
+    F_MARQUEE = 1u << 8      /* marquee: a scope; a band dragged on its space selects */
 };
 
 /* overflow (olui_cs.overflow) */
@@ -54,7 +59,9 @@ enum {
     S_DISABLED = 1u << 4,
     S_SELECTED = 1u << 5,
     S_OPEN = 1u << 6,
-    S_HIDDEN = 1u << 7       /* olui_set_hidden: display none, whatever the CSS */
+    S_HIDDEN = 1u << 7,      /* olui_set_hidden: display none, whatever the CSS */
+    S_DRAGGING = 1u << 8,    /* 0.4: being dragged (:dragging) */
+    S_DROP = 1u << 9         /* 0.4: what is dragged is over it (:drop-target) */
 };
 
 /* A computed style: what GFOpenLayout lays out, and how olui draws the box */
@@ -134,6 +141,7 @@ struct olui_el {
     /* 0.4 */
     int placed;                 /* olui_set_place: at place_x, place_y instead of its CSS's left and top */
     int32_t place_x, place_y;   /* pixels from its containing block's content corner */
+    int band_base;              /* selected when a Shift band began: it stays so */
 };
 
 /* ---- CSS (olui_css.c) ---- */

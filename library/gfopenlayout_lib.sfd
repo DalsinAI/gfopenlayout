@@ -160,5 +160,11 @@ olui_el * OLUI_Parent(const olui_el *el)(a0)
 olui_el * OLUI_FirstChild(const olui_el *el)(a0)
 olui_el * OLUI_Next(const olui_el *el)(a0)
 int OLUI_ImageName(olui *ui, const char *name, int image)(a0,a1,d0)
+int OLUI_MouseQual(olui *ui, int x, int y, int what, unsigned qualifiers)(a0,d0,d1,d2,d3)
+void OLUI_SetSelected(olui *ui, olui_el *el, int selected)(a0,a1,d0)
+int OLUI_IsSelected(const olui_el *el)(a0)
+olui_el * OLUI_NextSelected(olui *ui, const olui_el *scope, const olui_el *after)(a0,a1,a2)
+int OLUI_SelectAll(olui *ui, olui_el *scope, int selected)(a0,a1,d0)
+olui_el * OLUI_DragItem(const olui *ui, int index)(a0,d0)
 * ---- end of version 10 ----
 ==end

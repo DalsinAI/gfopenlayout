@@ -783,7 +783,7 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
         EndRefresh(a->win, TRUE);
         return OLUI_AMIGA_USED;
     case IDCMP_MOUSEMOVE:
-        used = olui_mouse(a->ui, x, y, OLUI_MOUSE_MOVE);
+        used = olui_mouse_qual(a->ui, x, y, OLUI_MOUSE_MOVE, shift | command);
         break;
     case IDCMP_MOUSEBUTTONS:
         if (m->Code == SELECTDOWN) {
@@ -793,9 +793,10 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
             a->down_micros = m->Micros;
             a->down_x = x;
             a->down_y = y;
-            used = olui_mouse(a->ui, x, y, twice ? OLUI_MOUSE_DOUBLE : OLUI_MOUSE_DOWN);
+            /* 0.4: with the qualifiers: Shift with a click adds to a selection */
+            used = olui_mouse_qual(a->ui, x, y, twice ? OLUI_MOUSE_DOUBLE : OLUI_MOUSE_DOWN, shift | command);
         } else if (m->Code == SELECTUP) {
-            used = olui_mouse(a->ui, x, y, OLUI_MOUSE_UP);
+            used = olui_mouse_qual(a->ui, x, y, OLUI_MOUSE_UP, shift | command);
         }
         break;
     case IDCMP_VANILLAKEY: {

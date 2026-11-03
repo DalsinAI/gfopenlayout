@@ -28,6 +28,8 @@ static const struct { const char *name; uint32_t initial; } own[X_COUNT] = {
 
 #define ST_SELECTED GFCSS_STATE_USER(0)
 #define ST_OPEN GFCSS_STATE_USER(1)
+#define ST_DRAGGING GFCSS_STATE_USER(2)
+#define ST_DROP GFCSS_STATE_USER(3)
 
 struct olui_sheet {
     gfcss_engine *e;
@@ -53,7 +55,8 @@ static gfcss_engine *new_engine(int slot[X_COUNT])
     gfcss_engine *e = gfcss_new();
     int i;
     if (!e) return NULL;
-    if (!gfcss_add_state(e, "selected", ST_SELECTED) || !gfcss_add_state(e, "open", ST_OPEN)) {
+    if (!gfcss_add_state(e, "selected", ST_SELECTED) || !gfcss_add_state(e, "open", ST_OPEN) ||
+        !gfcss_add_state(e, "dragging", ST_DRAGGING) || !gfcss_add_state(e, "drop-target", ST_DROP)) {
         gfcss_free(e);
         return NULL;
     }
@@ -110,6 +113,8 @@ unsigned olui_sheet_states(const olui_sheet *sheet)
     if (g & (GFCSS_STATE_DISABLED | GFCSS_STATE_ENABLED)) s |= S_DISABLED;
     if (g & ST_SELECTED) s |= S_SELECTED;
     if (g & ST_OPEN) s |= S_OPEN;
+    if (g & ST_DRAGGING) s |= S_DRAGGING;
+    if (g & ST_DROP) s |= S_DROP;
     return s;
 }
 
@@ -174,6 +179,8 @@ static void el_info(void *ud, const void *p, gfcss_info *in)
     st |= (el->state & S_DISABLED) ? GFCSS_STATE_DISABLED : GFCSS_STATE_ENABLED;
     if (el->state & S_SELECTED) st |= ST_SELECTED;
     if (el->state & S_OPEN) st |= ST_OPEN;
+    if (el->state & S_DRAGGING) st |= ST_DRAGGING;
+    if (el->state & S_DROP) st |= ST_DROP;
     in->state = st;
     in->index = 0;              /* el_index, only when a selector asks */
     in->count = 0;
@@ -217,6 +224,10 @@ static const char *el_attr(void *ud, const void *p, const char *name)
     if (!strcmp(name, "selected")) return (el->state & S_SELECTED) ? "" : NULL;
     if (!strcmp(name, "open")) return (el->state & S_OPEN) ? "" : NULL;
     if (!strcmp(name, "hidden")) return (el->state & S_HIDDEN) ? "" : NULL;
+    if (!strcmp(name, "selectable")) return (el->flags & F_SELECTABLE) ? "" : NULL;
+    if (!strcmp(name, "draggable")) return (el->flags & F_DRAGGABLE) ? "true" : NULL;
+    if (!strcmp(name, "droppable")) return (el->flags & F_DROPPABLE) ? "" : NULL;
+    if (!strcmp(name, "marquee")) return (el->flags & F_MARQUEE) ? "" : NULL;
     return NULL;
 }
 
