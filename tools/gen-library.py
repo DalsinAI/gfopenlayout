@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gfopenlayout.library's version 10 calls, made from the C API itself.
+"""gfopenlayout.library's version 10 and 11 calls, made from the C API itself.
 
 Version 10 folds GFCSS's document calls, GFOpenLayout UI and its Amiga glue
 into gfopenlayout.library. The calls are the C functions as the headers
@@ -19,6 +19,12 @@ and whole:
                                       rest links this instead of libolui.a
                                       (with gfopenlayout_link_base.c, which
                                       opens the library)
+
+Version 11 (GFOpenLayout UI 0.4) adds the calls a desktop needs after version
+10's, the same way. Through the link library, a version 11 call on a
+version 10 library does nothing and returns 0 (NULL), so a program built
+with them still starts on a ROM with version 10 and can check
+OpenLayoutBase->lib_Version.
 
 Run it after a header's calls change; --check says whether the files are
 as it would write them (the Makefile's test runs that).
@@ -53,7 +59,18 @@ olui_theme_css olui_free_css""".split()
 AMIGA = """olui_amiga_idcmp olui_amiga_new olui_amiga_free olui_amiga_theme olui_amiga_own
 olui_amiga_images olui_amiga_fonts olui_amiga_layout olui_amiga_draw
 olui_amiga_event""".split()
-CALLS = [("core", n) for n in CORE] + [("ui", n) for n in UI] + [("amiga", n) for n in AMIGA]
+# Version 11 (GFOpenLayout UI 0.4): what a desktop and its drawers need
+# (OpenBench), after version 10's, in the order they go in the library.
+UI11 = """olui_add olui_remove olui_set_style olui_set_place olui_hit olui_parent
+olui_first_child olui_next""".split()
+CALLS = ([("core", n) for n in CORE] + [("ui", n) for n in UI] + [("amiga", n) for n in AMIGA] +
+         [("ui11", n) for n in UI11])
+# the library version each part's calls came in: a call of a later one is
+# not called through an older library (the link library's side says so)
+VERSION_OF = {"core": 10, "ui": 10, "amiga": 10, "ui11": 11}
+TITLES = {"core": "version 10: GFCSS in documents", "ui": "version 10: GFOpenLayout UI",
+          "amiga": "version 10: GFOpenLayout UI's Amiga glue",
+          "ui11": "version 11: what a desktop needs (GFOpenLayout UI 0.4)"}
 
 # the program's side, where a call's plain one won't do: olui_theme_css's
 # string is the program's to free(), so it is copied out of the library's
@@ -72,7 +89,7 @@ LINK_BODY = {
 }
 
 HEADERS = {"core": "include/gfopenlayout.h", "ui": "include/gfopenlayout_ui.h",
-           "amiga": "include/gfopenlayout_ui_amiga.h"}
+           "amiga": "include/gfopenlayout_ui_amiga.h", "ui11": "include/gfopenlayout_ui.h"}
 
 
 def lib_name(c):
@@ -91,7 +108,7 @@ def prototypes():
     # every call the UI's headers declare is in the library
     listed = {n for _, n in CALLS}
     for part, name in sorted(found):
-        if part != "core" and name.startswith("olui_") and name not in listed:
+        if part in ("ui", "amiga") and name.startswith("olui_") and name not in listed:
             sys.exit(f"gen-library: {HEADERS[part]} declares {name}, which is not in CALLS")
     calls = []
     for part, name in CALLS:
@@ -135,11 +152,10 @@ def generate():
         L = lib_name(name)
         regs = registers(name, params)
         if part != part_seen:
-            title = {"core": "GFCSS in documents", "ui": "GFOpenLayout UI",
-                     "amiga": "GFOpenLayout UI's Amiga glue"}[part]
-            sfd.append(f"* version 10: {title}")
-            inline.append(f"/* version 10: {title} */")
-            lib.append(f"/* ---- {title} ---- */")
+            title = TITLES[part]
+            sfd.append(f"* {title}")
+            inline.append(f"/* {title} */")
+            lib.append(f"/* ---- {title.split(': ', 1)[1]} ---- */")
             part_seen = part
         argl = ", ".join(f"{t} {n}" if not t.endswith("*") else f"{t}{n}" for t, n in params)
         sfd.append(f"{ret} {L}({argl})({','.join(regs)})")
@@ -163,10 +179,15 @@ def generate():
         # the program's side: the C call through the library
         cargs = ", ".join(f"{t} {n}" if not t.endswith("*") else f"{t}{n}" for t, n in params) or "void"
         cbody = f"{L}({', '.join(n for _, n in params)});"
+        # a call of a later version than the library opened (version 10 is the least) does nothing
+        guard = ""
+        if VERSION_OF[part] > 10:
+            guard = (f"    if (OpenLayoutBase->lib_Version < {VERSION_OF[part]}) "
+                     f"return{'' if is_void(ret) else ' 0'};\n")
         if name in LINK_BODY:
-            link.append(f"{ret} {name}({cargs})\n{{\n{LINK_BODY[name]}\n}}")
+            link.append(f"{ret} {name}({cargs})\n{{\n{guard}{LINK_BODY[name]}\n}}")
         else:
-            link.append(f"{ret} {name}({cargs})\n{{\n    {'' if is_void(ret) else 'return '}{cbody}\n}}")
+            link.append(f"{ret} {name}({cargs})\n{{\n{guard}    {'' if is_void(ret) else 'return '}{cbody}\n}}")
         bias += 6
     v = ", \\\n    ".join(", ".join(vectors[i:i + 3]) for i in range(0, len(vectors), 3))
     libh = ("/* Made by tools/gen-library.py from the headers: don't edit. gfopenlayout.library\n"

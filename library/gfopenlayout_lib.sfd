@@ -150,5 +150,14 @@ void OLUI_AmigaFonts(olui_amiga *a, const char *font, const char *mono)(a0,a1,a2
 int OLUI_AmigaLayout(olui_amiga *a)(a0)
 void OLUI_AmigaDraw(olui_amiga *a)(a0)
 int OLUI_AmigaEvent(olui_amiga *a, struct IntuiMessage *msg)(a0,a1)
+* version 11: what a desktop needs (GFOpenLayout UI 0.4)
+olui_el * OLUI_Add(olui *ui, olui_el *parent, const char *markup, char *err, size_t errlen)(a0,a1,a2,a3,d0)
+int OLUI_Remove(olui *ui, olui_el *el)(a0,a1)
+int OLUI_SetStyle(olui *ui, olui_el *el, const char *decls)(a0,a1,a2)
+void OLUI_SetPlace(olui *ui, olui_el *el, int32_t x, int32_t y)(a0,a1,d0,d1)
+olui_el * OLUI_Hit(olui *ui, int x, int y)(a0,d0,d1)
+olui_el * OLUI_Parent(const olui_el *el)(a0)
+olui_el * OLUI_FirstChild(const olui_el *el)(a0)
+olui_el * OLUI_Next(const olui_el *el)(a0)
 * ---- end of version 10 ----
 ==end

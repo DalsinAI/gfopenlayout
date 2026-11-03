@@ -36,6 +36,14 @@
                                                a program built with -fbaserel gives them __saveds.
                                                libgfopenlayout_link.a is the C API through the
                                                library, for a program written to it. */
+#define OPENLAYOUTLIB_DESKTOP_VERSION 11    /* what a desktop and its drawers need (GFOpenLayout UI
+                                               0.4, OpenBench): elements made, placed and taken
+                                               away (OLUI_Add, OLUI_Remove, OLUI_SetStyle,
+                                               OLUI_SetPlace), position and z-index, OLUI_Hit,
+                                               and frames as wide as their content
+                                               (OL_BOX_FIT_CONTENT). Through
+                                               libgfopenlayout_link.a a version 11 call on
+                                               version 10 does nothing and returns 0. */
 
 struct OLNodeAppend {
     ol_document *document;

@@ -73,7 +73,17 @@ typedef struct {
     uint32_t muted;             /* a field's placeholder: placeholder-color */
     int column;                 /* flex-direction column (the default for a block) */
     int overflow;               /* O_...: a box with a height scrolls what it holds */
+    /* 0.4 */
+    int positioned;             /* P_...: position absolute or fixed is a frame at left and top (box.frame) */
+    int32_t z;                  /* z-index (auto: 0): its layer among its parent's children */
 } olui_cs;
+
+/* position (olui_cs.positioned) */
+enum {
+    P_STATIC = 0,
+    P_OUT,                      /* absolute or fixed: out of the flow, a GFOpenLayout frame */
+    P_RELATIVE                  /* relative: in the flow; its z-index counts */
+};
 
 struct olui_el {
     int kind;
@@ -111,6 +121,9 @@ struct olui_el {
     unsigned wrap_rev;          /* lines are of text_rev's text */
     int32_t wrap_room;          /* at this width (pixels) */
     ol_unit wrap_font;          /* and font size */
+    /* 0.4 */
+    int placed;                 /* olui_set_place: at place_x, place_y instead of its CSS's left and top */
+    int32_t place_x, place_y;   /* pixels from its containing block's content corner */
 };
 
 /* ---- CSS (olui_css.c) ---- */

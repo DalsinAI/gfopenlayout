@@ -435,6 +435,7 @@ void gfcss_computed_init(gfcss_computed *cs)
     len_set(&cs->row_gap, GFCSS_LEN_NORMAL, 0, 0);
     len_set(&cs->column_gap, GFCSS_LEN_NORMAL, 0, 0);
     cs->content.kind = GFCSS_TEXT_NORMAL;
+    for (k = 0; k < 4; ++k) len_set(&cs->inset[k], GFCSS_LEN_AUTO, 0, 0);
 }
 
 int gfcss_is_set(const gfcss_computed *cs, int p)
@@ -534,6 +535,8 @@ static void copy_prop(gfcss_computed *d, const gfcss_computed *s, int p)
     case GFCSS_P_BORDER_SPACING_V: d->border_spacing[1] = s->border_spacing[1]; break;
     case GFCSS_P_CAPTION_SIDE: d->caption_side = s->caption_side; break;
     case GFCSS_P_CONTENT: d->content = s->content; break;
+    case GFCSS_P_TOP: case GFCSS_P_RIGHT: case GFCSS_P_BOTTOM: case GFCSS_P_LEFT:
+        k = p - GFCSS_P_TOP; d->inset[k] = s->inset[k]; break;
     default: break;
     }
 }
@@ -758,6 +761,9 @@ static void apply_value(const gres *r, gfcss_computed *cs, const gfcss_computed 
     case GFCSS_P_BORDER_SPACING_H: cs->border_spacing[0] = resolve_units(r, d); break;
     case GFCSS_P_BORDER_SPACING_V: cs->border_spacing[1] = resolve_units(r, d); break;
     case GFCSS_P_CAPTION_SIDE: cs->caption_side = d->v; break;
+    case GFCSS_P_TOP: case GFCSS_P_RIGHT: case GFCSS_P_BOTTOM: case GFCSS_P_LEFT:
+        resolve_len(r, d, &cs->inset[p - GFCSS_P_TOP]);
+        break;
     case GFCSS_P_CONTENT:
         if (d->unit == V_TEXT) cs->content = text_of(r, d, GFCSS_TEXT_STRING);
         else {
@@ -1184,5 +1190,33 @@ void gfcss_to_ol(const gfcss_computed *cs, ol_unit cw, ol_style *st, ol_box_styl
     case GFCSS_FLEX_START: box->align = OL_CROSS_START; break;
     case GFCSS_FLEX_END: box->align = OL_CROSS_END; break;
     default: box->align = OL_CROSS_STRETCH; break;
+    }
+    /* 1.1: a box placed out of the flow (absolute or fixed): a GFOpenLayout
+     * frame at left and top from its containing block's content corner, as
+     * wide as its width (or what left and right leave of cw, or its
+     * content), as tall as its height or its content. right alone places a
+     * box with a width from cw's right; bottom is left out (the height of
+     * the block it is in is not known here). */
+    if ((cs->position == GFCSS_POSITION_ABSOLUTE || cs->position == GFCSS_POSITION_FIXED) &&
+        (!cs->size || cs->size >= sizeof(gfcss_computed))) {
+        ol_unit l = gfcss_resolve(&cs->inset[GFCSS_LEFT], cw), r = gfcss_resolve(&cs->inset[GFCSS_RIGHT], cw);
+        ol_unit w = box->width;
+        int has_l = cs->inset[GFCSS_LEFT].kind == GFCSS_LEN, has_r = cs->inset[GFCSS_RIGHT].kind == GFCSS_LEN;
+        if (w <= 0 && has_l && has_r) w = cw - l - r;
+        if (w <= 0 && !(has_l && has_r)) {
+#ifdef OL_HAS_FIT_CONTENT
+            w = 0;                      /* as wide as its content: GFOpenLayout works it out */
+            box->flags |= OL_BOX_FIT_CONTENT;
+#else
+            w = cw - (has_l ? l : 0);
+#endif
+        } else if (w < OL_CSSPX(1)) {
+            w = OL_CSSPX(1);
+        }
+        box->flags |= OL_BOX_ABSOLUTE;
+        box->frame.x = has_l ? l : has_r ? cw - r - w : 0;
+        box->frame.y = cs->inset[GFCSS_TOP].kind == GFCSS_LEN ? gfcss_resolve(&cs->inset[GFCSS_TOP], cw) : 0;
+        box->frame.width = w;
+        box->frame.height = box->height > 0 ? box->height : 0;
     }
 }

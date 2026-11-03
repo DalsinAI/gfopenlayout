@@ -386,6 +386,16 @@ static void from_computed(const olui_sheet *s, const gfcss_computed *c, const ol
     case GFCSS_OVERFLOW_HIDDEN: case GFCSS_OVERFLOW_CLIP: cs->overflow = O_HIDDEN; break;
     default: cs->overflow = O_VISIBLE; break;
     }
+    /* 0.4: out of the flow at left and top (right and bottom: of what, the styling doesn't know); a layer */
+    if (c->position == GFCSS_POSITION_ABSOLUTE || c->position == GFCSS_POSITION_FIXED) {
+        cs->positioned = P_OUT;
+        cs->box.flags |= OL_BOX_ABSOLUTE;
+        cs->box.frame.x = units_of(&c->inset[GFCSS_LEFT]);
+        cs->box.frame.y = units_of(&c->inset[GFCSS_TOP]);
+    } else if (c->position == GFCSS_POSITION_RELATIVE) {
+        cs->positioned = P_RELATIVE;
+    }
+    cs->z = cs->positioned && !c->z_auto ? c->z_index : 0;
     cs->accent = c->ext[s->slot[X_ACCENT]];
     cs->mark_bg = c->ext[s->slot[X_MARK_BG]];
     cs->mark_border = c->ext[s->slot[X_MARK_BORDER]];
@@ -459,6 +469,18 @@ static void to_computed(const olui_sheet *s, const olui_cs *cs, gfcss_computed *
     c->overflow_x = c->overflow_y = cs->overflow == O_AUTO ? GFCSS_OVERFLOW_AUTO
                   : cs->overflow == O_SCROLL ? GFCSS_OVERFLOW_SCROLL
                   : cs->overflow == O_HIDDEN ? GFCSS_OVERFLOW_HIDDEN : GFCSS_OVERFLOW_VISIBLE;
+    if (cs->positioned == P_OUT) {
+        c->position = GFCSS_POSITION_ABSOLUTE;
+        c->inset[GFCSS_LEFT].kind = c->inset[GFCSS_TOP].kind = GFCSS_LEN;
+        c->inset[GFCSS_LEFT].units = cs->box.frame.x;
+        c->inset[GFCSS_TOP].units = cs->box.frame.y;
+    } else if (cs->positioned == P_RELATIVE) {
+        c->position = GFCSS_POSITION_RELATIVE;
+    }
+    if (cs->z) {
+        c->z_auto = 0;
+        c->z_index = cs->z;
+    }
     c->ext[s->slot[X_ACCENT]] = cs->accent;
     c->ext[s->slot[X_MARK_BG]] = cs->mark_bg;
     c->ext[s->slot[X_MARK_BORDER]] = cs->mark_border;

@@ -26,7 +26,7 @@
 extern "C" {
 #endif
 
-#define OLUI_VERSION "0.3"
+#define OLUI_VERSION "0.4"
 
 typedef struct olui olui;
 typedef struct olui_el olui_el;
@@ -295,6 +295,42 @@ void olui_tabs_select(olui *ui, olui_el *tabs, int index);
 /* The program's own pointer on a widget. */
 void olui_set_user(olui_el *el, void *user);
 void *olui_user(const olui_el *el);
+
+/* ---- A desktop's elements (0.4, gfopenlayout.library 11) ----------------------
+ *
+ * Elements the program makes, places and takes away while the window is open
+ * (a desktop's icons, a drawer's files), positioned and layered by CSS:
+ * position:absolute (or fixed) takes an element out of the flow to its
+ * left and top from its parent's content corner (right and bottom are not
+ * used: the styling doesn't know the parent's size), as wide as its width or
+ * its content; z-index puts it in a layer, for drawing and for the pointer
+ * alike: positioned children below 0, those in the flow, positioned ones at
+ * 0 or auto, then those above 0, each layer in the markup's order. Each
+ * element is a layer of its own: what it holds stays in its layer. */
+
+/* Markup (a fragment, as olui_load takes, <style> blocks too) made into
+ * elements at the end of parent's children (NULL: the window's). The first
+ * new element, or NULL with why in err. */
+olui_el *olui_add(olui *ui, olui_el *parent, const char *markup, char *err, size_t errlen);
+/* An element and what it holds taken away and freed; not the window, nor a
+ * tab or its button. 1 when it was. */
+int olui_remove(olui *ui, olui_el *el);
+/* Its style attribute's declarations from now on (NULL: none). 1, or 0
+ * when memory ran out. */
+int olui_set_style(olui *ui, olui_el *el, const char *decls);
+/* A positioned element's place, in pixels from its parent's content
+ * corner, in place of its CSS's left and top (dragging an icon, a grid's
+ * cell); OLUI_PLACE_CSS for x gives it back to its CSS. */
+#define OLUI_PLACE_CSS ((int32_t)0x80000000)
+void olui_set_place(olui *ui, olui_el *el, int32_t x, int32_t y);
+/* The topmost element at x, y in the window's inner box (the one the
+ * pointer would reach, layers counted), or NULL. */
+olui_el *olui_hit(olui *ui, int x, int y);
+/* Walking the elements: the parent, the first child and the next sibling
+ * (runs of text among other content are elements too, their tag ""). */
+olui_el *olui_parent(const olui_el *el);
+olui_el *olui_first_child(const olui_el *el);
+olui_el *olui_next(const olui_el *el);
 
 /* ---- The theme ------------------------------------------------------------------ */
 

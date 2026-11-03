@@ -514,8 +514,58 @@ static int OLUI_AmigaEvent(REG(a0, olui_amiga * a), REG(a1, struct IntuiMessage 
     return olui_amiga_event(a, msg);
 }
 
+/* ---- what a desktop needs (GFOpenLayout UI 0.4) ---- */
+
+static olui_el * OLUI_Add(REG(a0, olui * ui), REG(a1, olui_el * parent), REG(a2, const char * markup), REG(a3, char * err), REG(d0, size_t errlen), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_add(ui, parent, markup, err, errlen);
+}
+
+static int OLUI_Remove(REG(a0, olui * ui), REG(a1, olui_el * el), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_remove(ui, el);
+}
+
+static int OLUI_SetStyle(REG(a0, olui * ui), REG(a1, olui_el * el), REG(a2, const char * decls), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_set_style(ui, el, decls);
+}
+
+static void OLUI_SetPlace(REG(a0, olui * ui), REG(a1, olui_el * el), REG(d0, int32_t x), REG(d1, int32_t y), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    olui_set_place(ui, el, x, y);
+}
+
+static olui_el * OLUI_Hit(REG(a0, olui * ui), REG(d0, int x), REG(d1, int y), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_hit(ui, x, y);
+}
+
+static olui_el * OLUI_Parent(REG(a0, const olui_el * el), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_parent(el);
+}
+
+static olui_el * OLUI_FirstChild(REG(a0, const olui_el * el), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_first_child(el);
+}
+
+static olui_el * OLUI_Next(REG(a0, const olui_el * el), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_next(el);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x342
+#define OL_V10_LAST_BIAS 0x372
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -545,4 +595,7 @@ static int OLUI_AmigaEvent(REG(a0, olui_amiga * a), REG(a1, struct IntuiMessage 
     (APTR)OLUI_ThemeCss, (APTR)OLUI_FreeCss, (APTR)OLUI_AmigaIdcmp, \
     (APTR)OLUI_AmigaNew, (APTR)OLUI_AmigaFree, (APTR)OLUI_AmigaTheme, \
     (APTR)OLUI_AmigaOwn, (APTR)OLUI_AmigaImages, (APTR)OLUI_AmigaFonts, \
-    (APTR)OLUI_AmigaLayout, (APTR)OLUI_AmigaDraw, (APTR)OLUI_AmigaEvent
+    (APTR)OLUI_AmigaLayout, (APTR)OLUI_AmigaDraw, (APTR)OLUI_AmigaEvent, \
+    (APTR)OLUI_Add, (APTR)OLUI_Remove, (APTR)OLUI_SetStyle, \
+    (APTR)OLUI_SetPlace, (APTR)OLUI_Hit, (APTR)OLUI_Parent, \
+    (APTR)OLUI_FirstChild, (APTR)OLUI_Next
