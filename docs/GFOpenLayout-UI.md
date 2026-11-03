@@ -324,6 +324,37 @@ static void dropped(olui *ui, const olui_event *ev, void *data)
 olui_on(ui, "desk", OLUI_DROP, dropped, NULL);
 ```
 
+**Long lists.** `<vlist columns="200 60 120">` holds no elements: the
+program says how many rows it has and gives each cell as it is drawn
+(`olui_vlist_set(ui, el, rows, fn, data)`, `fn(data, row, column,
+&image)`), so a drawer of 5,000 files costs only the rows that show. A row
+is styled as the made element `row` under it (`row:selected`); a cell may
+have a picture before its text. A click selects a row, Shift with a click
+adds or takes away (`OLUI_SELECT`, `index` the row), a double-click or
+Return is `OLUI_ACTIVATE`; the arrows, PageUp, PageDown, Home, End and the
+wheel move and scroll. The selection is a bit a row
+(`olui_vlist_selected`, `olui_vlist_select`, `olui_vlist_current`).
+
+**Context menus.** `<menu id=m><option value=open>Open</option>...</menu>`
+is never shown in the window. `olui_menu_open(ui, menu, x, y)` shows it at
+a point as a select's pop-up list is shown, with the same keys and
+pointer, and choosing an option sends `OLUI_ACTIVATE` on the menu. The
+menu button (`OLUI_MOUSE_MENU`; on the Amiga the right button in a window
+with `WFLG_RMBTRAP`) sends `OLUI_CONTEXT` for the element under the
+pointer and opens the menu its `contextmenu` attribute (or that of one it
+is in) names. The right button's release doesn't choose; a click does.
+
+**Several windows.** `olui_new_sharing(ui)` is a new UI for another window
+of the same program (a desktop's drawers) that shares `ui`'s stylesheet and
+picture names, so the theme and the program's CSS are read once; CSS added
+through either restyles both. `olui_hit` on the other window's UI finds a
+drop target there.
+
+**Backdrops.** A desktop's backdrop window is an ordinary window to the
+glue: its root (`window{background-image:url(1)}`) draws the program's
+picture in the window's box, the icons over it, and only what changed is
+drawn again.
+
 ## GFOpenLayout 0.8
 
 What the UI needed in GFOpenLayout itself, for any program:
@@ -390,7 +421,10 @@ A program links `libolui.a` and includes `gfopenlayout_ui.h` and
 - A select chooses one option (no `multiple`); its pop-up shows 12 rows
   at most and scrolls the rest. A select is as wide as its widest option,
   measured at each layout.
-- Menus.
+- Menu bars (Intuition's are the program's); a context menu's separators and submenus (`optgroup`
+  gives a labelled part).
+- A vlist's columns are fixed widths (no header, no dragging them), its rows one line, and a drag
+  from it is the program's.
 - Dragging between windows: the program's. The drag events have the pointer even outside the
   window (the Amiga sends it while the button is held), and `olui_hit` on the other window's `olui`
   finds the target there.

@@ -66,7 +66,9 @@ static const char ua_css[] =
     "legend{padding:0 3px}"
     "tooltip{padding:2px 5px;border:1px solid #606060;background:#ffffe1;color:#000000;font-size:12px;font-weight:normal}"
     /* 0.4 */
-    "band{border:1px solid #3366cc;background:rgba(51,102,204,0.25)}";
+    "band{border:1px solid #3366cc;background:rgba(51,102,204,0.25)}"
+    "vlist{height:120px;border:1px solid #808080;background:#ffffff;padding:1px}vlist:focus{border-color:#3366cc}"
+    "row{padding:1px 4px}row:selected{background:#3366cc;color:#ffffff}";
 
 typedef struct {
     char *id;
@@ -129,6 +131,8 @@ struct olui {
     int band_x0, band_y0;
     olui_rect band_rect;        /* where it is, cut to the scope */
     int band_changed;           /* the selection changed while it was dragged */
+    unsigned sheet_seen;        /* the shared sheet's count as this window last styled from it */
+    int menu_x, menu_y;         /* where a menu's pop-up opens */
 };
 
 /* ---- Small things ---------------------------------------------------------- */
@@ -142,6 +146,16 @@ static void touch(olui *ui)
 {
     ui->stale = 1;
     ui->damaged = 1;
+}
+
+/* The stylesheet changed (0.4: perhaps shared): every element is styled again, here and in the
+ * windows sharing it (they see its count move on) */
+static void sheet_changed(olui *ui)
+{
+    olui_sheet_changed(ui->sheet);
+    ui->sheet_seen = olui_sheet_gen(ui->sheet);
+    ++ui->style_gen;
+    touch(ui);
 }
 
 static void grow_to(olui_rect *a, olui_rect r)
@@ -265,6 +279,7 @@ olui *olui_new(void)
     }
     ui->zoom = 100;
     ui->style_gen = 1;
+    ui->sheet_seen = olui_sheet_gen(ui->sheet);
     ol_scale_set(&ui->scale, 1, OL_CSSPX(1));
     ui->stale = 1;
     return ui;
@@ -299,8 +314,7 @@ void olui_set_measure(olui *ui, ol_measure_text_fn measure, void *userdata)
 int olui_add_css(olui *ui, const char *css)
 {
     if (!ui || !olui_sheet_add(ui->sheet, css)) return 0;
-    ++ui->style_gen;
-    touch(ui);
+    sheet_changed(ui);
     return 1;
 }
 
@@ -436,8 +450,7 @@ int olui_load(olui *ui, const char *markup, const char *css, char *err, size_t e
     ui->desk_down = ui->collapse = ui->drop = ui->band_scope = NULL;
     ui->ndragged = 0;
     ui->tip_on = 0;
-    ++ui->style_gen;
-    touch(ui);
+    sheet_changed(ui);
     return 1;
 }
 
@@ -463,7 +476,7 @@ static ol_role role_of(const olui_el *el)
     case K_TEXT: return OL_ROLE_TEXT;
     case K_BUTTON: case K_TABBTN: return OL_ROLE_BUTTON;
     case K_CHECK: case K_RADIO: case K_INPUT: case K_TEXTAREA: case K_SELECT: return OL_ROLE_INPUT;
-    case K_LIST: return OL_ROLE_LIST;
+    case K_LIST: case K_VLIST: return OL_ROLE_LIST;
     case K_ITEM: return OL_ROLE_LIST_ITEM;
     case K_IMAGE: return OL_ROLE_IMAGE;
     default: break;
@@ -596,6 +609,11 @@ static int build(olui *ui, olui_el *el, ol_node *parent, const olui_cs *pcs, int
         /* what it holds scrolls: with height auto it is as tall as its row or what grows gives it */
         if (box.height <= 0) box.height = 3 * line + st.padding_top + st.padding_bottom + 2 * cs->border;
         break;
+    case K_VLIST:
+        /* 0.4: its rows are drawn from the program's, not laid out */
+        text = NULL;
+        if (box.height <= 0) box.height = 3 * line + st.padding_top + st.padding_bottom + 2 * cs->border;
+        break;
     case K_PROGRESS:
         text = NULL;
         break;
@@ -628,6 +646,7 @@ static int build(olui *ui, olui_el *el, ol_node *parent, const olui_cs *pcs, int
     default:
         break;
     }
+    if (el->flags & F_MENU) st.display = OL_DISPLAY_NONE;     /* 0.4: a menu shows only as its pop-up */
     if (el->kind == K_BOX && !strcmp(el->tag, "fieldset")) {
         /* with no legend on its top edge, room above as below */
         for (c = el->first; c && strcmp(c->tag, "legend"); c = c->next) ;
@@ -670,7 +689,7 @@ static int build(olui *ui, olui_el *el, ol_node *parent, const olui_cs *pcs, int
         case K_BUTTON: case K_CHECK: case K_RADIO: case K_TABBTN: actions = OL_ACTION_ACTIVATE | OL_ACTION_FOCUS; break;
         case K_SLIDER: actions = OL_ACTION_EDIT | OL_ACTION_FOCUS; break;
         case K_INPUT: case K_TEXTAREA: case K_SELECT: actions = OL_ACTION_EDIT | OL_ACTION_FOCUS; break;
-        case K_LIST: actions = OL_ACTION_FOCUS; break;
+        case K_LIST: case K_VLIST: actions = OL_ACTION_FOCUS; break;
         case K_ITEM: actions = OL_ACTION_SELECT | OL_ACTION_ACTIVATE; break;
         default: break;
         }
@@ -772,7 +791,7 @@ static int relayout(olui *ui)
     }
     /* a pop-up goes with its select, or closes when that went (or was disabled); a tip goes */
     if (ui->popup) {
-        if (visible(ui->popup) && enabled(ui->popup) && option_count(ui->popup)) {
+        if ((visible(ui->popup) || (ui->popup->flags & F_MENU)) && enabled(ui->popup) && option_count(ui->popup)) {
             popup_place(ui);
             popup_reveal(ui);
         } else {
@@ -795,6 +814,12 @@ int olui_layout(olui *ui, int width, int height)
 
 static int fresh(olui *ui)
 {
+    if (olui_sheet_gen(ui->sheet) != ui->sheet_seen) {
+        /* 0.4: another window sharing the sheet changed it */
+        ui->sheet_seen = olui_sheet_gen(ui->sheet);
+        ++ui->style_gen;
+        touch(ui);
+    }
     if (ui->stale && !ui->busy) return relayout(ui);
     return 1;
 }
@@ -1001,7 +1026,7 @@ static olui_el *widget_of(olui_el *el)
         if (el->flags & (F_SELECTABLE | F_DRAGGABLE)) return el;
         switch (el->kind) {
         case K_BUTTON: case K_CHECK: case K_RADIO: case K_INPUT: case K_ITEM:
-        case K_TABBTN: case K_LIST: case K_SLIDER: case K_SELECT: case K_TEXTAREA:
+        case K_TABBTN: case K_LIST: case K_SLIDER: case K_SELECT: case K_TEXTAREA: case K_VLIST:
             return el;
         default:
             break;
@@ -1014,7 +1039,7 @@ static int focusable(const olui_el *el)
 {
     switch (el->kind) {
     case K_BUTTON: case K_CHECK: case K_RADIO: case K_INPUT: case K_LIST: case K_TABBTN: case K_SLIDER:
-    case K_SELECT: case K_TEXTAREA:
+    case K_SELECT: case K_TEXTAREA: case K_VLIST:
         return visible(el) && enabled(el);
     default:
         return 0;
@@ -1972,8 +1997,15 @@ static void popup_place(olui *ui)
     olui_rect sr;
     int32_t frame, row_h, below, above, w = 0, h;
     int n = 0, vis;
-    if (!sel->node || !visible(sel)) return;
-    sr = rect_of(ui, sel);
+    if (sel->flags & F_MENU) {
+        /* 0.4: a menu opens at a point */
+        sr.x = ui->menu_x;
+        sr.y = ui->menu_y;
+        sr.w = sr.h = 0;
+    } else {
+        if (!sel->node || !visible(sel)) return;
+        sr = rect_of(ui, sel);
+    }
     olui_style_compute(ui->sheet, ui->popup_box, &sel->cs);
     pc = &ui->popup_box->cs;
     frame = 2 * (pc->border > 0 ? px(ui, pc->border) : 0) + px(ui, pc->ol.padding_top) + px(ui, pc->ol.padding_bottom);
@@ -2027,14 +2059,14 @@ static void tip_hide(olui *ui, int until_moved);
 
 static void popup_open(olui *ui, olui_el *sel)
 {
-    if (!sel || sel->kind != K_SELECT || listbox(sel) || ui->popup == sel || !visible(sel) || !enabled(sel) ||
-        !option_count(sel) || !fresh(ui))
+    if (!sel || sel->kind != K_SELECT || listbox(sel) || ui->popup == sel ||
+        (!visible(sel) && !(sel->flags & F_MENU)) || !enabled(sel) || !option_count(sel) || !fresh(ui))
         return;
     if (!ui->popup_box && !(ui->popup_box = olui_el_new(K_BOX, "popup"))) return;
     tip_hide(ui, 1);
     ui->popup_box->parent = sel;
     ui->popup = sel;
-    ui->popup_hot = option_step(sel, sel->ivalue, 0);
+    ui->popup_hot = (sel->flags & F_MENU) ? -1 : option_step(sel, sel->ivalue, 0);
     ui->popup_top = 0;
     ui->popup_fresh = 0;
     mark_rows(sel, ui->popup_hot);
@@ -2053,7 +2085,15 @@ static void popup_close(olui *ui, int choose)
     damage(ui, ui->popup_rect);
     mark_rows(sel, -1);
     paint_state(ui, sel, S_OPEN, 0);
-    if (choose && option_enabled(option_at(sel, ui->popup_hot))) select_choose(ui, sel, ui->popup_hot, 1);
+    if (choose && option_enabled(option_at(sel, ui->popup_hot))) {
+        if (sel->flags & F_MENU) {
+            /* 0.4: a menu's option is chosen, not kept */
+            olui_el *opt = option_at(sel, ui->popup_hot);
+            emit(ui, OLUI_ACTIVATE, sel, opt, option_value(opt), ui->popup_hot, 0);
+        } else {
+            select_choose(ui, sel, ui->popup_hot, 1);
+        }
+    }
 }
 
 static void popup_point(olui *ui, int index)
@@ -2292,11 +2332,18 @@ static void damage_el(olui *ui, olui_el *el)
 }
 
 /* How far a scrolling thing scrolls at most, pixels */
+static int32_t vrow_h(olui *ui, olui_el *v);
+
 static int32_t scroll_most(olui *ui, olui_el *el)
 {
     int32_t most;
     if (!el->node) return 0;
     if (el->kind == K_TEXTAREA) return ta_most(ui, el);
+    if (el->kind == K_VLIST) {
+        olui_rect in = inside(ui, el, rect_of_node(ui, el->node));
+        most = el->vrows * vrow_h(ui, el) - in.h;
+        return most > 0 ? most : 0;
+    }
     if (listbox(el)) return listbox_most(ui, el);
     if (el->kind == K_LIST) {
         olui_rect in = inside(ui, el, rect_of_node(ui, el->node));
@@ -2310,7 +2357,7 @@ static int32_t scroll_most(olui *ui, olui_el *el)
 
 static int scrolls(const olui_el *el)
 {
-    return scroller(el) || el->kind == K_TEXTAREA || listbox(el);
+    return scroller(el) || el->kind == K_TEXTAREA || listbox(el) || el->kind == K_VLIST;
 }
 
 /* Scrolls el to y: what it shows drawn again */
@@ -2382,6 +2429,139 @@ static olui_el *wheel_target(olui *ui, olui_el *el)
     for (; el; el = el->parent)
         if (scrolls(el) && el->cs.overflow != O_HIDDEN && visible(el) && scroll_most(ui, el) > 0) return el;
     return NULL;
+}
+
+/* ---- Long lists (0.4) --------------------------------------------------------------- */
+
+/* A row's style (selected or not) in the made element row under the vlist */
+static void vrow_style(olui *ui, olui_el *v, int selected)
+{
+    if (!v->vrow && !(v->vrow = olui_el_new(K_BOX, "row"))) return;
+    v->vrow->parent = v;
+    v->vrow->state = selected ? S_SELECTED : 0;
+    olui_style_compute(ui->sheet, v->vrow, &v->cs);
+}
+
+static int32_t vrow_h(olui *ui, olui_el *v)
+{
+    const ol_style *st;
+    int32_t h;
+    vrow_style(ui, v, 0);
+    if (!v->vrow) return 1;
+    st = &v->vrow->cs.ol;
+    h = line_px(ui, st) + px(ui, st->padding_top) + px(ui, st->padding_bottom);
+    return h > 0 ? h : 1;
+}
+
+static int vsel(const olui_el *v, int row)
+{
+    return v->vsel && row >= 0 && row < v->vrows && (v->vsel[row >> 3] >> (row & 7)) & 1;
+}
+
+static void vsel_set(olui_el *v, int row, int on)
+{
+    if (!v->vsel || row < 0 || row >= v->vrows) return;
+    if (on) v->vsel[row >> 3] |= (unsigned char)(1u << (row & 7));
+    else v->vsel[row >> 3] &= (unsigned char)~(1u << (row & 7));
+}
+
+/* The row at window y, or -1 */
+static int vrow_at(olui *ui, olui_el *v, int y)
+{
+    olui_rect in = inside(ui, v, rect_of(ui, v));
+    int32_t rh = vrow_h(ui, v);
+    int row;
+    if (y < in.y || y >= in.y + in.h) return -1;
+    row = (int)((y - in.y + v->scroll) / rh);
+    return row < v->vrows ? row : -1;
+}
+
+/* The cursor's row scrolled into view */
+static void vrow_reveal(olui *ui, olui_el *v)
+{
+    olui_rect in;
+    int32_t rh, top;
+    if (!v->node || v->vcur < 0) return;
+    in = inside(ui, v, rect_of_node(ui, v->node));
+    rh = vrow_h(ui, v);
+    top = (int32_t)v->vcur * rh;
+    if (top < v->scroll) scroll_set(ui, v, top);
+    else if (top + rh > v->scroll + in.h) scroll_set(ui, v, top + rh - in.h);
+}
+
+/* row selected alone, or (add) toggled; OLUI_SELECT */
+static void vrow_choose(olui *ui, olui_el *v, int row, int add)
+{
+    int i;
+    if (row < 0 || row >= v->vrows) return;
+    if (add) {
+        vsel_set(v, row, !vsel(v, row));
+    } else {
+        for (i = 0; i < (v->vrows + 7) / 8; ++i) v->vsel[i] = 0;
+        vsel_set(v, row, 1);
+    }
+    v->vcur = row;
+    vrow_reveal(ui, v);
+    damage_el(ui, v);
+    emit(ui, OLUI_SELECT, v, NULL, NULL, row, vsel(v, row));
+}
+
+static void vlist_press(olui *ui, olui_el *v, int y, int what)
+{
+    int row = vrow_at(ui, v, y);
+    if (row < 0) return;
+    if (what == OLUI_MOUSE_DOUBLE) {
+        v->vcur = row;
+        emit(ui, OLUI_ACTIVATE, v, NULL, NULL, row, vsel(v, row));
+        return;
+    }
+    vrow_choose(ui, v, row, (ui->qual & OLUI_QUAL_SHIFT) != 0);
+}
+
+static int vlist_key(olui *ui, olui_el *v, unsigned code)
+{
+    olui_rect in;
+    int page, row = v->vcur;
+    if (!v->vrows || !v->node) return 0;
+    in = inside(ui, v, rect_of_node(ui, v->node));
+    page = (int)(in.h / vrow_h(ui, v));
+    if (page < 1) page = 1;
+    switch (code) {
+    case OLUI_KEY_UP: row = row < 0 ? 0 : row - 1; break;
+    case OLUI_KEY_DOWN: row = row + 1; break;
+    case OLUI_KEY_PAGEUP: row = row < 0 ? 0 : row - page; break;
+    case OLUI_KEY_PAGEDOWN: row = row + page; break;
+    case OLUI_KEY_HOME: row = 0; break;
+    case OLUI_KEY_END: row = v->vrows - 1; break;
+    case OLUI_KEY_RETURN:
+        if (row < 0) return 0;
+        emit(ui, OLUI_ACTIVATE, v, NULL, NULL, row, vsel(v, row));
+        return 1;
+    default: return 0;
+    }
+    if (row < 0) row = 0;
+    if (row >= v->vrows) row = v->vrows - 1;
+    if (row != v->vcur || !vsel(v, row)) vrow_choose(ui, v, row, 0);
+    return 1;
+}
+
+/* ---- Context menus (0.4) ------------------------------------------------------------- */
+
+static olui_el *find(olui_el *el, const char *id);
+
+static int context(olui *ui, int x, int y)
+{
+    olui_el *el = hit(ui, ui->root, x, y), *e, *menu = NULL;
+    while (el && el->kind == K_TEXT) el = el->parent;
+    if (!el) return 0;
+    tip_hide(ui, 1);
+    for (e = el; e && !menu; e = e->parent)
+        if (e->menu_id) menu = find(ui->root, e->menu_id);
+    if (menu && !(menu->flags & F_MENU)) menu = NULL;
+    emit(ui, OLUI_CONTEXT, el, menu, el->value ? el->value : el->id ? el->id : "", -1, 0);
+    /* the handler may have opened one of its own */
+    if (menu && !ui->popup) olui_menu_open(ui, menu, x, y);
+    return 1;
 }
 
 /* ---- Selecting and dragging (0.4) ------------------------------------------------- */
@@ -2642,6 +2822,12 @@ static int mouse_in(olui *ui, int x, int y, int what)
 {
     olui_el *under, *w;
     if (!ui || !ui->root || !fresh(ui)) return 0;
+    if (what == OLUI_MOUSE_MENU) {
+        /* 0.4: the menu button: a context menu (not while dragging) */
+        if (ui->ndragged || ui->band_scope) return 1;
+        if (ui->popup) popup_close(ui, 0);
+        return context(ui, x, y);
+    }
     if (ui->popup) {
         int r = popup_mouse(ui, x, y, what);
         if (r >= 0) return r;
@@ -2776,6 +2962,8 @@ static int mouse_in(olui *ui, int x, int y, int what)
                     emit(ui, OLUI_ACTIVATE, list, w, w->value ? w->value : (w->id ? w->id : ""),
                          item_index(ui, list, w), 0);
             }
+        } else if (w->kind == K_VLIST) {
+            vlist_press(ui, w, y, what);
         } else if (w->kind != K_LIST) {
             ui->pressed = w;
             set_state(ui, w, S_ACTIVE, 1);
@@ -2814,6 +3002,7 @@ static int mouse_in(olui *ui, int x, int y, int what)
         if (!s) return list_of(under) != NULL;
         if (s->kind == K_TEXTAREA) step = 3 * line_px(ui, &s->cs.ol);
         else if (listbox(s)) step = 3 * row_height(ui, s);
+        else if (s->kind == K_VLIST) step = 3 * vrow_h(ui, s);
         else step = 3 * px(ui, s->cs.ol.line_height > 0 ? s->cs.ol.line_height : PX(16));
         scroll_set(ui, s, s->scroll + (what == OLUI_WHEEL_UP ? -step : step));
         return 1;
@@ -2947,6 +3136,8 @@ int olui_key(olui *ui, unsigned code, unsigned qual)
     }
 
     switch (f->kind) {
+    case K_VLIST:
+        return vlist_key(ui, f, code);
     case K_BUTTON:
     case K_CHECK:
     case K_RADIO:
@@ -3657,6 +3848,75 @@ static void out_background_image(drawer *d, const olui_el *el, olui_rect r)
 
 static void draw_el_in(drawer *d, const olui_el *el, int32_t dy, const olui_rect *clip);
 
+/* 0.4: a long list: only the rows that show, each asked of the program as it is drawn */
+static void draw_vlist(drawer *d, const olui_el *el, olui_rect r, const olui_rect *outer)
+{
+    olui *ui = d->ui;
+    olui_el *v = (olui_el *)el;
+    olui_rect in = inside(ui, v, r), view;
+    olui_cs plain, chosen;
+    int32_t rh, line;
+    int first, last, i, c;
+    if (!v->vrows) return;
+    view = outer ? cut(in, *outer) : in;
+    if (view.w <= 0 || view.h <= 0) return;
+    rh = vrow_h(ui, v);
+    if (!v->vrow) return;
+    plain = v->vrow->cs;
+    vrow_style(ui, v, 1);
+    chosen = v->vrow->cs;
+    line = line_px(ui, &plain.ol);
+    first = (int)(v->scroll / rh);
+    last = (int)((v->scroll + in.h) / rh);
+    if (last >= v->vrows) last = v->vrows - 1;
+    out_clip(d, &view);
+    for (i = first; i <= last; ++i) {
+        const olui_cs *cs = vsel(v, i) ? &chosen : &plain;
+        olui_rect row, cell;
+        int32_t x, right;
+        row.x = in.x;
+        row.y = in.y + (int32_t)i * rh - v->scroll;
+        row.w = in.w;
+        row.h = rh;
+        if (!crosses(row, d->area)) continue;
+        out_box(d, v, row, cs);
+        x = row.x + px(ui, cs->ol.padding_left);
+        right = row.x + row.w - px(ui, cs->ol.padding_right);
+        for (c = 0; c < (v->ncols > 0 ? v->ncols : 1); ++c) {
+            int image = -1;
+            const char *t = v->vfn ? v->vfn(v->vud, i, c, &image) : NULL;
+            int32_t w = c < v->ncols - 1 ? px(ui, PX(v->colw[c])) : right - x;
+            olui_rect cut_to;
+            cell.x = x;
+            cell.y = row.y + px(ui, cs->ol.padding_top);
+            cell.w = w;
+            cell.h = line;
+            cut_to = cut(cell, view);
+            if (cut_to.w > 0 && cut_to.h > 0) {
+                out_clip(d, &cut_to);
+                if (image >= 0) {
+                    olui_draw_op op;
+                    op_start(d, &op, OLUI_DRAW_IMAGE, v);
+                    op.box.x = cell.x;
+                    op.box.y = cell.y;
+                    op.box.w = op.box.h = line;
+                    op.image = image;
+                    if (crosses(op.box, d->area)) d->fn(d->userdata, &op);
+                    cell.x += line + 4;
+                    cell.w -= line + 4;
+                }
+                if (t && t[0])
+                    out_text(d, v, cell, baseline_in(ui, &cs->ol, cell.y, line), t, strlen(t), &cs->ol,
+                             cs->ol.foreground);
+            }
+            x += w;
+        }
+        out_clip(d, &view);
+    }
+    out_clip(d, outer);
+    scroll_bar(d, v, in, (int32_t)v->vrows * rh, v->scroll);
+}
+
 /* 0.4: an element with its opacity, and its outline over what it holds */
 static void draw_el(drawer *d, const olui_el *el, int32_t dy, const olui_rect *clip)
 {
@@ -3718,6 +3978,9 @@ static void draw_el_in(drawer *d, const olui_el *el, int32_t dy, const olui_rect
         return;
     case K_SELECT:
         if (crosses(field_reach(r), d->area)) draw_select(d, el, r, clip);
+        return;
+    case K_VLIST:
+        draw_vlist(d, el, r, clip);
         return;
     case K_PROGRESS: {
         olui_rect in = inside(ui, el, r), bar;
@@ -3903,7 +4166,7 @@ void olui_draw(olui *ui, const olui_rect *area, olui_draw_fn fn, void *userdata)
 int olui_damaged(const olui *ui, olui_rect *area)
 {
     if (!ui) return 0;
-    if (ui->damaged || ui->stale) {
+    if (ui->damaged || ui->stale || olui_sheet_gen(ui->sheet) != ui->sheet_seen) {
         if (area) {
             area->x = 0;
             area->y = 0;
@@ -4443,7 +4706,7 @@ olui_el *olui_add(olui *ui, olui_el *parent, const char *markup, char *err, size
         olui_el_free(root);
         return NULL;
     }
-    if (root->value) ++ui->style_gen;       /* its <style> is the window's now */
+    if (root->value) sheet_changed(ui);     /* its <style> is the window's now */
     first = root->first;
     for (c = root->first; c; c = next) {
         next = c->next;
@@ -4510,8 +4773,7 @@ olui_el *olui_next(const olui_el *el) { return el ? el->next : NULL; }
 int olui_image_name(olui *ui, const char *name, int image)
 {
     if (!ui || !name || !olui_sheet_name_image(ui->sheet, name, image)) return 0;
-    ++ui->style_gen;            /* what names it is styled again, with its number */
-    touch(ui);
+    sheet_changed(ui);          /* what names it is styled again, with its number */
     return 1;
 }
 
@@ -4554,4 +4816,76 @@ int olui_select_all(olui *ui, olui_el *scope, int selected)
 olui_el *olui_drag_item(const olui *ui, int index)
 {
     return ui && index >= 0 && index < ui->ndragged ? ui->dragged[index] : NULL;
+}
+
+void olui_vlist_set(olui *ui, olui_el *v, int rows, olui_row_fn fn, void *userdata)
+{
+    unsigned char *sel;
+    size_t had, now;
+    if (!ui || !v || v->kind != K_VLIST) return;
+    if (rows < 0) rows = 0;
+    had = v->vsel ? (size_t)(v->vrows + 7) / 8 : 0;
+    now = (size_t)(rows + 7) / 8;
+    if (now != had || !v->vsel) {
+        if (!(sel = (unsigned char *)realloc(v->vsel, now ? now : 1))) return;
+        if (now > had) memset(sel + had, 0, now - had);
+        v->vsel = sel;
+    }
+    if (rows < v->vrows && rows % 8 && v->vsel)
+        v->vsel[rows / 8] &= (unsigned char)((1u << (rows % 8)) - 1);  /* the rows that went: not selected */
+    v->vrows = rows;
+    v->vfn = fn;
+    v->vud = userdata;
+    if (v->vcur >= rows) v->vcur = rows - 1;
+    if (v->node) clamp_scroll(ui, v);
+    damage_el(ui, v);
+    ui->damaged = 1;
+}
+
+int olui_vlist_rows(const olui_el *v) { return v && v->kind == K_VLIST ? v->vrows : 0; }
+int olui_vlist_selected(const olui_el *v, int row) { return v && v->kind == K_VLIST && vsel(v, row); }
+
+void olui_vlist_select(olui *ui, olui_el *v, int row, int selected)
+{
+    if (!ui || !v || v->kind != K_VLIST || row < 0 || row >= v->vrows || vsel(v, row) == (selected != 0)) return;
+    vsel_set(v, row, selected != 0);
+    damage_el(ui, v);
+}
+
+int olui_vlist_current(const olui_el *v) { return v && v->kind == K_VLIST ? v->vcur : -1; }
+
+void olui_vlist_set_current(olui *ui, olui_el *v, int row)
+{
+    if (!ui || !v || v->kind != K_VLIST || row < -1 || row >= v->vrows) return;
+    v->vcur = row;
+    if (fresh(ui)) vrow_reveal(ui, v);
+    damage_el(ui, v);
+}
+
+int olui_menu_open(olui *ui, olui_el *menu, int x, int y)
+{
+    if (!ui || !menu || !(menu->flags & F_MENU)) return 0;
+    if (ui->popup) popup_close(ui, 0);
+    ui->menu_x = x;
+    ui->menu_y = y;
+    popup_open(ui, menu);
+    if (ui->popup != menu) return 0;
+    ui->popup_fresh = 1;        /* the release of the press that opened it chooses nothing */
+    return 1;
+}
+
+olui *olui_new_sharing(olui *from)
+{
+    olui *ui;
+    if (!from) return olui_new();
+    if (!(ui = (olui *)calloc(1, sizeof(olui)))) return NULL;
+    ui->sheet = olui_sheet_ref(from->sheet);
+    ui->zoom = 100;
+    ui->style_gen = 1;
+    ui->sheet_seen = olui_sheet_gen(ui->sheet);
+    ol_scale_set(&ui->scale, 1, OL_CSSPX(1));
+    ui->stale = 1;
+    ui->measure = from->measure;
+    ui->measure_userdata = from->measure_userdata;
+    return ui;
 }

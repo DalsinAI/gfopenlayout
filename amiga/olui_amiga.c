@@ -797,6 +797,9 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
             used = olui_mouse_qual(a->ui, x, y, twice ? OLUI_MOUSE_DOUBLE : OLUI_MOUSE_DOWN, shift | command);
         } else if (m->Code == SELECTUP) {
             used = olui_mouse_qual(a->ui, x, y, OLUI_MOUSE_UP, shift | command);
+        } else if (m->Code == MENUDOWN) {
+            /* 0.4: the right button, in a window with WFLG_RMBTRAP: a context menu */
+            used = olui_mouse_qual(a->ui, x, y, OLUI_MOUSE_MENU, shift | command);
         }
         break;
     case IDCMP_VANILLAKEY: {

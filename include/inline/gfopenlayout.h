@@ -165,6 +165,14 @@
 #define OLUI_NextSelected(ui,scope,after) LP3(0x390, olui_el *, OLUI_NextSelected, olui *, (ui), a0, const olui_el *, (scope), a1, const olui_el *, (after), a2, , OPENLAYOUT_BASE_NAME)
 #define OLUI_SelectAll(ui,scope,selected) LP3(0x396, int, OLUI_SelectAll, olui *, (ui), a0, olui_el *, (scope), a1, int, (selected), d0, , OPENLAYOUT_BASE_NAME)
 #define OLUI_DragItem(ui,index) LP2(0x39c, olui_el *, OLUI_DragItem, const olui *, (ui), a0, int, (index), d0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_VlistSet(ui,vlist,rows,fn,userdata) LP5NR(0x3a2, OLUI_VlistSet, olui *, (ui), a0, olui_el *, (vlist), a1, int, (rows), d0, olui_row_fn, (fn), a2, void *, (userdata), a3, , OPENLAYOUT_BASE_NAME)
+#define OLUI_VlistRows(vlist) LP1(0x3a8, int, OLUI_VlistRows, const olui_el *, (vlist), a0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_VlistSelected(vlist,row) LP2(0x3ae, int, OLUI_VlistSelected, const olui_el *, (vlist), a0, int, (row), d0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_VlistSelect(ui,vlist,row,selected) LP4NR(0x3b4, OLUI_VlistSelect, olui *, (ui), a0, olui_el *, (vlist), a1, int, (row), d0, int, (selected), d1, , OPENLAYOUT_BASE_NAME)
+#define OLUI_VlistCurrent(vlist) LP1(0x3ba, int, OLUI_VlistCurrent, const olui_el *, (vlist), a0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_VlistSetCurrent(ui,vlist,row) LP3NR(0x3c0, OLUI_VlistSetCurrent, olui *, (ui), a0, olui_el *, (vlist), a1, int, (row), d0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_MenuOpen(ui,menu,x,y) LP4(0x3c6, int, OLUI_MenuOpen, olui *, (ui), a0, olui_el *, (menu), a1, int, (x), d0, int, (y), d1, , OPENLAYOUT_BASE_NAME)
+#define OLUI_NewSharing(from) LP1(0x3cc, olui *, OLUI_NewSharing, olui *, (from), a0, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif

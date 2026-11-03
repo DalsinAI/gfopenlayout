@@ -63,7 +63,8 @@ olui_amiga_event""".split()
 # (OpenBench), after version 10's, in the order they go in the library.
 UI11 = """olui_add olui_remove olui_set_style olui_set_place olui_hit olui_parent
 olui_first_child olui_next olui_image_name olui_mouse_qual olui_set_selected olui_is_selected
-olui_next_selected olui_select_all olui_drag_item""".split()
+olui_next_selected olui_select_all olui_drag_item olui_vlist_set olui_vlist_rows olui_vlist_selected
+olui_vlist_select olui_vlist_current olui_vlist_set_current olui_menu_open olui_new_sharing""".split()
 CALLS = ([("core", n) for n in CORE] + [("ui", n) for n in UI] + [("amiga", n) for n in AMIGA] +
          [("ui11", n) for n in UI11])
 # the library version each part's calls came in: a call of a later one is

@@ -524,3 +524,51 @@ olui_el * olui_drag_item(const olui *ui, int index)
     if (OpenLayoutBase->lib_Version < 11) return 0;
     return OLUI_DragItem(ui, index);
 }
+
+void olui_vlist_set(olui *ui, olui_el *vlist, int rows, olui_row_fn fn, void *userdata)
+{
+    if (OpenLayoutBase->lib_Version < 11) return;
+    OLUI_VlistSet(ui, vlist, rows, fn, userdata);
+}
+
+int olui_vlist_rows(const olui_el *vlist)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_VlistRows(vlist);
+}
+
+int olui_vlist_selected(const olui_el *vlist, int row)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_VlistSelected(vlist, row);
+}
+
+void olui_vlist_select(olui *ui, olui_el *vlist, int row, int selected)
+{
+    if (OpenLayoutBase->lib_Version < 11) return;
+    OLUI_VlistSelect(ui, vlist, row, selected);
+}
+
+int olui_vlist_current(const olui_el *vlist)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_VlistCurrent(vlist);
+}
+
+void olui_vlist_set_current(olui *ui, olui_el *vlist, int row)
+{
+    if (OpenLayoutBase->lib_Version < 11) return;
+    OLUI_VlistSetCurrent(ui, vlist, row);
+}
+
+int olui_menu_open(olui *ui, olui_el *menu, int x, int y)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_MenuOpen(ui, menu, x, y);
+}
+
+olui * olui_new_sharing(olui *from)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_NewSharing(from);
+}

@@ -40,6 +40,8 @@ struct olui_sheet {
     char **names;
     int *images;
     int nnames, names_cap;
+    int refs;                       /* the windows sharing it */
+    unsigned gen;                   /* moves on with each change */
 };
 
 static int own_colour(void *userdata, int slot, const char *value, size_t length, uint32_t *out)
@@ -78,13 +80,31 @@ olui_sheet *olui_sheet_new(void)
         return NULL;
     }
     s->cs = s->parent + 1;
+    s->refs = 1;
+    s->gen = 1;
     return s;
+}
+
+olui_sheet *olui_sheet_ref(olui_sheet *sheet)
+{
+    if (sheet) ++sheet->refs;
+    return sheet;
+}
+
+unsigned olui_sheet_gen(const olui_sheet *sheet)
+{
+    return sheet ? sheet->gen : 0;
+}
+
+void olui_sheet_changed(olui_sheet *sheet)
+{
+    if (sheet) ++sheet->gen;
 }
 
 void olui_sheet_free(olui_sheet *sheet)
 {
     int i;
-    if (!sheet) return;
+    if (!sheet || --sheet->refs > 0) return;
     for (i = 0; i < sheet->nnames; ++i) free(sheet->names[i]);
     free(sheet->names);
     free(sheet->images);

@@ -606,8 +606,56 @@ static olui_el * OLUI_DragItem(REG(a0, const olui * ui), REG(d0, int index), REG
     return olui_drag_item(ui, index);
 }
 
+static void OLUI_VlistSet(REG(a0, olui * ui), REG(a1, olui_el * vlist), REG(d0, int rows), REG(a2, olui_row_fn fn), REG(a3, void * userdata), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    olui_vlist_set(ui, vlist, rows, fn, userdata);
+}
+
+static int OLUI_VlistRows(REG(a0, const olui_el * vlist), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_vlist_rows(vlist);
+}
+
+static int OLUI_VlistSelected(REG(a0, const olui_el * vlist), REG(d0, int row), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_vlist_selected(vlist, row);
+}
+
+static void OLUI_VlistSelect(REG(a0, olui * ui), REG(a1, olui_el * vlist), REG(d0, int row), REG(d1, int selected), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    olui_vlist_select(ui, vlist, row, selected);
+}
+
+static int OLUI_VlistCurrent(REG(a0, const olui_el * vlist), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_vlist_current(vlist);
+}
+
+static void OLUI_VlistSetCurrent(REG(a0, olui * ui), REG(a1, olui_el * vlist), REG(d0, int row), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    olui_vlist_set_current(ui, vlist, row);
+}
+
+static int OLUI_MenuOpen(REG(a0, olui * ui), REG(a1, olui_el * menu), REG(d0, int x), REG(d1, int y), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_menu_open(ui, menu, x, y);
+}
+
+static olui * OLUI_NewSharing(REG(a0, olui * from), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_new_sharing(from);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x39c
+#define OL_V10_LAST_BIAS 0x3cc
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -642,4 +690,7 @@ static olui_el * OLUI_DragItem(REG(a0, const olui * ui), REG(d0, int index), REG
     (APTR)OLUI_SetPlace, (APTR)OLUI_Hit, (APTR)OLUI_Parent, \
     (APTR)OLUI_FirstChild, (APTR)OLUI_Next, (APTR)OLUI_ImageName, \
     (APTR)OLUI_MouseQual, (APTR)OLUI_SetSelected, (APTR)OLUI_IsSelected, \
-    (APTR)OLUI_NextSelected, (APTR)OLUI_SelectAll, (APTR)OLUI_DragItem
+    (APTR)OLUI_NextSelected, (APTR)OLUI_SelectAll, (APTR)OLUI_DragItem, \
+    (APTR)OLUI_VlistSet, (APTR)OLUI_VlistRows, (APTR)OLUI_VlistSelected, \
+    (APTR)OLUI_VlistSelect, (APTR)OLUI_VlistCurrent, (APTR)OLUI_VlistSetCurrent, \
+    (APTR)OLUI_MenuOpen, (APTR)OLUI_NewSharing
