@@ -654,8 +654,22 @@ static olui * OLUI_NewSharing(REG(a0, olui * from), REG(a6, struct OpenLayoutLib
     return olui_new_sharing(from);
 }
 
+/* ---- the Amiga glue in a strip of a window ---- */
+
+static void OLUI_AmigaStrip(REG(a0, olui_amiga * a), REG(d0, int x), REG(d1, int y), REG(d2, int w), REG(d3, int h), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    olui_amiga_strip(a, x, y, w, h);
+}
+
+static void OLUI_AmigaKeys(REG(a0, olui_amiga * a), REG(d0, int keys), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    olui_amiga_keys(a, keys);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x3cc
+#define OL_V10_LAST_BIAS 0x3d8
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -693,4 +707,5 @@ static olui * OLUI_NewSharing(REG(a0, olui * from), REG(a6, struct OpenLayoutLib
     (APTR)OLUI_NextSelected, (APTR)OLUI_SelectAll, (APTR)OLUI_DragItem, \
     (APTR)OLUI_VlistSet, (APTR)OLUI_VlistRows, (APTR)OLUI_VlistSelected, \
     (APTR)OLUI_VlistSelect, (APTR)OLUI_VlistCurrent, (APTR)OLUI_VlistSetCurrent, \
-    (APTR)OLUI_MenuOpen, (APTR)OLUI_NewSharing
+    (APTR)OLUI_MenuOpen, (APTR)OLUI_NewSharing, (APTR)OLUI_AmigaStrip, \
+    (APTR)OLUI_AmigaKeys

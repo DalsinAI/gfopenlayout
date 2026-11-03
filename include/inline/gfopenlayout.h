@@ -173,6 +173,9 @@
 #define OLUI_VlistSetCurrent(ui,vlist,row) LP3NR(0x3c0, OLUI_VlistSetCurrent, olui *, (ui), a0, olui_el *, (vlist), a1, int, (row), d0, , OPENLAYOUT_BASE_NAME)
 #define OLUI_MenuOpen(ui,menu,x,y) LP4(0x3c6, int, OLUI_MenuOpen, olui *, (ui), a0, olui_el *, (menu), a1, int, (x), d0, int, (y), d1, , OPENLAYOUT_BASE_NAME)
 #define OLUI_NewSharing(from) LP1(0x3cc, olui *, OLUI_NewSharing, olui *, (from), a0, , OPENLAYOUT_BASE_NAME)
+/* version 11: the Amiga glue in a strip of a window */
+#define OLUI_AmigaStrip(a,x,y,w,h) LP5NR(0x3d2, OLUI_AmigaStrip, olui_amiga *, (a), a0, int, (x), d0, int, (y), d1, int, (w), d2, int, (h), d3, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaKeys(a,keys) LP2NR(0x3d8, OLUI_AmigaKeys, olui_amiga *, (a), a0, int, (keys), d0, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif

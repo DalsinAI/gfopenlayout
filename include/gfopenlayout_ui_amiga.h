@@ -68,7 +68,27 @@ void olui_amiga_images(olui_amiga *a, olui_amiga_image_fn fn, void *userdata);
  * the screen's and topaz.font at first. NULL keeps one. */
 void olui_amiga_fonts(olui_amiga *a, const char *font, const char *mono);
 
-/* Lays out at the window's inner size, and draws it all. */
+/* olui in a strip of the window (a toolbar, a tab strip), x,y from the
+ * window's inside, w or h 0 to its edge, so it follows the window's size;
+ * all 0: the whole inside again. The buffer is the strip's size. olui then
+ * takes the mouse only inside it (a press there keeps it until the button
+ * is let go), and leaves the window's refresh and the rest of the window to
+ * the program: olui_amiga_event draws the strip and returns
+ * OLUI_AMIGA_NONE for IDCMP_REFRESHWINDOW and IDCMP_NEWSIZE, so the
+ * program does its BeginRefresh/EndRefresh and lays out the rest. */
+void olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h);
+
+/* Who has the keys */
+enum {
+    OLUI_AMIGA_KEYS_ALL = 0,    /* every key goes to olui (the default) */
+    OLUI_AMIGA_KEYS_FOCUS       /* only while one of olui's widgets has the focus (olui_focus);
+                                   otherwise OLUI_AMIGA_NONE, and the program has it */
+};
+void olui_amiga_keys(olui_amiga *a, int keys);
+/* A window opened without IDCMP_VANILLAKEY (to have every key as a RAWKEY)
+ * works too: the keymap gives olui the characters. */
+
+/* Lays out at the window's inner size (or the strip's), and draws it all. */
 int olui_amiga_layout(olui_amiga *a);
 /* Draws what changed, if anything did. */
 void olui_amiga_draw(olui_amiga *a);

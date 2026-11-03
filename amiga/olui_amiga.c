@@ -39,6 +39,11 @@
 /* cybergraphics.library through its vectors, as GFOpenGadTools' look_draw.c
  * calls it: FillPixelArray (-150) and GetCyberMapAttr (-96) */
 static struct Library *CyberGfxBase;
+/* keymap.library's MapRawKey (-42), for windows without VANILLAKEY, through
+ * its own base so a program's KeymapBase is left alone */
+static struct Library *OluiKeymapBase;
+#define KM_MAPRAWKEY(ie, buf, len, km) LP4(0x2a, WORD, MapRawKey, struct InputEvent *, (ie), a0, STRPTR, (buf), a1, \
+    LONG, (len), d1, struct KeyMap *, (km), a2, , OluiKeymapBase)
 #define CGX_FILL(rp, x, y, w, h, argb) LP6(0x96, ULONG, FillPixelArray, struct RastPort *, (rp), a1, UWORD, (x), d0, \
     UWORD, (y), d1, UWORD, (w), d2, UWORD, (h), d3, ULONG, (argb), d4, , CyberGfxBase)
 #define CGX_MAPATTR(bm, a) LP2(0x60, ULONG, GetCyberMapAttr, struct BitMap *, (bm), a0, ULONG, (a), d0, , CyberGfxBase)
@@ -108,6 +113,12 @@ struct olui_amiga {
     char mono_name[64];
     olui_amiga_image_fn image_fn;   /* draws img's pictures (olui_amiga_images) */
     void *image_data;
+    /* the part of the window olui has (olui_amiga_strip): w or h 0 to the inside's edge */
+    int sx, sy, sw, sh;
+    int strip;
+    int inside;                 /* the pointer was last inside the strip */
+    int held;                   /* the left button went down inside the strip and is still down */
+    int keys;                   /* OLUI_AMIGA_KEYS_* */
 };
 
 /* ---- Colours ---------------------------------------------------------------- */
@@ -516,12 +527,24 @@ static void free_buffer(olui_amiga *a)
     a->bw = a->bh = 0;
 }
 
-static int inner_w(const struct Window *w) { return w->Width - w->BorderLeft - w->BorderRight; }
-static int inner_h(const struct Window *w) { return w->Height - w->BorderTop - w->BorderBottom; }
+/* The size of what olui has: the window's inside, or the strip of it */
+static int inner_w(const olui_amiga *a)
+{
+    const struct Window *w = a->win;
+    int all = w->Width - w->BorderLeft - w->BorderRight - a->sx;
+    return a->strip && a->sw > 0 && a->sw < all ? a->sw : all;
+}
+
+static int inner_h(const olui_amiga *a)
+{
+    const struct Window *w = a->win;
+    int all = w->Height - w->BorderTop - w->BorderBottom - a->sy;
+    return a->strip && a->sh > 0 && a->sh < all ? a->sh : all;
+}
 
 static int make_buffer(olui_amiga *a)
 {
-    int w = inner_w(a->win), h = inner_h(a->win);
+    int w = inner_w(a), h = inner_h(a);
     if (w < 1) w = 1;
     if (h < 1) h = 1;
     if (a->bm && a->bw == w && a->bh == h) return 1;
@@ -547,7 +570,7 @@ static void show(olui_amiga *a, const olui_rect *area)
     struct RegionRectangle *rr;
     struct Rectangle rect;
     olui_rect all;
-    int i, x0 = a->win->BorderLeft, y0 = a->win->BorderTop;
+    int i, x0 = a->win->BorderLeft + a->sx, y0 = a->win->BorderTop + a->sy;
     int seen = 0;
     if (!a->bm) return;
     if (!area) {
@@ -587,7 +610,7 @@ static void show(olui_amiga *a, const olui_rect *area)
  * buffer, cut to it, and copies that to the window */
 static void draw_area(olui_amiga *a, const olui_rect *area)
 {
-    int i, w = inner_w(a->win), h = inner_h(a->win);
+    int i, w = inner_w(a), h = inner_h(a);
     olui_rect part;
     if (w < 1) w = 1;
     if (h < 1) h = 1;
@@ -654,6 +677,22 @@ void olui_amiga_free(olui_amiga *a)
     for (i = 0; i < a->npens; ++i) ReleasePen(a->scr->ViewPort.ColorMap, a->pens[i].pen);
     FreeVec(a);
     /* cybergraphics.library stays open with the program: the next window may want it */
+}
+
+void olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h)
+{
+    if (!a) return;
+    a->strip = x > 0 || y > 0 || w > 0 || h > 0;
+    a->sx = x > 0 ? x : 0;
+    a->sy = y > 0 ? y : 0;
+    a->sw = w > 0 ? w : 0;
+    a->sh = h > 0 ? h : 0;
+    a->inside = a->held = 0;
+}
+
+void olui_amiga_keys(olui_amiga *a, int keys)
+{
+    if (a) a->keys = keys;
 }
 
 int olui_amiga_own(olui_amiga *a, const olui_el *el, olui_amiga_own_fn fn, void *userdata)
@@ -761,16 +800,89 @@ void olui_amiga_draw(olui_amiga *a)
     if (a && olui_damaged(a->ui, &r)) draw_area(a, &r);
 }
 
+/* The character of a RAWKEY through the keymap (dead keys too), as
+ * VANILLAKEY would have given it, to olui */
+static int raw_char(olui_amiga *a, struct IntuiMessage *m, unsigned qual)
+{
+    struct InputEvent ie;
+    UBYTE buf[4];
+    unsigned code;
+    if (!OluiKeymapBase && !(OluiKeymapBase = OpenLibrary((STRPTR)"keymap.library", 37))) return 0;
+    memset(&ie, 0, sizeof(ie));
+    ie.ie_Class = IECLASS_RAWKEY;
+    ie.ie_Code = m->Code;
+    ie.ie_Qualifier = m->Qualifier;
+    ie.ie_EventAddress = m->IAddress ? *(APTR *)m->IAddress : NULL;
+    if (KM_MAPRAWKEY(&ie, (STRPTR)buf, (LONG)sizeof(buf), NULL) != 1) return 0;
+    code = buf[0];
+    switch (code) {
+    case 8: code = OLUI_KEY_BACKSPACE; break;
+    case 9: code = OLUI_KEY_TAB; break;
+    case 10: case 13: code = OLUI_KEY_RETURN; break;
+    case 27: code = OLUI_KEY_ESCAPE; break;
+    case 127: code = OLUI_KEY_DELETE; break;
+    default: if (code < 32) return 0; break;
+    }
+    return olui_key(a->ui, code, qual);
+}
+
 int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
 {
     int x, y, used = 0, alt;
     unsigned shift, command;
     if (!a || !m) return OLUI_AMIGA_NONE;
-    x = m->MouseX - a->win->BorderLeft;
-    y = m->MouseY - a->win->BorderTop;
+    x = m->MouseX - a->win->BorderLeft - a->sx;
+    y = m->MouseY - a->win->BorderTop - a->sy;
     shift = (m->Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT)) ? OLUI_QUAL_SHIFT : 0;
     command = (m->Qualifier & (IEQUALIFIER_LCOMMAND | IEQUALIFIER_RCOMMAND)) ? OLUI_QUAL_COMMAND : 0;
     alt = (m->Qualifier & (IEQUALIFIER_LALT | IEQUALIFIER_RALT)) != 0;
+    if (a->strip) {
+        /* olui has a strip of the window: the rest is the program's to draw and refresh */
+        int in = x >= 0 && y >= 0 && x < a->bw && y < a->bh;
+        switch (m->Class) {
+        case IDCMP_NEWSIZE:
+            olui_amiga_layout(a);
+            return OLUI_AMIGA_NONE;
+        case IDCMP_REFRESHWINDOW:
+            /* the strip now, the program's BeginRefresh and EndRefresh after */
+            show(a, NULL);
+            return OLUI_AMIGA_NONE;
+        case IDCMP_MOUSEMOVE:
+            if (!in && !a->held) {
+                /* leaving takes the hover off; the program has the move */
+                if (a->inside) olui_mouse(a->ui, -1, -1, OLUI_MOUSE_MOVE);
+                a->inside = 0;
+                return OLUI_AMIGA_NONE;
+            }
+            a->inside = in;
+            break;
+        case IDCMP_MOUSEBUTTONS:
+            /* a press outside is the program's; the button's release goes where its press went */
+            if (m->Code == SELECTDOWN) {
+                if (!in) {
+                    /* a press in the program's part takes the keys from olui's widgets */
+                    if (a->keys == OLUI_AMIGA_KEYS_FOCUS) olui_focus(a->ui, NULL);
+                    return OLUI_AMIGA_NONE;
+                }
+                a->held = 1;
+            } else if (m->Code == SELECTUP) {
+                if (!a->held) return OLUI_AMIGA_NONE;
+                a->held = 0;
+            } else if (!in) {
+                return OLUI_AMIGA_NONE;
+            }
+            break;
+        case IDCMP_RAWKEY:
+            if ((m->Code == RAW_WHEEL_UP || m->Code == RAW_WHEEL_DOWN) && !in) return OLUI_AMIGA_NONE;
+            break;
+        default:
+            break;
+        }
+    }
+    if ((m->Class == IDCMP_VANILLAKEY || (m->Class == IDCMP_RAWKEY && m->Code != RAW_WHEEL_UP &&
+                                          m->Code != RAW_WHEEL_DOWN)) &&
+        a->keys == OLUI_AMIGA_KEYS_FOCUS && !olui_focused(a->ui))
+        return OLUI_AMIGA_NONE;
     switch (m->Class) {
     case IDCMP_CLOSEWINDOW:
         return OLUI_AMIGA_CLOSE;
@@ -829,7 +941,11 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
         case RAW_RIGHT: used = olui_key(a->ui, alt ? OLUI_KEY_END : OLUI_KEY_RIGHT, alt ? 0u : shift); break;
         case RAW_WHEEL_UP: used = olui_mouse(a->ui, x, y, OLUI_WHEEL_UP); break;
         case RAW_WHEEL_DOWN: used = olui_mouse(a->ui, x, y, OLUI_WHEEL_DOWN); break;
-        default: break;
+        default:
+            /* a window without VANILLAKEY: the keymap gives the character */
+            if (!(a->win->IDCMPFlags & IDCMP_VANILLAKEY) && !(m->Code & IECODE_UP_PREFIX))
+                used = raw_char(a, m, shift | command);
+            break;
         }
         break;
     default:
