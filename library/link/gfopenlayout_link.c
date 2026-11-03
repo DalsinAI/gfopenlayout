@@ -482,3 +482,9 @@ olui_el * olui_next(const olui_el *el)
     if (OpenLayoutBase->lib_Version < 11) return 0;
     return OLUI_Next(el);
 }
+
+int olui_image_name(olui *ui, const char *name, int image)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_ImageName(ui, name, image);
+}

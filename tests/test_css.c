@@ -1041,6 +1041,30 @@ static void test_positions(void)
     lengths_px("top:1px;top:bogus", divm, &cs);
     CHECK(cs.inset[0].units == OL_CSSPX(1));
 
+    /* text-shadow: up to four, their lengths of the font size, currentColor the colour; inherited */
+    lengths_px("text-shadow:1px 2px red", divm, &cs);
+    CHECK(cs.text_shadows == 1 && cs.text_shadow[0].x == OL_CSSPX(1) && cs.text_shadow[0].y == OL_CSSPX(2) &&
+          cs.text_shadow[0].blur == 0 && cs.text_shadow[0].color == RED);
+    lengths_px("color:#00f;text-shadow:0 0 .1em, -1px 0 #000, 1px 0 #000, 0 1px #000, 0 -1px #000", divm, &cs);
+    CHECK(cs.text_shadows == 4 && cs.text_shadow[0].color == BLUE && cs.text_shadow[0].blur == OL_CSSPX(2) &&
+          cs.text_shadow[1].x == OL_CSSPX(-1) && cs.text_shadow[3].y == OL_CSSPX(1));
+    lengths_px("text-shadow:rgb(0 255 0) 3px 4px 5px", divm, &cs);
+    CHECK(cs.text_shadows == 1 && cs.text_shadow[0].color == 0xff00ff00u && cs.text_shadow[0].blur == OL_CSSPX(5));
+    lengths_px("text-shadow:1px 2px red;text-shadow:1px", divm, &cs);       /* one length: left out */
+    CHECK(cs.text_shadows == 1 && cs.text_shadow[0].color == RED);
+    lengths_px("text-shadow:1px 2px red;text-shadow:1px 2px -3px", divm, &cs);  /* a blur below 0 */
+    CHECK(cs.text_shadows == 1);
+    lengths_px("text-shadow:1px 2px red;text-shadow:red 1px 2px blue", divm, &cs);
+    CHECK(cs.text_shadows == 1 && cs.text_shadow[0].color == RED);
+    lengths_px("text-shadow:1px 2px red;text-shadow:none", divm, &cs);
+    CHECK(cs.text_shadows == 0);
+    {
+        gfcss_engine *e = engine_with("#main{text-shadow:1px 1px #000}");
+        style_of(e, p1, &cs);       /* under #main: inherited */
+        CHECK(cs.text_shadows == 1 && cs.text_shadow[0].x == OL_CSSPX(1));
+        gfcss_free(e);
+    }
+
     /* a document: the pinned box out of the flow, where left and top say */
     doc = ol_document_new();
     root = ol_document_root(doc);

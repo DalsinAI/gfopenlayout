@@ -477,6 +477,8 @@ static void set_clip(olui_amiga *a, const olui_rect *r)
 static void draw_op(void *userdata, const olui_draw_op *op)
 {
     olui_amiga *a = (olui_amiga *)userdata;
+    /* 0.4: what doesn't show (opacity 0) isn't drawn; the rest is drawn whole: this glue doesn't blend */
+    if (op->kind != OLUI_DRAW_CLIP && op->alpha <= 0) return;
     switch (op->kind) {
     case OLUI_DRAW_BOX: draw_box(a, op); break;
     case OLUI_DRAW_TEXT: draw_text(a, op); break;

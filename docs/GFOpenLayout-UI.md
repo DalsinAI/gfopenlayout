@@ -117,6 +117,12 @@ don't.
 | `mark-background`, `mark-border-color` | A checkbox's and radio button's box, a slider's track (ours, not CSS's) |
 | `placeholder-color` | A field's placeholder (ours) |
 | `overflow` (`overflow-y`) | `auto` or `scroll`: a box with a height scrolls what it holds, with a bar when that is taller; `hidden`: cut to the box, scrolled only by the program; `visible` |
+| `position`, `left`, `top` (0.4) | `absolute` or `fixed`: out of the flow at `left` and `top` from the parent's content corner; `relative`: in the flow, in a layer |
+| `z-index` (0.4) | A whole number: a positioned element's layer among its parent's children, for drawing and the pointer |
+| `opacity` (0.4) | 0 to 1: each op's `alpha`, multiplied down what the element holds |
+| `text-shadow` (0.4) | Up to four shadows, each drawn as the text again under it, moved and in its colour (the blur isn't drawn) |
+| `outline` (0.4) | A border round the border box, over what the element holds |
+| `background-image`, `background-repeat`, `background-position` (0.4) | `url(N)`: the program's picture N (or a name given a number with `olui_image_name`), an `OLUI_DRAW_IMAGE` op in the padding box over the background; its repeat and its place (`center` is 500 of 1000) go to the drawer |
 
 A list with `height:auto` is as tall as its row, or as what grows gives it,
 and scrolls what it holds.
@@ -130,7 +136,7 @@ title it is). A select with `size` is also of class `listbox`
 open. A textarea's selection is drawn in `accent-color` with its text in
 `mark-background`; a number field's buttons in `mark-background`, the one
 held in `accent-color`. What CSS has beyond this table (grid, floats,
-positions, transforms) is not done, and a rule using it is left out, as a
+transforms) is not done, and a rule using it is left out, as a
 browser leaves out what it doesn't know.
 
 The UI keeps its own ways where they aren't CSS's: an element is a block
@@ -270,6 +276,18 @@ olui_el *icon = olui_add(ui, olui_find(ui, "desk"),
 olui_set_place(ui, icon, 8, 120);           /* the grid's next cell */
 ```
 
+**The look.** `opacity` sets every op's `alpha` (0 to 255), multiplied
+down what the element holds, so a dragged icon's picture and label fade
+together. `text-shadow` draws the text again under itself for each shadow
+(four, a pixel each way, make an outline that reads on any backdrop).
+`outline` is a box round the border box over what the element holds (a
+selected icon's ring). `background-image: url(N)` is an `OLUI_DRAW_IMAGE`
+op of the program's picture N over the element's background, in its
+padding box, with its repeat and place for the drawer: a desktop's
+backdrop is `window{background-image:url(1)}`. `olui_image_name(ui,
+"backdrop", 1)` lets the CSS say `url(backdrop)`. The Amiga glue leaves out
+what has `alpha` 0 and draws the rest whole: it doesn't blend yet.
+
 ## GFOpenLayout 0.8
 
 What the UI needed in GFOpenLayout itself, for any program:
@@ -341,6 +359,8 @@ A program links `libolui.a` and includes `gfopenlayout_ui.h` and
   dragged.
 - An `img` directly in a `row` or `column` keeps no place: put it in a line (a `div`, a `button`).
 - `gfcss_*` on its own in the library: the UI and documents reach GFCSS inside it.
+- The Amiga glue blending: it draws an op whose `alpha` is above 0 whole, and an `rgba()`
+  background opaque. A text shadow's blur.
 - `right`, `bottom` and `position: relative`'s offsets; a positioned element's containing block is
   its parent, positioned or not.
 - Laying out only what changed: a change that can move things (text, items, a style that changes a

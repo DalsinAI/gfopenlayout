@@ -29,8 +29,9 @@ extern "C" {
 #endif
 
 #define GFCSS_VERSION "1.1"
-/* 1.1: top, right, bottom and left (and inset), for position */
+/* 1.1: top, right, bottom and left (and inset), for position; text-shadow */
 #define GFCSS_HAS_INSET 1
+#define GFCSS_HAS_TEXT_SHADOW 1
 
 #define GFCSS_MILLI 1000
 #define GFCSS_PCT(n) ((int32_t)(n) * 1000)
@@ -229,13 +230,21 @@ enum {
     GFCSS_P_BORDER_COLLAPSE, GFCSS_P_BORDER_SPACING_H, GFCSS_P_BORDER_SPACING_V, GFCSS_P_CAPTION_SIDE,
     GFCSS_P_CONTENT,
     /* 1.1 */
-    GFCSS_P_TOP, GFCSS_P_RIGHT, GFCSS_P_BOTTOM, GFCSS_P_LEFT,
+    GFCSS_P_TOP, GFCSS_P_RIGHT, GFCSS_P_BOTTOM, GFCSS_P_LEFT, GFCSS_P_TEXT_SHADOW,
     GFCSS_P_COUNT
 };
 
 /* At most this many properties of the caller's own (gfcss_add_property) */
 #define GFCSS_MAX_EXT 8
 #define GFCSS_SET_WORDS ((GFCSS_P_COUNT + GFCSS_MAX_EXT + 31) / 32)
+
+/* 1.1: one of text-shadow's shadows, resolved: across and down from the
+ * text, its blur, its colour (currentColor worked out) */
+#define GFCSS_MAX_SHADOWS 4
+typedef struct {
+    ol_unit x, y, blur;
+    uint32_t color;
+} gfcss_shadow;
 
 /* An element's computed style. size first: later versions add fields at
  * the end, and gfcss_compute writes no more than size bytes when size is
@@ -303,6 +312,10 @@ typedef struct gfcss_computed {
     /* 1.1: top, right, bottom, left (GFCSS_TOP...): where a positioned box
      * goes in the block it is placed in; auto at first */
     gfcss_length inset[4];
+    /* 1.1: text-shadow, inherited: its first GFCSS_MAX_SHADOWS shadows (the
+     * first is on top, as CSS paints them); none: 0 */
+    int32_t text_shadows;
+    gfcss_shadow text_shadow[GFCSS_MAX_SHADOWS];
 } gfcss_computed;
 
 /* ---- The engine and its sheets ------------------------------------------- */

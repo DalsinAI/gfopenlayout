@@ -907,7 +907,7 @@ static const struct { const char *name; uint8_t inherited; } props[GFCSS_P_COUNT
     { "justify-content", 0 },
     { "border-collapse", 1 }, { "", 1 }, { "", 1 }, { "caption-side", 1 },
     { "content", 0 },
-    { "top", 0 }, { "right", 0 }, { "bottom", 0 }, { "left", 0 }
+    { "top", 0 }, { "right", 0 }, { "bottom", 0 }, { "left", 0 }, { "text-shadow", 1 }
 };
 
 int g_prop_inherited(int p)
@@ -1327,6 +1327,68 @@ static int border_parts(vctx *c, int *i, gval *w, gval *s, gval *col, const kwen
     return hw || hs || hc;
 }
 
+/* text-shadow: shadows by commas, each two or three lengths and a colour
+ * before or after them. How many (all are read; at most max kept), or -1
+ * when it isn't one. Lengths are resolved against fs and rem. */
+static ol_unit shadow_len(const gval *g, ol_unit fs, ol_unit rem)
+{
+    switch (g->unit) {
+    case V_ABS: return g->v;
+    case V_EM: return g_mul_div(g->v, fs, 1000);
+    case V_REM: return g_mul_div(g->v, rem, 1000);
+    case V_EX: case V_CH: return g_mul_div(g->v, fs, 2000);
+    default: return 0;
+    }
+}
+
+static int shadow_list(vctx *c, int *i, ol_unit fs, ol_unit rem, uint32_t current, gfcss_shadow *out, int max)
+{
+    int n = 0;
+    for (;;) {
+        gval l[3];
+        int k = 0, has_colour = 0, cur = 0, colour_k = 0;
+        uint32_t argb = 0;
+        while (*i < c->n && !(c->t[*i].type == T_COMMA)) {
+            if (k < 3 && (c->t[*i].type == T_DIM || c->t[*i].type == T_NUMBER)) {
+                if (has_colour && colour_k) return -1;   /* the colour is before or after the lengths */
+                if (!length_at(c, i, k == 2 ? 0 : L_NEG, &l[k])) return -1;
+                if (l[k].unit != V_ABS && l[k].unit != V_EM && l[k].unit != V_REM && l[k].unit != V_EX &&
+                    l[k].unit != V_CH)
+                    return -1;
+                ++k;
+            } else if (!has_colour && colour_at(c, i, &argb, &cur)) {
+                has_colour = 1;
+                colour_k = k;
+            } else {
+                return -1;
+            }
+        }
+        if (k < 2) return -1;
+        if (n < max && out) {
+            out[n].x = shadow_len(&l[0], fs, rem);
+            out[n].y = shadow_len(&l[1], fs, rem);
+            out[n].blur = k == 3 ? shadow_len(&l[2], fs, rem) : 0;
+            out[n].color = !has_colour || cur ? current : argb;
+        }
+        ++n;
+        if (*i >= c->n) return n;
+        ++*i;                                           /* the comma */
+        if (*i >= c->n) return -1;
+    }
+}
+
+int g_shadows(const char *s, size_t len, ol_unit fs, ol_unit rem, uint32_t current, gfcss_shadow *out, int max)
+{
+    vctx *c = (vctx *)malloc(sizeof(vctx));
+    int i = 0, n = 0;
+    if (!c) return 0;
+    memset(c, 0, sizeof(*c));
+    if (tokenize(c, s, s + len)) n = shadow_list(c, &i, fs, rem, current, out, max);
+    free(c);
+    if (n < 0) n = 0;
+    return n > max ? max : n;
+}
+
 /* a longhand's value: 1 when it is one, emitted */
 static int longhand(vctx *c, int *i, int p)
 {
@@ -1415,6 +1477,18 @@ static int longhand(vctx *c, int *i, int p)
         if (v > 1000) v = 1000;
         emit(c, p, V_NUM, v, 0);
         ++*i;
+        return 1;
+    }
+    case GFCSS_P_TEXT_SHADOW: {
+        int first = *i;
+        if (is_ident(c, *i, "none")) {
+            ++*i;
+            emit(c, p, V_KW, 0, 0);
+            return 1;
+        }
+        if (shadow_list(c, i, 0, 0, 0, NULL, 0) < 1) return 0;
+        /* kept as written: resolved when the font size and colour are known */
+        emit(c, p, V_FUNC, text_offset(c, c->t[first].start), (int32_t)(c->t[c->n - 1].stop - c->t[first].start));
         return 1;
     }
     case GFCSS_P_FONT_FAMILY: return family_at(c, i);

@@ -34,6 +34,10 @@ struct olui_sheet {
     gfcss_sheet *sheet;
     int slot[X_COUNT];
     gfcss_computed *parent, *cs;    /* olui_style_compute's, kept between calls */
+    /* 0.4: background-image's url()s met, each with the program's number for it (-1: none given) */
+    char **names;
+    int *images;
+    int nnames, names_cap;
 };
 
 static int own_colour(void *userdata, int slot, const char *value, size_t length, uint32_t *out)
@@ -76,7 +80,11 @@ olui_sheet *olui_sheet_new(void)
 
 void olui_sheet_free(olui_sheet *sheet)
 {
+    int i;
     if (!sheet) return;
+    for (i = 0; i < sheet->nnames; ++i) free(sheet->names[i]);
+    free(sheet->names);
+    free(sheet->images);
     gfcss_free(sheet->e);
     free(sheet->parent);
     free(sheet);
@@ -103,6 +111,44 @@ unsigned olui_sheet_states(const olui_sheet *sheet)
     if (g & ST_SELECTED) s |= S_SELECTED;
     if (g & ST_OPEN) s |= S_OPEN;
     return s;
+}
+
+/* A name's index, from 1 (made when it is new); 0 when memory ran out */
+static int name_index(olui_sheet *sheet, const char *name, size_t n)
+{
+    int i;
+    char *copy;
+    for (i = 0; i < sheet->nnames; ++i)
+        if (strlen(sheet->names[i]) == n && !memcmp(sheet->names[i], name, n)) return i + 1;
+    if (sheet->nnames == sheet->names_cap) {
+        int cap = sheet->names_cap ? sheet->names_cap * 2 : 8;
+        char **nm = (char **)realloc(sheet->names, (size_t)cap * sizeof(*nm));
+        int *im;
+        if (!nm) return 0;
+        sheet->names = nm;
+        if (!(im = (int *)realloc(sheet->images, (size_t)cap * sizeof(*im)))) return 0;
+        sheet->images = im;
+        sheet->names_cap = cap;
+    }
+    if (!(copy = (char *)malloc(n + 1))) return 0;
+    memcpy(copy, name, n);
+    copy[n] = 0;
+    sheet->names[sheet->nnames] = copy;
+    sheet->images[sheet->nnames] = -1;
+    return ++sheet->nnames;
+}
+
+int olui_sheet_name_image(olui_sheet *sheet, const char *name, int image)
+{
+    int i;
+    if (!sheet || !name || !(i = name_index(sheet, name, strlen(name)))) return 0;
+    sheet->images[i - 1] = image;
+    return 1;
+}
+
+const char *olui_sheet_name(const olui_sheet *sheet, int index)
+{
+    return sheet && index > 0 && index <= sheet->nnames ? sheet->names[index - 1] : NULL;
 }
 
 int olui_parse_colour(const char *s, uint32_t *argb)
@@ -210,6 +256,14 @@ static void inherited_of(const olui_sheet *s, const olui_cs *p, gfcss_computed *
     }
     for (i = 0; i < X_COUNT; ++i) pc->ext[s->slot[i]] = own[i].initial;
     if (p) {
+        /* 0.4: text-shadow is inherited */
+        pc->text_shadows = p->shadows;
+        for (i = 0; i < p->shadows; ++i) {
+            pc->text_shadow[i].x = p->shadow_x[i];
+            pc->text_shadow[i].y = p->shadow_y[i];
+            pc->text_shadow[i].blur = 0;
+            pc->text_shadow[i].color = p->shadow_argb[i];
+        }
         pc->ext[s->slot[X_ACCENT]] = p->accent;
         pc->ext[s->slot[X_MARK_BG]] = p->mark_bg;
         pc->ext[s->slot[X_MARK_BORDER]] = p->mark_border;
@@ -287,7 +341,7 @@ static ol_unit units_of(const gfcss_length *l)
 
 /* c into cs. base: what a new font size's line height is in proportion to,
  * and the text flags CSS doesn't say (the parent's; NULL: the window's) */
-static void from_computed(const olui_sheet *s, const gfcss_computed *c, const olui_cs *base, olui_cs *cs)
+static void from_computed(olui_sheet *s, const gfcss_computed *c, const olui_cs *base, olui_cs *cs)
 {
     uint32_t flags = base ? base->ol.text_flags : 0;
     ol_unit base_fs = base ? base->ol.font_size : OL_CSSPX(13), base_lh = base ? base->ol.line_height : OL_CSSPX(16);
@@ -396,13 +450,47 @@ static void from_computed(const olui_sheet *s, const gfcss_computed *c, const ol
         cs->positioned = P_RELATIVE;
     }
     cs->z = cs->positioned && !c->z_auto ? c->z_index : 0;
+    /* 0.4: how much shows, the text's shadows, an outline, a picture */
+    cs->opacity = c->opacity >= 1000 ? 255 : c->opacity <= 0 ? 0 : (int)((c->opacity * 255 + 500) / 1000);
+    cs->shadows = c->text_shadows < OLUI_MAX_SHADOWS ? c->text_shadows : OLUI_MAX_SHADOWS;
+    {
+        int k;
+        for (k = 0; k < cs->shadows; ++k) {
+            cs->shadow_x[k] = c->text_shadow[k].x;
+            cs->shadow_y[k] = c->text_shadow[k].y;
+            cs->shadow_argb[k] = c->text_shadow[k].color;
+        }
+    }
+    cs->outline = c->outline_style != GFCSS_BORDER_NONE && c->outline_style != GFCSS_BORDER_HIDDEN
+                  ? c->outline_width : 0;
+    cs->outline_argb = c->outline_color;
+    cs->bg_image = -1;
+    if (c->background_image.kind == GFCSS_TEXT_URL && s->e) {
+        char name[128];
+        size_t n = gfcss_text_copy(&c->background_image, name, sizeof(name));
+        const char *d = name;
+        if (n < sizeof(name) && n) {
+            int number = 0;
+            while (*d >= '0' && *d <= '9' && number < 100000000) number = number * 10 + (*d++ - '0');
+            cs->bg_name = name_index(s, name, n);
+            cs->bg_image = !*d ? number : cs->bg_name ? s->images[cs->bg_name - 1] : -1;
+        }
+    }
+    switch (c->background_repeat) {
+    case GFCSS_REPEAT_X: cs->bg_repeat = OLUI_REPEAT_X; break;
+    case GFCSS_REPEAT_Y: cs->bg_repeat = OLUI_REPEAT_Y; break;
+    case GFCSS_NO_REPEAT: cs->bg_repeat = OLUI_NO_REPEAT; break;
+    default: cs->bg_repeat = OLUI_REPEAT; break;
+    }
+    cs->bg_align_x = c->background_position[0].kind == GFCSS_LEN ? c->background_position[0].pct / 100 : 0;
+    cs->bg_align_y = c->background_position[1].kind == GFCSS_LEN ? c->background_position[1].pct / 100 : 0;
     cs->accent = c->ext[s->slot[X_ACCENT]];
     cs->mark_bg = c->ext[s->slot[X_MARK_BG]];
     cs->mark_border = c->ext[s->slot[X_MARK_BORDER]];
     cs->muted = c->ext[s->slot[X_MUTED]];
 }
 
-void olui_style_compute(const olui_sheet *sheet, olui_el *el, const olui_cs *parent)
+void olui_style_compute(olui_sheet *sheet, olui_el *el, const olui_cs *parent)
 {
     olui_cs *cs = &el->cs;
     if (!sheet) {

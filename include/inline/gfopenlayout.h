@@ -158,6 +158,7 @@
 #define OLUI_Parent(el) LP1(0x366, olui_el *, OLUI_Parent, const olui_el *, (el), a0, , OPENLAYOUT_BASE_NAME)
 #define OLUI_FirstChild(el) LP1(0x36c, olui_el *, OLUI_FirstChild, const olui_el *, (el), a0, , OPENLAYOUT_BASE_NAME)
 #define OLUI_Next(el) LP1(0x372, olui_el *, OLUI_Next, const olui_el *, (el), a0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_ImageName(ui,name,image) LP3(0x378, int, OLUI_ImageName, olui *, (ui), a0, const char *, (name), a1, int, (image), d0, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif

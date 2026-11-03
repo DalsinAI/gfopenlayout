@@ -159,5 +159,6 @@ olui_el * OLUI_Hit(olui *ui, int x, int y)(a0,d0,d1)
 olui_el * OLUI_Parent(const olui_el *el)(a0)
 olui_el * OLUI_FirstChild(const olui_el *el)(a0)
 olui_el * OLUI_Next(const olui_el *el)(a0)
+int OLUI_ImageName(olui *ui, const char *name, int image)(a0,a1,d0)
 * ---- end of version 10 ----
 ==end

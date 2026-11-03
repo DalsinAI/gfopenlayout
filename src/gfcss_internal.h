@@ -91,6 +91,10 @@ typedef struct {
 } gsink;
 
 
+/* text-shadow's value as written (a sheet's text), resolved against a font
+ * size, the root's and currentColor: how many shadows (at most max) */
+int g_shadows(const char *s, size_t n, ol_unit fs, ol_unit rem, uint32_t current, gfcss_shadow *out, int max);
+
 /* One declaration (prop: value) into sink as longhands; 0 when it is not
  * valid (nothing added). */
 int g_parse_declaration(gfcss_engine *e, gsink *sink, const char *name, size_t name_n,

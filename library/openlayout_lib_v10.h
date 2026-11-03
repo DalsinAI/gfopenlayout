@@ -564,8 +564,14 @@ static olui_el * OLUI_Next(REG(a0, const olui_el * el), REG(a6, struct OpenLayou
     return olui_next(el);
 }
 
+static int OLUI_ImageName(REG(a0, olui * ui), REG(a1, const char * name), REG(d0, int image), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_image_name(ui, name, image);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x372
+#define OL_V10_LAST_BIAS 0x378
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -598,4 +604,4 @@ static olui_el * OLUI_Next(REG(a0, const olui_el * el), REG(a6, struct OpenLayou
     (APTR)OLUI_AmigaLayout, (APTR)OLUI_AmigaDraw, (APTR)OLUI_AmigaEvent, \
     (APTR)OLUI_Add, (APTR)OLUI_Remove, (APTR)OLUI_SetStyle, \
     (APTR)OLUI_SetPlace, (APTR)OLUI_Hit, (APTR)OLUI_Parent, \
-    (APTR)OLUI_FirstChild, (APTR)OLUI_Next
+    (APTR)OLUI_FirstChild, (APTR)OLUI_Next, (APTR)OLUI_ImageName

@@ -118,6 +118,7 @@ enum {
 };
 
 #define OLUI_MAX_STOPS 4
+#define OLUI_MAX_SHADOWS 4              /* a text's shadows (text-shadow) drawn at most */
 
 typedef struct {
     int32_t x, y, w, h;
@@ -146,7 +147,24 @@ typedef struct {
     /* image */
     int image;
     const olui_el *el;              /* whose it is */
+    /* 0.4 (gfopenlayout.library 11) */
+    int alpha;                      /* every op: 0 (nothing shows) to 255 (all of it): the element's opacity
+                                       times that of those it is in; a drawer that can't blend draws it
+                                       when it is above 0 */
+    const char *image_name;         /* image: a background-image's url() as written (NULL: an img's); image
+                                       is its number, from url(N) or olui_image_name, or -1 */
+    int image_repeat;               /* image: background-repeat (OLUI_REPEAT_...) across box */
+    int image_align_x, image_align_y;   /* image: background-position, 0 to 1000 of the room the picture
+                                           leaves in box (500: in the middle) */
 } olui_draw_op;
+
+/* background-repeat (olui_draw_op.image_repeat) */
+enum {
+    OLUI_REPEAT = 0,                /* tiled across and down */
+    OLUI_REPEAT_X,
+    OLUI_REPEAT_Y,
+    OLUI_NO_REPEAT                  /* once */
+};
 
 typedef void (*olui_draw_fn)(void *userdata, const olui_draw_op *op);
 
@@ -326,6 +344,18 @@ void olui_set_place(olui *ui, olui_el *el, int32_t x, int32_t y);
 /* The topmost element at x, y in the window's inner box (the one the
  * pointer would reach, layers counted), or NULL. */
 olui_el *olui_hit(olui *ui, int x, int y);
+/* The look (0.4): opacity (olui_draw_op.alpha, multiplied down the
+ * elements), text-shadow (each shadow a text op of its own under the text,
+ * up to OLUI_MAX_SHADOWS; the blur is not drawn: four shadows a pixel
+ * round make an outline that reads on any backdrop), outline (a box
+ * round the border box, over what the element holds), and background-image
+ * (an OLUI_DRAW_IMAGE op over the element's background, its box the
+ * padding box). url(7) is the program's picture 7, as an img's image=7 is;
+ * olui_image_name gives a name its number (url(backdrop) and
+ * url("backdrop") alike), styling again what uses it. 1, or 0 when memory
+ * ran out. */
+int olui_image_name(olui *ui, const char *name, int image);
+
 /* Walking the elements: the parent, the first child and the next sibling
  * (runs of text among other content are elements too, their tag ""). */
 olui_el *olui_parent(const olui_el *el);
