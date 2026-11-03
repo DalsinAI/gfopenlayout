@@ -156,7 +156,8 @@ A unit is needed but on 0, as CSS says.
 | Property | Values kept |
 | --- | --- |
 | `display` | `block`, `inline`, `inline-block`, `none`, `list-item`, `flex`, `inline-flex`, `table`, `inline-table`, `table-row`, `table-cell`, `table-header-group`, `table-row-group`, `table-footer-group`, `table-column`, `table-column-group`, `table-caption`, `contents`, `flow-root` (as block); `grid` as block, `inline-grid` as inline-block |
-| `position`, `float`, `clear`, `z-index` | kept for the caller; GFOpenLayout doesn't lay them out |
+| `position`, `float`, `clear`, `z-index` | kept for the caller; `gfcss_to_ol` makes an `absolute` or `fixed` box a GFOpenLayout frame (1.1); floats aren't laid out |
+| `top`, `right`, `bottom`, `left`, `inset` (1.1) | lengths, percentages, `auto` |
 | `box-sizing` | `content-box`, `border-box` |
 | `width`, `height`, `min-*`, `max-*` | a length, a percentage, `auto`, `none` |
 | `margin`, `padding` and their sides | lengths, percentages, `auto` (margins) |
@@ -342,7 +343,12 @@ hasn't been measured yet.
 - `content` keeps its first string; `quotes`, `counter-*` aren't read.
 - `::first-line` and `::first-letter` are matched and computed: applying
   them to the text is the caller's.
-- `top`, `right`, `bottom` and `left` aren't kept.
+- `gfcss_to_ol` places an absolute or fixed box at its `left` and `top`
+  (or a box with a width at `right` from the containing width), as a
+  frame from its containing block's content corner; it is as wide as its
+  width, what `left` and `right` leave, or its content
+  (`OL_BOX_FIT_CONTENT`). `bottom` isn't used, nor `position: relative`'s
+  offsets, and a frame's containing block is its parent, positioned or not.
 - `gfcss_to_ol` leaves a percentage height out (as `auto`).
 - An engine works for one caller at a time: `gfcss_compute` uses the
   engine's working space.

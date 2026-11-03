@@ -28,7 +28,9 @@
 extern "C" {
 #endif
 
-#define GFCSS_VERSION "1.0"
+#define GFCSS_VERSION "1.1"
+/* 1.1: top, right, bottom and left (and inset), for position */
+#define GFCSS_HAS_INSET 1
 
 #define GFCSS_MILLI 1000
 #define GFCSS_PCT(n) ((int32_t)(n) * 1000)
@@ -226,6 +228,8 @@ enum {
     GFCSS_P_JUSTIFY_CONTENT,
     GFCSS_P_BORDER_COLLAPSE, GFCSS_P_BORDER_SPACING_H, GFCSS_P_BORDER_SPACING_V, GFCSS_P_CAPTION_SIDE,
     GFCSS_P_CONTENT,
+    /* 1.1 */
+    GFCSS_P_TOP, GFCSS_P_RIGHT, GFCSS_P_BOTTOM, GFCSS_P_LEFT,
     GFCSS_P_COUNT
 };
 
@@ -295,6 +299,10 @@ typedef struct gfcss_computed {
 
     uint32_t ext[GFCSS_MAX_EXT];        /* the caller's properties (gfcss_add_property) */
     uint32_t set[GFCSS_SET_WORDS];      /* which properties a declaration gave the element (gfcss_is_set) */
+
+    /* 1.1: top, right, bottom, left (GFCSS_TOP...): where a positioned box
+     * goes in the block it is placed in; auto at first */
+    gfcss_length inset[4];
 } gfcss_computed;
 
 /* ---- The engine and its sheets ------------------------------------------- */

@@ -37,7 +37,7 @@
 #include <proto/diskfont.h>
 
 #define REG(r, decl) register decl __asm(#r)
-#define LIB_VERSION 10
+#define LIB_VERSION 11
 #define LIB_REVISION 0
 
 struct OpenLayoutLibBase {
@@ -59,10 +59,10 @@ int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "gfopenlayout.library 10.0 (2.11.2026) GFOpenLayout 0.10, AmiCradle Team\r\n";
+    "gfopenlayout.library 11.0 (3.11.2026) GFOpenLayout 0.11, AmiCradle Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: gfopenlayout.library 10.0 (2.11.2026) GFOpenLayout 0.10, AmiCradle Team";
+    "$VER: gfopenlayout.library 11.0 (3.11.2026) GFOpenLayout 0.11, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),
@@ -151,7 +151,7 @@ static const APTR lib_vectors[] = {
     (APTR)OL_DocumentReserve, (APTR)OL_DocumentNewReserved,
     /* version 7 */
     (APTR)OL_FramePlace,
-    /* version 10 */
+    /* versions 10 and 11 (tools/gen-library.py) */
     OL_V10_VECTORS,
     (APTR)-1
 };

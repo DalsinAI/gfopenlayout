@@ -386,7 +386,7 @@ static uint32_t deco_flags(uint32_t deco)
 }
 
 /* style and box from cs onto node, keeping what CSS doesn't say: a font
- * number, page breaks, frames, columns spanned */
+ * number, page breaks, frames (but those CSS places), columns spanned */
 static void set_styles(ol_node *node, const gfcss_computed *cs, ol_unit cw, uint32_t deco, ol_style *out_st,
                        ol_box_style *out_box)
 {
@@ -396,8 +396,9 @@ static void set_styles(ol_node *node, const gfcss_computed *cs, ol_unit cw, uint
     gfcss_to_ol(cs, cw, &st, &box);
     st.text_flags |= deco_flags(deco) | (ol_node_style(node)->text_flags & 0xffff0000u);
     keep = was.flags & ~(uint32_t)(OL_BOX_ROW | (1u << 7) | (1u << 8) | (1u << 9));
+    /* GFCSS 1.1: a box CSS places (position absolute or fixed) is a frame where CSS says */
+    if (!(box.flags & OL_BOX_ABSOLUTE)) box.frame = was.frame;
     box.flags |= keep;
-    box.frame = was.frame;
     box.column_span = was.column_span;
     box.anchor = was.anchor;
     box.wrap = was.wrap;

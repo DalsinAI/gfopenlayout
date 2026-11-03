@@ -1006,6 +1006,63 @@ static void test_to_ol(void)
     gfcss_free(e);
 }
 
+/* 1.1: top, right, bottom, left and inset; an absolute box as a GFOpenLayout frame, in a laid out document */
+static void test_positions(void)
+{
+    gfcss_computed cs;
+    ol_style st;
+    ol_box_style box;
+    ol_document *doc;
+    ol_node *root, *body, *pin;
+    ol_rect r;
+    lengths_px("position:absolute;left:10px;top:2em;width:30px", divm, &cs);
+    CHECK(cs.position == GFCSS_POSITION_ABSOLUTE && cs.inset[GFCSS_LEFT].units == OL_CSSPX(10) &&
+          cs.inset[GFCSS_TOP].units == OL_CSSPX(40) && cs.inset[GFCSS_RIGHT].kind == GFCSS_LEN_AUTO);
+    gfcss_to_ol(&cs, OL_CSSPX(400), &st, &box);
+    CHECK((box.flags & OL_BOX_ABSOLUTE) && box.frame.x == OL_CSSPX(10) && box.frame.y == OL_CSSPX(40) &&
+          box.frame.width == OL_CSSPX(30) && box.frame.height == 0 && !(box.flags & OL_BOX_FIT_CONTENT));
+    lengths_px("position:absolute;left:10px", divm, &cs);
+    gfcss_to_ol(&cs, OL_CSSPX(400), &st, &box);
+    CHECK((box.flags & OL_BOX_FIT_CONTENT) && box.frame.width == 0);
+    lengths_px("inset:1px 2px 3px -4px", divm, &cs);
+    CHECK(cs.inset[0].units == OL_CSSPX(1) && cs.inset[1].units == OL_CSSPX(2) && cs.inset[2].units == OL_CSSPX(3) &&
+          cs.inset[3].units == OL_CSSPX(-4) && gfcss_is_set(&cs, GFCSS_P_LEFT));
+    lengths_px("inset:auto 10%", divm, &cs);
+    CHECK(cs.inset[0].kind == GFCSS_LEN_AUTO && cs.inset[1].pct == GFCSS_PCT(10) && cs.inset[3].pct == GFCSS_PCT(10));
+    lengths_px("position:fixed;left:10px;right:20px;height:5px", divm, &cs);
+    gfcss_to_ol(&cs, OL_CSSPX(400), &st, &box);
+    CHECK((box.flags & OL_BOX_ABSOLUTE) && box.frame.width == OL_CSSPX(370) && box.frame.height == OL_CSSPX(5));
+    lengths_px("position:absolute;right:20px;width:50px", divm, &cs);
+    gfcss_to_ol(&cs, OL_CSSPX(400), &st, &box);
+    CHECK(box.frame.x == OL_CSSPX(330) && box.frame.width == OL_CSSPX(50));
+    lengths_px("position:relative;left:10px", divm, &cs);
+    gfcss_to_ol(&cs, OL_CSSPX(400), &st, &box);
+    CHECK(!(box.flags & OL_BOX_ABSOLUTE));
+    lengths_px("top:1px;top:bogus", divm, &cs);
+    CHECK(cs.inset[0].units == OL_CSSPX(1));
+
+    /* a document: the pinned box out of the flow, where left and top say */
+    doc = ol_document_new();
+    root = ol_document_root(doc);
+    body = ol_node_append(doc, root, OL_ROLE_BLOCK, "Flowing text");
+    pin = ol_node_append(doc, body, OL_ROLE_BLOCK, "Pinned");
+    CHECK(ol_node_set_tag(body, "div") && ol_node_set_tag(pin, "div"));
+    CHECK(ol_node_set_attr(pin, "style", "position:absolute;left:100px;top:50px;width:80px"));
+    CHECK(ol_document_add_stylesheet(doc, "div{display:block}", 18, OL_ORIGIN_USER_AGENT));
+    CHECK(ol_layout(doc, OL_CSSPX(400), NULL, NULL));
+    r = ol_node_bounds(pin);
+    CHECK(r.x == OL_CSSPX(100) && r.y == OL_CSSPX(50) && r.width == OL_CSSPX(80));
+    r = ol_node_bounds(body);
+    CHECK(r.height < OL_CSSPX(50));                     /* the frame takes no room in the flow */
+    /* with no width: as wide as its text (6 letters at 0.6 of 16px) */
+    CHECK(ol_node_set_attr(pin, "style", "position:absolute;left:100px;top:50px;padding:0 2px"));
+    CHECK(ol_layout(doc, OL_CSSPX(400), NULL, NULL));
+    r = ol_node_bounds(pin);
+    CHECK((ol_node_box(pin)->flags & OL_BOX_FIT_CONTENT) && r.x == OL_CSSPX(100));
+    CHECK(r.width == OL_CSSPX(16) * 6 * 3 / 5 + OL_CSSPX(4));
+    ol_document_free(doc);
+}
+
 /* a smaller gfcss_computed (a program built for an earlier GFCSS) is written no further than its size */
 static void test_sizes(void)
 {
@@ -1234,6 +1291,7 @@ int main(void)
     test_extensions();
     test_pseudo_elements();
     test_to_ol();
+    test_positions();
     test_sizes();
     test_document();
     test_speed();

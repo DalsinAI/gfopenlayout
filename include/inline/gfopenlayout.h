@@ -149,6 +149,15 @@
 #define OLUI_AmigaLayout(a) LP1(0x336, int, OLUI_AmigaLayout, olui_amiga *, (a), a0, , OPENLAYOUT_BASE_NAME)
 #define OLUI_AmigaDraw(a) LP1NR(0x33c, OLUI_AmigaDraw, olui_amiga *, (a), a0, , OPENLAYOUT_BASE_NAME)
 #define OLUI_AmigaEvent(a,msg) LP2(0x342, int, OLUI_AmigaEvent, olui_amiga *, (a), a0, struct IntuiMessage *, (msg), a1, , OPENLAYOUT_BASE_NAME)
+/* version 11: what a desktop needs (GFOpenLayout UI 0.4) */
+#define OLUI_Add(ui,parent,markup,err,errlen) LP5(0x348, olui_el *, OLUI_Add, olui *, (ui), a0, olui_el *, (parent), a1, const char *, (markup), a2, char *, (err), a3, size_t, (errlen), d0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_Remove(ui,el) LP2(0x34e, int, OLUI_Remove, olui *, (ui), a0, olui_el *, (el), a1, , OPENLAYOUT_BASE_NAME)
+#define OLUI_SetStyle(ui,el,decls) LP3(0x354, int, OLUI_SetStyle, olui *, (ui), a0, olui_el *, (el), a1, const char *, (decls), a2, , OPENLAYOUT_BASE_NAME)
+#define OLUI_SetPlace(ui,el,x,y) LP4NR(0x35a, OLUI_SetPlace, olui *, (ui), a0, olui_el *, (el), a1, int32_t, (x), d0, int32_t, (y), d1, , OPENLAYOUT_BASE_NAME)
+#define OLUI_Hit(ui,x,y) LP3(0x360, olui_el *, OLUI_Hit, olui *, (ui), a0, int, (x), d0, int, (y), d1, , OPENLAYOUT_BASE_NAME)
+#define OLUI_Parent(el) LP1(0x366, olui_el *, OLUI_Parent, const olui_el *, (el), a0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_FirstChild(el) LP1(0x36c, olui_el *, OLUI_FirstChild, const olui_el *, (el), a0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_Next(el) LP1(0x372, olui_el *, OLUI_Next, const olui_el *, (el), a0, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif

@@ -434,3 +434,51 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *msg)
 {
     return OLUI_AmigaEvent(a, msg);
 }
+
+olui_el * olui_add(olui *ui, olui_el *parent, const char *markup, char *err, size_t errlen)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_Add(ui, parent, markup, err, errlen);
+}
+
+int olui_remove(olui *ui, olui_el *el)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_Remove(ui, el);
+}
+
+int olui_set_style(olui *ui, olui_el *el, const char *decls)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_SetStyle(ui, el, decls);
+}
+
+void olui_set_place(olui *ui, olui_el *el, int32_t x, int32_t y)
+{
+    if (OpenLayoutBase->lib_Version < 11) return;
+    OLUI_SetPlace(ui, el, x, y);
+}
+
+olui_el * olui_hit(olui *ui, int x, int y)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_Hit(ui, x, y);
+}
+
+olui_el * olui_parent(const olui_el *el)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_Parent(el);
+}
+
+olui_el * olui_first_child(const olui_el *el)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_FirstChild(el);
+}
+
+olui_el * olui_next(const olui_el *el)
+{
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_Next(el);
+}

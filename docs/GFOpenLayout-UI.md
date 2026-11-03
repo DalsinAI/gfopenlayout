@@ -236,6 +236,40 @@ elements, drawn into the window's buffer with the rest. It draws into a buffer t
 inside, a simple layer on a bitmap like the window's, and copies it to the
 window in one blit, so nothing flickers.
 
+## Desktops and drawers (0.4)
+
+0.4 (in `gfopenlayout.library` 11) has what a desktop and its drawer
+windows need, so that OpenBench's icons can be elements styled by CSS
+rather than a widget of their own. `tests/test_desktop.c` tests it.
+
+**Positions and layers.** `position: absolute` (or `fixed`) takes an
+element out of the flow to its `left` and `top` from its parent's content
+corner, as wide as its `width` or, with none, its content (a label's
+text). `right` and `bottom` aren't used here: the styling doesn't know
+the parent's size. `z-index` puts a positioned element (`relative` too)
+in a layer among its parent's children, for drawing and for the pointer
+alike: those below 0 first, then those in the flow, then those at 0 or
+`auto`, then those above 0, each layer in the markup's order. Each
+element is a layer of its own, so what it holds stays in its layer.
+
+**The program's elements.** `olui_add(ui, parent, markup, err, len)`
+makes markup into elements at the end of `parent`'s children (its
+`<style>` blocks go to the window's sheet) and returns the first;
+`olui_remove(ui, el)` takes one away with what it holds.
+`olui_set_style(ui, el, decls)` gives it a new style attribute, and
+`olui_set_place(ui, el, x, y)` puts a positioned element at a place in
+pixels (a grid's cell, a drag's end) until `OLUI_PLACE_CSS` gives it back
+to its CSS. `olui_hit(ui, x, y)` is the topmost element under a point,
+layers counted; `olui_parent`, `olui_first_child` and `olui_next` walk the
+elements.
+
+```c
+olui_el *icon = olui_add(ui, olui_find(ui, "desk"),
+    "<div class=icon style='position:absolute;left:8px;top:40px'>"
+    "<img image=3 width=48 height=48><span>Work</span></div>", err, sizeof err);
+olui_set_place(ui, icon, 8, 120);           /* the grid's next cell */
+```
+
 ## GFOpenLayout 0.8
 
 What the UI needed in GFOpenLayout itself, for any program:
@@ -307,6 +341,8 @@ A program links `libolui.a` and includes `gfopenlayout_ui.h` and
   dragged.
 - An `img` directly in a `row` or `column` keeps no place: put it in a line (a `div`, a `button`).
 - `gfcss_*` on its own in the library: the UI and documents reach GFCSS inside it.
+- `right`, `bottom` and `position: relative`'s offsets; a positioned element's containing block is
+  its parent, positioned or not.
 - Laying out only what changed: a change that can move things (text, items, a style that changes a
   size, an item opened or closed) lays the whole window out. A hover, press, focus, check or selection
   that changes only how widgets look is drawn again only where it changed, with no layout.

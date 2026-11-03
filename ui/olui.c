@@ -615,6 +615,19 @@ static int build(olui *ui, olui_el *el, ol_node *parent, const olui_cs *pcs, int
         if (n != el->parent->ivalue) st.display = OL_DISPLAY_NONE;
     }
     box.border_width = 0;       /* olui draws the borders too */
+    if (cs->positioned == P_OUT && parent) {
+        /* 0.4: out of the flow, a frame at its CSS's left and top or where the program put it; as wide
+         * as its width, or as its content */
+        if (el->placed) {
+            box.frame.x = ol_unscale_x(&ui->scale, el->place_x);
+            box.frame.y = ol_unscale_y(&ui->scale, el->place_y);
+        }
+        box.frame.width = box.width > 0 ? box.width : 0;
+        box.frame.height = box.height > 0 ? box.height : 0;
+        if (box.frame.width <= 0) box.flags |= OL_BOX_FIT_CONTENT;
+    } else {
+        box.flags &= ~(uint32_t)(OL_BOX_ABSOLUTE | OL_BOX_FIT_CONTENT);
+    }
 
     el->node = ol_node_append(ui->doc, parent, role_of(el), text);
     if (!el->node || !map_node(ui, el)) return 0;
@@ -884,10 +897,49 @@ static void clamp_scroll(olui *ui, olui_el *list)
     if (list->scroll < 0) list->scroll = 0;
 }
 
+/* ---- Layers (0.4) ----------------------------------------------------------------- */
+
+/* Where a child goes among its parent's children, back to front, as CSS
+ * paints them: positioned ones below 0 (lowest first), those in the flow,
+ * positioned ones at 0 or auto, then those above 0. Each element is a layer
+ * of its own: what it holds stays in its layer. */
+static int64_t layer_key(const olui_el *c)
+{
+    int64_t band = !c->cs.positioned ? 1 : c->cs.z < 0 ? 0 : c->cs.z == 0 ? 2 : 3;
+    return band * ((int64_t)1 << 33) + (int64_t)c->cs.z;
+}
+
+/* el's children in that order: NULL when it is the markup's (none is positioned), or no memory
+ * (then the markup's order). *n is how many; free() the list. */
+static olui_el **layered(const olui_el *el, int *n)
+{
+    olui_el *c, **v;
+    int k = 0, i, any = 0;
+    *n = 0;
+    for (c = el->first; c; c = c->next) {
+        ++k;
+        if (c->cs.positioned) any = 1;
+    }
+    if (!any || !(v = (olui_el **)malloc((size_t)k * sizeof(*v)))) return NULL;
+    for (c = el->first, i = 0; c; c = c->next) {
+        /* insertion, after those with the same key: the markup's order within a layer */
+        int64_t key = layer_key(c);
+        int j = i++;
+        while (j > 0 && layer_key(v[j - 1]) > key) {
+            v[j] = v[j - 1];
+            --j;
+        }
+        v[j] = c;
+    }
+    *n = k;
+    return v;
+}
+
 /* The deepest shown element at x, y */
 static olui_el *hit(olui *ui, olui_el *el, int x, int y)
 {
-    olui_el *c, *best = NULL;
+    olui_el *c, *best = NULL, **order;
+    int n, i;
     olui_rect r;
     if (!visible(el)) return NULL;
     r = rect_of(ui, el);
@@ -902,9 +954,15 @@ static olui_el *hit(olui *ui, olui_el *el, int x, int y)
         }
         return el;
     }
-    for (c = el->first; c; c = c->next) {
-        olui_el *h = hit(ui, c, x, y);
-        if (h) best = h;
+    /* the topmost: the last in the order they are drawn */
+    if ((order = layered(el, &n)) != NULL) {
+        for (i = n - 1; i >= 0 && !best; --i) best = hit(ui, order[i], x, y);
+        free(order);
+    } else {
+        for (c = el->first; c; c = c->next) {
+            olui_el *h = hit(ui, c, x, y);
+            if (h) best = h;
+        }
     }
     if (best) return best;
     return in_rect(r, x, y) ? el : NULL;
@@ -3203,6 +3261,13 @@ static void draw_fieldset(drawer *d, const olui_el *el, olui_rect r)
 static void draw_children(drawer *d, const olui_el *el, int32_t dy, const olui_rect *clip)
 {
     const olui_el *c;
+    olui_el **order;
+    int n, i;
+    if ((order = layered(el, &n)) != NULL) {
+        for (i = 0; i < n; ++i) draw_el(d, order[i], dy, clip);
+        free(order);
+        return;
+    }
     for (c = el->first; c; c = c->next) draw_el(d, c, dy, clip);
 }
 
@@ -3601,7 +3666,7 @@ void olui_set_hidden(olui *ui, olui_el *el, int hidden) { if (ui) set_state(ui, 
 
 int olui_box(olui *ui, const olui_el *el, olui_rect *r)
 {
-    if (!ui || !el || !r || !el->node || !fresh(ui) || !visible(el)) return 0;
+    if (!ui || !el || !r || !fresh(ui) || !el->node || !visible(el)) return 0;
     *r = rect_of(ui, el);
     return 1;
 }
@@ -3642,6 +3707,12 @@ olui_el *olui_list_add(olui *ui, olui_el *list, olui_el *parent, const char *tex
 static void forget(olui *ui, olui_el *el)
 {
     olui_el *c;
+    if (el->node) {
+        /* out of the map too, until the next layout makes it again */
+        ol_id id = ol_node_id(el->node);
+        if (id < ui->map_count && ui->map[id] == el) ui->map[id] = NULL;
+        el->node = NULL;
+    }
     if (ui->focus == el) ui->focus = NULL;
     if (ui->hover == el) ui->hover = NULL;
     if (ui->pressed == el) ui->pressed = NULL;
@@ -3864,3 +3935,92 @@ void olui_free_css(char *css)
 {
     free(css);
 }
+
+/* ---- 0.4: a desktop's elements: made, put and taken away by the program -------------- */
+
+/* 1 when el is a or under it */
+static int under(const olui_el *el, const olui_el *a)
+{
+    for (; el; el = el->parent)
+        if (el == a) return 1;
+    return 0;
+}
+
+olui_el *olui_add(olui *ui, olui_el *parent, const char *markup, char *err, size_t errlen)
+{
+    olui_el *root, *c, *next, *first;
+    if (err && errlen) err[0] = 0;
+    if (!ui || !ui->root) {
+        if (err && errlen) snprintf(err, errlen, "nothing loaded to add to");
+        return NULL;
+    }
+    if (!parent) parent = ui->root;
+    if (!(root = olui_markup_parse(markup, err, errlen))) return NULL;
+    if ((root->value && !olui_sheet_add(ui->sheet, root->value)) || !make_parts(root) || !root->first) {
+        if (!root->first && err && errlen && !err[0]) snprintf(err, errlen, "no element in it");
+        olui_el_free(root);
+        return NULL;
+    }
+    if (root->value) ++ui->style_gen;       /* its <style> is the window's now */
+    first = root->first;
+    for (c = root->first; c; c = next) {
+        next = c->next;
+        c->parent = NULL;
+        c->next = NULL;
+        olui_el_append(parent, c);
+    }
+    root->first = root->last = NULL;
+    olui_el_free(root);
+    touch(ui);
+    return first;
+}
+
+int olui_remove(olui *ui, olui_el *el)
+{
+    if (!ui || !el || el == ui->root || !under(el, ui->root) || el->kind == K_STRIP || el->kind == K_TABBTN ||
+        el->kind == K_TAB)
+        return 0;
+    if (ui->popup && under(ui->popup, el)) ui->popup = NULL;
+    forget(ui, el);
+    olui_el_unlink(el);
+    olui_el_free(el);
+    touch(ui);
+    return 1;
+}
+
+int olui_set_style(olui *ui, olui_el *el, const char *decls)
+{
+    if (!ui || !el) return 0;
+    if (!olui_set_str(&el->style, decls && decls[0] ? decls : NULL)) return 0;
+    el->styled_gen = 0;         /* styled again at the next layout, and what it holds */
+    touch(ui);
+    return 1;
+}
+
+void olui_set_place(olui *ui, olui_el *el, int32_t x, int32_t y)
+{
+    if (!ui || !el) return;
+    if (x == OLUI_PLACE_CSS) {
+        if (!el->placed) return;
+        el->placed = 0;
+    } else {
+        if (el->placed && el->place_x == x && el->place_y == y) return;
+        el->placed = 1;
+        el->place_x = x;
+        el->place_y = y;
+    }
+    touch(ui);
+}
+
+olui_el *olui_hit(olui *ui, int x, int y)
+{
+    olui_el *el;
+    if (!ui || !ui->root || !fresh(ui)) return NULL;
+    el = hit(ui, ui->root, x, y);
+    while (el && el->kind == K_TEXT) el = el->parent;
+    return el;
+}
+
+olui_el *olui_parent(const olui_el *el) { return el ? el->parent : NULL; }
+olui_el *olui_first_child(const olui_el *el) { return el ? el->first : NULL; }
+olui_el *olui_next(const olui_el *el) { return el ? el->next : NULL; }

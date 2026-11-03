@@ -906,7 +906,8 @@ static const struct { const char *name; uint8_t inherited; } props[GFCSS_P_COUNT
     { "flex-basis", 0 }, { "row-gap", 0 }, { "column-gap", 0 }, { "align-items", 0 },
     { "justify-content", 0 },
     { "border-collapse", 1 }, { "", 1 }, { "", 1 }, { "caption-side", 1 },
-    { "content", 0 }
+    { "content", 0 },
+    { "top", 0 }, { "right", 0 }, { "bottom", 0 }, { "left", 0 }
 };
 
 int g_prop_inherited(int p)
@@ -919,7 +920,7 @@ enum {
     SH_MARGIN = 1, SH_PADDING, SH_BORDER, SH_BORDER_TOP, SH_BORDER_RIGHT, SH_BORDER_BOTTOM, SH_BORDER_LEFT,
     SH_BORDER_WIDTH, SH_BORDER_STYLE, SH_BORDER_COLOR, SH_BORDER_RADIUS, SH_OUTLINE, SH_BACKGROUND,
     SH_BACKGROUND_POSITION, SH_FONT, SH_LIST_STYLE, SH_FLEX, SH_FLEX_FLOW, SH_GAP, SH_OVERFLOW,
-    SH_TEXT_DECORATION, SH_BORDER_SPACING
+    SH_TEXT_DECORATION, SH_BORDER_SPACING, SH_INSET
 };
 
 static const struct { const char *name; int sh; } shorthands[] = {
@@ -930,7 +931,7 @@ static const struct { const char *name; int sh; } shorthands[] = {
     { "background-position", SH_BACKGROUND_POSITION }, { "font", SH_FONT }, { "list-style", SH_LIST_STYLE },
     { "flex", SH_FLEX }, { "flex-flow", SH_FLEX_FLOW }, { "gap", SH_GAP }, { "grid-gap", SH_GAP },
     { "overflow", SH_OVERFLOW }, { "text-decoration", SH_TEXT_DECORATION },
-    { "border-spacing", SH_BORDER_SPACING }
+    { "border-spacing", SH_BORDER_SPACING }, { "inset", SH_INSET }
 };
 
 static const struct { const char *name; int p; } aliases[] = {
@@ -989,6 +990,7 @@ static int sh_longhands(int sh, int *out)
     case SH_OVERFLOW: out[n++] = GFCSS_P_OVERFLOW_X; out[n++] = GFCSS_P_OVERFLOW_Y; break;
     case SH_TEXT_DECORATION: out[n++] = GFCSS_P_TEXT_DECORATION_LINE; break;
     case SH_BORDER_SPACING: out[n++] = GFCSS_P_BORDER_SPACING_H; out[n++] = GFCSS_P_BORDER_SPACING_V; break;
+    case SH_INSET: for (k = 0; k < 4; ++k) out[n++] = GFCSS_P_TOP + k; break;
     default: break;
     }
     return n;
@@ -1353,6 +1355,7 @@ static int longhand(vctx *c, int *i, int p)
         return len_value(c, i, p, L_PCT | L_AUTO);
     case GFCSS_P_MAX_WIDTH: case GFCSS_P_MAX_HEIGHT: return len_value(c, i, p, L_PCT | L_NONE);
     case GFCSS_P_MARGIN_TOP: case GFCSS_P_MARGIN_RIGHT: case GFCSS_P_MARGIN_BOTTOM: case GFCSS_P_MARGIN_LEFT:
+    case GFCSS_P_TOP: case GFCSS_P_RIGHT: case GFCSS_P_BOTTOM: case GFCSS_P_LEFT:
         return len_value(c, i, p, L_PCT | L_AUTO | L_NEG);
     case GFCSS_P_PADDING_TOP: case GFCSS_P_PADDING_RIGHT: case GFCSS_P_PADDING_BOTTOM: case GFCSS_P_PADDING_LEFT:
         return len_value(c, i, p, L_PCT);
@@ -1534,6 +1537,10 @@ static int shorthand(vctx *c, int *i, int sh)
     case SH_MARGIN:
         if (!sides(c, i, len_one, L_PCT | L_AUTO | L_NEG, v)) return 0;
         for (k = 0; k < 4; ++k) emit_val(c, GFCSS_P_MARGIN_TOP + k, &v[k]);
+        return 1;
+    case SH_INSET:
+        if (!sides(c, i, len_one, L_PCT | L_AUTO | L_NEG, v)) return 0;
+        for (k = 0; k < 4; ++k) emit_val(c, GFCSS_P_TOP + k, &v[k]);
         return 1;
     case SH_PADDING:
         if (!sides(c, i, len_one, L_PCT, v)) return 0;

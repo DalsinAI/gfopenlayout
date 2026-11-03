@@ -8,11 +8,15 @@
 extern "C" {
 #endif
 
+/* OL_VERSION stays "0.9" from gfopenlayout.library 10 on: the OL_ calls are
+ * still version 9's, and the programs built for them the same bytes. */
 #define OL_VERSION "0.9"
 /* 0.9: per-side borders, widths in thousandths with their least and most,
  * auto side margins, inline-blocks, cells' vertical alignment and table
  * headers repeated on every page (a browser's and a word processor's boxes) */
 #define OL_HAS_WEB_BOXES 1
+/* 0.11 (gfopenlayout.library 11): frames as wide as their content (OL_BOX_FIT_CONTENT) */
+#define OL_HAS_FIT_CONTENT 1
 
 /*
  * GFOpenLayout logical units are exact across the three worlds we care about:
@@ -293,7 +297,11 @@ enum {
      * it below a copy; the body's text on a page that starts with a copy
      * goes round a frame placed from the page or its margins as if the
      * copy were not there. */
-    OL_BOX_REPEAT_HEADER     = 1u << 10
+    OL_BOX_REPEAT_HEADER     = 1u << 10,
+    /* 0.11: an OL_BOX_ABSOLUTE frame with no frame.width is as wide as its
+     * content (its text on one line, its widest child; box.width when it
+     * has one), as CSS's absolute boxes are; without it, one CSS pixel. */
+    OL_BOX_FIT_CONTENT       = 1u << 11
 };
 
 /* 0.8: how a row's children stand across it (box.align) */

@@ -1473,6 +1473,8 @@ static void mark_take(const ol_document *doc, ol_mark *m);
 static void mark_back(ol_document *doc, const ol_mark *m);
 static ol_unit content_width(ol_document *doc, const ol_node *node,
                              ol_measure_text_fn measure, void *measure_userdata);
+static ol_unit content_width_in(ol_document *doc, const ol_node *node, int frame_itself,
+                                ol_measure_text_fn measure, void *measure_userdata);
 
 /* 0.9: an inline-block: as wide as it asks (in thousandths of the line's
  * width), or as its content up to the line's width, between its least and
@@ -1656,6 +1658,12 @@ static int layout_frame(ol_document *doc, ol_node *node, ol_unit origin_x, ol_un
     ol_unit bottom;
     ol_unit w = node->box.frame.width > 0 ? node->box.frame.width : OL_CSSPX(1);
     size_t keeps, breaks, first;
+    /* 0.11: with no width and OL_BOX_FIT_CONTENT, as wide as its content (its margins left out) */
+    if (node->box.frame.width <= 0 && (node->box.flags & OL_BOX_FIT_CONTENT)) {
+        w = content_width_in(doc, node, 1, measure, measure_userdata) - node->style.margin_left -
+            node->style.margin_right;
+        if (w < OL_CSSPX(1)) w = OL_CSSPX(1);
+    }
     ol_anchor *a;
     int ok;
     if (!node->box.anchor || doc->anchor_depth) {
@@ -1954,10 +1962,17 @@ static int is_grower(const ol_node *n)
 static ol_unit content_width(ol_document *doc, const ol_node *node,
                              ol_measure_text_fn measure, void *measure_userdata)
 {
+    return content_width_in(doc, node, 0, measure, measure_userdata);
+}
+
+/* frame_itself: node is a frame being measured for its own width (0.11's OL_BOX_FIT_CONTENT) */
+static ol_unit content_width_in(ol_document *doc, const ol_node *node, int frame_itself,
+                                ol_measure_text_fn measure, void *measure_userdata)
+{
     ol_unit w = 0, run = 0, ml, mr;
     const ol_node *c;
     int n = 0;
-    if (!node || node->style.display == OL_DISPLAY_NONE || is_frame(node)) return 0;
+    if (!node || node->style.display == OL_DISPLAY_NONE || (is_frame(node) && !frame_itself)) return 0;
     ml = node->style.margin_left;
     mr = node->style.margin_right;
     if (node->box.width > 0) return clamp_width(node, node->box.width, 0) + ml + mr;

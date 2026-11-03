@@ -23,7 +23,7 @@ CSS_OBJ = $(CSS_SRC:src/%.c=$(BUILD)/%.o)
 CSS_HDR = include/gfopenlayout.h include/gfopenlayout_css.h src/gfcss_internal.h src/openlayout_css.h
 
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_web $(BUILD)/test_ui \
-     $(BUILD)/test_css $(BUILD)/test_ui_css
+     $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -56,11 +56,15 @@ $(BUILD)/test_ui: tests/test_ui.c $(UI_SRC) ui/olui_internal.h include/gfopenlay
 $(BUILD)/test_ui_css: tests/test_ui_css.c $(UI_SRC) ui/olui_internal.h include/gfopenlayout_ui.h $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) -std=c99 -Wall -Wextra -Werror -Iinclude -Iui $(UI_INC) tests/test_ui_css.c $(UI_SRC) $(BUILD)/libopenlayout.a -o $@
 
+# 0.4: what a desktop and its drawers need (OpenBench)
+$(BUILD)/test_desktop: tests/test_desktop.c $(UI_SRC) ui/olui_internal.h include/gfopenlayout_ui.h $(BUILD)/libopenlayout.a
+	$(CC) $(CFLAGS) -std=c99 -Wall -Wextra -Werror -Iinclude -Iui $(UI_INC) tests/test_desktop.c $(UI_SRC) $(BUILD)/libopenlayout.a -o $@
+
 $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
 test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
-      $(BUILD)/test_ui_css
+      $(BUILD)/test_ui_css $(BUILD)/test_desktop
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
@@ -68,6 +72,7 @@ test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/te
 	./$(BUILD)/test_ui
 	./$(BUILD)/test_css
 	./$(BUILD)/test_ui_css
+	./$(BUILD)/test_desktop
 	python3 tools/gen-library.py --check
 
 clean:
