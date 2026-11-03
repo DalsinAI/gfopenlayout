@@ -70,13 +70,18 @@ void olui_amiga_fonts(olui_amiga *a, const char *font, const char *mono);
 
 /* olui in a strip of the window (a toolbar, a tab strip), x,y from the
  * window's inside, w or h 0 to its edge, so it follows the window's size;
- * all 0: the whole inside again. The buffer is the strip's size. olui then
+ * y below 0 from the inside's bottom (-20, h 0: a status bar 20 pixels
+ * tall that stays at the bottom); all 0: the whole inside again. Called
+ * after olui_amiga_layout, it lays out again at once. The buffer is the
+ * strip's size. Pop-ups (a select's list, a menu, a tooltip) are drawn in
+ * the strip too, so a strip a line tall has no room for them: open those
+ * in a window of the program's own. olui then
  * takes the mouse only inside it (a press there keeps it until the button
  * is let go), and leaves the window's refresh and the rest of the window to
  * the program: olui_amiga_event draws the strip and returns
  * OLUI_AMIGA_NONE for IDCMP_REFRESHWINDOW and IDCMP_NEWSIZE, so the
  * program does its BeginRefresh/EndRefresh and lays out the rest. */
-void olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h);
+int olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h);
 
 /* Who has the keys */
 enum {
@@ -84,8 +89,14 @@ enum {
     OLUI_AMIGA_KEYS_FOCUS       /* only while one of olui's widgets has the focus (olui_focus);
                                    otherwise OLUI_AMIGA_NONE, and the program has it */
 };
-void olui_amiga_keys(olui_amiga *a, int keys);
-/* A window opened without IDCMP_VANILLAKEY (to have every key as a RAWKEY)
+int olui_amiga_keys(olui_amiga *a, int keys);
+/* Both are library 11 calls: 1 when done, 0 from a version 10 library
+ * (through the link library), where olui would have the whole window and
+ * every key, so a program that needs them checks. With KEYS_FOCUS, Tab
+ * can't bring the focus into olui's widgets (the keys are the program's
+ * then): a click, or the program's olui_focus, gives it. IntuiTicks in a
+ * strip are always OLUI_AMIGA_NONE, so the program has them too.
+ * A window opened without IDCMP_VANILLAKEY (to have every key as a RAWKEY)
  * works too: the keymap gives olui the characters. */
 
 /* Lays out at the window's inner size (or the strip's), and draws it all. */

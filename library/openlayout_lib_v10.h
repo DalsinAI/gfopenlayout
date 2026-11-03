@@ -656,16 +656,16 @@ static olui * OLUI_NewSharing(REG(a0, olui * from), REG(a6, struct OpenLayoutLib
 
 /* ---- the Amiga glue in a strip of a window ---- */
 
-static void OLUI_AmigaStrip(REG(a0, olui_amiga * a), REG(d0, int x), REG(d1, int y), REG(d2, int w), REG(d3, int h), REG(a6, struct OpenLayoutLibBase *base))
+static int OLUI_AmigaStrip(REG(a0, olui_amiga * a), REG(d0, int x), REG(d1, int y), REG(d2, int w), REG(d3, int h), REG(a6, struct OpenLayoutLibBase *base))
 {
     (void)base;
-    olui_amiga_strip(a, x, y, w, h);
+    return olui_amiga_strip(a, x, y, w, h);
 }
 
-static void OLUI_AmigaKeys(REG(a0, olui_amiga * a), REG(d0, int keys), REG(a6, struct OpenLayoutLibBase *base))
+static int OLUI_AmigaKeys(REG(a0, olui_amiga * a), REG(d0, int keys), REG(a6, struct OpenLayoutLibBase *base))
 {
     (void)base;
-    olui_amiga_keys(a, keys);
+    return olui_amiga_keys(a, keys);
 }
 
 /* the last call's bias: lib_vectors is checked against it */
