@@ -262,7 +262,9 @@ one of its widgets has the focus; a press outside the strip takes the
 focus away and draws the strip without it. Tab can't then bring the focus
 back (the keys are the program's): a click does, or the program's
 `olui_focus`. In a strip, IntuiTicks are always given back, for the
-program too. A window opened without `IDCMP_VANILLAKEY`, to have every key
+program too, and what a tick changed in the strip (a tooltip, a held
+arrow button, the cursor) is drawn first, so the strip stays up to date
+even in a program that draws only after `OLUI_AMIGA_USED`. A window opened without `IDCMP_VANILLAKEY`, to have every key
 as a RAWKEY, works too: the glue maps the keys to characters with
 keymap.library's `MapRawKey`.
 

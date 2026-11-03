@@ -948,8 +948,13 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
     case IDCMP_INTUITICKS:
         /* about ten a second while the window is active: tooltips, a held arrow button */
         used = olui_tick(a->ui, 100);
-        /* in a strip the ticks are the program's too */
-        if (a->strip) used = 0;
+        /* in a strip the ticks are the program's too: what the tick changed (a tooltip,
+         * a held arrow button, the cursor) is drawn here, so a program that draws only
+         * after OLUI_AMIGA_USED still sees it */
+        if (a->strip) {
+            if (used) olui_amiga_draw(a);
+            used = 0;
+        }
         break;
     case IDCMP_RAWKEY:
         switch (m->Code) {
