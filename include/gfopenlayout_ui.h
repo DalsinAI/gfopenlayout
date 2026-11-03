@@ -51,7 +51,9 @@ enum {
     OLUI_DRAG_START,    /* el (draggable) is being dragged, with index elements in all (olui_drag_item) */
     OLUI_DRAG_MOVE,     /* the pointer moved while dragging: item the drop target under it (droppable), or NULL */
     OLUI_DROP,          /* let go: item the drop target, or NULL; x, y where, dx, dy how far from where it was pressed */
-    OLUI_DRAG_CANCEL    /* Escape while dragging: nothing moves */
+    OLUI_DRAG_CANCEL,   /* Escape while dragging: nothing moves */
+    OLUI_CONTEXT        /* the menu button pressed: el the element under the pointer (x, y), item the menu its
+                           contextmenu attribute opened (NULL: none; the handler may open one) */
 };
 
 typedef struct {
@@ -196,7 +198,8 @@ enum {
     OLUI_MOUSE_UP,
     OLUI_MOUSE_DOUBLE,      /* a second down soon after the first, in the same place */
     OLUI_WHEEL_UP,
-    OLUI_WHEEL_DOWN
+    OLUI_WHEEL_DOWN,
+    OLUI_MOUSE_MENU         /* 0.4: the menu (right) button pressed: OLUI_CONTEXT */
 };
 
 /* Keys other than characters (olui_key's code is otherwise a character, Unicode) */
@@ -400,6 +403,44 @@ int olui_select_all(olui *ui, olui_el *scope, int selected);
 /* While dragging (in the drag events' handlers): what is dragged, from 0;
  * NULL past the last, or when nothing is. */
 olui_el *olui_drag_item(const olui *ui, int index);
+
+/* Long lists (0.4): <vlist columns="200 60 120"> has rows the program
+ * gives as they are drawn, so a drawer of 5,000 files costs what shows:
+ * fn(userdata, row, column, &image) returns a cell's text (NULL: none) and
+ * may set image to a picture's number (it is -1 before the call), drawn a
+ * line high before the text. Each row is styled as the made element row
+ * under the vlist (vlist row{...}, row:selected); columns are CSS pixels
+ * wide, the last taking what is left. A click selects a row alone, Shift
+ * with a click adds or takes away (OLUI_SELECT, index the row); a
+ * double-click or Return is OLUI_ACTIVATE; Up, Down, PageUp, PageDown,
+ * Home and End move, and the wheel scrolls. The selection is the UI's, a
+ * bit a row; olui_vlist_set keeps it for the rows that stay. */
+typedef const char *(*olui_row_fn)(void *userdata, int row, int column, int *image);
+void olui_vlist_set(olui *ui, olui_el *vlist, int rows, olui_row_fn fn, void *userdata);
+int olui_vlist_rows(const olui_el *vlist);
+int olui_vlist_selected(const olui_el *vlist, int row);
+void olui_vlist_select(olui *ui, olui_el *vlist, int row, int selected);
+/* The row with the keyboard's cursor (-1: none); setting it scrolls it into view */
+int olui_vlist_current(const olui_el *vlist);
+void olui_vlist_set_current(olui *ui, olui_el *vlist, int row);
+
+/* Context menus (0.4): <menu id=m><option value=open>Open</option>...</menu>
+ * is never shown in the window; olui_menu_open shows it at x, y as a
+ * select's pop-up list is shown, and choosing an option sends
+ * OLUI_ACTIVATE (el the menu, item the option, value its value, index its
+ * number). The menu button (OLUI_MOUSE_MENU; on the Amiga the right button
+ * in a window with WFLG_RMBTRAP) sends OLUI_CONTEXT and opens the menu the
+ * contextmenu attribute of the element under the pointer (or of one it is
+ * in) names. 1 when it opened. */
+int olui_menu_open(olui *ui, olui_el *menu, int x, int y);
+
+/* Several windows (0.4): a new UI sharing from's stylesheet and picture
+ * names, for another window of the same program (a desktop's drawers): the
+ * theme and the program's CSS are read once (on the Amiga, give the theme
+ * to the first window only). CSS added through either is both's (each
+ * styles again). Handlers, contents and the zoom are each window's own; the
+ * measure starts as from's. Freed by olui_free, the sheet with the last. */
+olui *olui_new_sharing(olui *from);
 
 /* Walking the elements: the parent, the first child and the next sibling
  * (runs of text among other content are elements too, their tag ""). */

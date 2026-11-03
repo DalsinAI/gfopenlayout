@@ -25,7 +25,8 @@ enum {
     K_SELECT,       /* a drop-down (or with size, a list box) of options */
     K_OPTION,       /* one of a select's choices */
     K_OPTGROUP,     /* a labelled group of a select's options */
-    K_TEXTAREA      /* text of many lines, wrapped, edited and scrolled */
+    K_TEXTAREA,     /* text of many lines, wrapped, edited and scrolled */
+    K_VLIST         /* 0.4: a long list whose rows the program gives as they are drawn */
 };
 
 /* What else an element is (olui_el.flags) */
@@ -39,7 +40,8 @@ enum {
     F_SELECTABLE = 1u << 5,  /* selectable: clicked, selected; Shift adds */
     F_DRAGGABLE = 1u << 6,   /* draggable */
     F_DROPPABLE = 1u << 7,   /* droppable: a drop target */
-    F_MARQUEE = 1u << 8      /* marquee: a scope; a band dragged on its space selects */
+    F_MARQUEE = 1u << 8,     /* marquee: a scope; a band dragged on its space selects */
+    F_MENU = 1u << 9         /* menu: a select never shown, its pop-up opened by olui_menu_open */
 };
 
 /* overflow (olui_cs.overflow) */
@@ -142,12 +144,25 @@ struct olui_el {
     int placed;                 /* olui_set_place: at place_x, place_y instead of its CSS's left and top */
     int32_t place_x, place_y;   /* pixels from its containing block's content corner */
     int band_base;              /* selected when a Shift band began: it stays so */
+    char *menu_id;              /* contextmenu: the menu the menu button opens on it */
+    /* a vlist's */
+    int vrows, vcur;
+    olui_row_fn vfn;
+    void *vud;
+    unsigned char *vsel;        /* a bit a row */
+    int ncols;
+    int colw[8];                /* CSS pixels */
+    olui_el *vrow;              /* made: what styles a row (row, under it) */
 };
 
 /* ---- CSS (olui_css.c) ---- */
 typedef struct olui_sheet olui_sheet;
 olui_sheet *olui_sheet_new(void);
 void olui_sheet_free(olui_sheet *sheet);
+/* 0.4: shared by several windows: another holder, and a count that moves on when it changes */
+olui_sheet *olui_sheet_ref(olui_sheet *sheet);
+unsigned olui_sheet_gen(const olui_sheet *sheet);
+void olui_sheet_changed(olui_sheet *sheet);
 int olui_sheet_add(olui_sheet *sheet, const char *css);
 /* Every state (S_...) the sheet's selectors name: a change to another
  * state changes no element's style */

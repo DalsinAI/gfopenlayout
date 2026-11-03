@@ -165,7 +165,10 @@ takes away (`olui_add`, `olui_remove`, `olui_set_style`, `olui_set_place`,
 op's `alpha`, `text-shadow`, `outline`, `background-image: url(N)` and
 `olui_image_name`); and selecting and dragging (`selectable`, `draggable`,
 `droppable` and `marquee` attributes: clicks, Shift with a click, a band,
-drag and drop with the dragged on top, `olui_mouse_qual`). [docs/GFOpenLayout-UI.md](docs/GFOpenLayout-UI.md) says how;
+drag and drop with the dragged on top, `olui_mouse_qual`); long lists whose
+rows the program gives as they are drawn (`vlist`), context menus (`menu`,
+`contextmenu`, `olui_menu_open`) and windows that share one stylesheet
+(`olui_new_sharing`). [docs/GFOpenLayout-UI.md](docs/GFOpenLayout-UI.md) says how;
 `tests/test_desktop.c` tests it. A program opens version 11
 (`OPENLAYOUTLIB_DESKTOP_VERSION`) for them; through
 `libgfopenlayout_link.a` a version 11 call on version 10 does nothing and

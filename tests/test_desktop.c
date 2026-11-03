@@ -512,11 +512,187 @@ static void test_selection(void)
     olui_free(ui);
 }
 
+/* ---- Long lists, context menus, several windows ---- */
+
+static int asked;               /* cells the vlist asked for */
+
+static const char *cell(void *userdata, int row, int column, int *image)
+{
+    static char buf[32];
+    (void)userdata;
+    ++asked;
+    if (column == 0) {
+        *image = 100 + row % 3;
+        snprintf(buf, sizeof buf, "File %d", row);
+    } else {
+        snprintf(buf, sizeof buf, "%d KB", row * 2);
+    }
+    return buf;
+}
+
+typedef struct {
+    int selects, activates, contexts, last_index, last_checked;
+    char el[16], item[16], value[16];
+} list_log;
+
+static void on_list(olui *ui, const olui_event *ev, void *userdata)
+{
+    list_log *g = (list_log *)userdata;
+    (void)ui;
+    if (ev->type == OLUI_SELECT) ++g->selects;
+    else if (ev->type == OLUI_ACTIVATE) ++g->activates;
+    else if (ev->type == OLUI_CONTEXT) ++g->contexts;
+    else return;
+    g->last_index = ev->index;
+    g->last_checked = ev->checked;
+    snprintf(g->el, sizeof g->el, "%s", ev->id);
+    snprintf(g->item, sizeof g->item, "%s", ev->item ? olui_id(ev->item) : "");
+    snprintf(g->value, sizeof g->value, "%s", ev->value ? ev->value : "");
+}
+
+static void test_lists_menus_windows(void)
+{
+    static const char markup[] =
+        "<vlist id=files columns='100 60' style='height:200px' contextmenu=filemenu></vlist>"
+        "<div id=space style='flex:1' contextmenu=deskmenu>Desk</div>"
+        "<menu id=filemenu><option value=open id=o1>Open</option><option value=info>Information</option>"
+        "<option value=del disabled>Delete</option></menu>"
+        "<menu id=deskmenu><option value=clean>Clean Up</option></menu>";
+    olui *ui = olui_new(), *ui2;
+    char err[128];
+    list_log g;
+    olui_el *v;
+    log_t *l = (log_t *)calloc(1, sizeof(log_t));
+    olui_rect r;
+    const rec *op;
+    int rh, i, n;
+    memset(&g, 0, sizeof g);
+    olui_set_measure(ui, measure, NULL);
+    CHECK(olui_load(ui, markup, NULL, err, sizeof err));
+    CHECK(olui_on(ui, NULL, 0, on_list, &g));
+    CHECK(olui_layout(ui, 400, 300));
+    v = olui_find(ui, "files");
+    olui_vlist_set(ui, v, 5000, cell, NULL);
+    CHECK(olui_vlist_rows(v) == 5000 && olui_vlist_current(v) == -1);
+    /* a row: 16 px of line and 1 px above and below */
+    rh = 18;
+    CHECK(olui_box(ui, v, &r) && r.h == 200);
+    /* drawing asks only for the rows that show: 200 / 18 rows, two cells each */
+    asked = 0;
+    olui_draw(ui, NULL, log_op, l);
+    CHECK(asked > 0 && asked <= 2 * (198 / rh + 2));
+    op = find_op(l, 0, OLUI_DRAW_TEXT, "files");
+    CHECK(op && !strcmp(op->text, "File 0"));
+    op = find_op(l, 0, OLUI_DRAW_IMAGE, "files");
+    CHECK(op && op->image == 100 && op->box.w == 16);
+    /* the second column 100 px on, the image and 4 px before the first's text */
+    for (i = 0; i < l->n && !(l->r[i].kind == OLUI_DRAW_TEXT && !strcmp(l->r[i].text, "0 KB")); ++i) {}
+    CHECK(i < l->n && l->r[i].box.x == r.x + 1 + 4 + 100);
+    /* a click selects a row; Shift adds; a double-click activates */
+    CHECK(olui_mouse(ui, r.x + 20, r.y + 1 + rh * 2 + 5, OLUI_MOUSE_DOWN));
+    olui_mouse(ui, r.x + 20, r.y + 1 + rh * 2 + 5, OLUI_MOUSE_UP);
+    CHECK(g.selects == 1 && g.last_index == 2 && olui_vlist_selected(v, 2) && olui_vlist_current(v) == 2);
+    olui_mouse_qual(ui, r.x + 20, r.y + 1 + rh * 4 + 5, OLUI_MOUSE_DOWN, OLUI_QUAL_SHIFT);
+    CHECK(olui_vlist_selected(v, 2) && olui_vlist_selected(v, 4) && !olui_vlist_selected(v, 3));
+    olui_mouse(ui, r.x + 20, r.y + 1 + rh * 3 + 5, OLUI_MOUSE_DOWN);
+    CHECK(!olui_vlist_selected(v, 2) && olui_vlist_selected(v, 3) && !olui_vlist_selected(v, 4));
+    olui_mouse(ui, r.x + 20, r.y + 1 + rh * 3 + 5, OLUI_MOUSE_DOUBLE);
+    CHECK(g.activates == 1 && g.last_index == 3 && !strcmp(g.el, "files"));
+    /* the selected row is drawn :selected */
+    l->n = 0;
+    olui_draw(ui, NULL, log_op, l);
+    for (i = 0, n = 0; i < l->n; ++i)
+        if (l->r[i].kind == OLUI_DRAW_BOX && !strcmp(l->r[i].id, "files") && l->r[i].stops == 1 &&
+            l->r[i].border == 0 && l->r[i].box.h == rh)
+            ++n;
+    CHECK(n == 1);
+    /* keys: End to the last, scrolled into view; Up; Return */
+    CHECK(olui_key(ui, OLUI_KEY_END, 0));
+    CHECK(olui_vlist_current(v) == 4999 && olui_vlist_selected(v, 4999) && olui_get_scroll(v) == 5000 * rh - 198);
+    CHECK(olui_key(ui, OLUI_KEY_UP, 0) && olui_vlist_current(v) == 4998);
+    CHECK(olui_key(ui, OLUI_KEY_RETURN, 0) && g.activates == 2 && g.last_index == 4998);
+    CHECK(olui_key(ui, OLUI_KEY_HOME, 0) && olui_get_scroll(v) == 0);
+    /* the wheel */
+    CHECK(olui_mouse(ui, r.x + 20, r.y + 20, OLUI_WHEEL_DOWN) && olui_get_scroll(v) == 3 * rh);
+    asked = 0;
+    l->n = 0;
+    olui_draw(ui, NULL, log_op, l);
+    op = find_op(l, 0, OLUI_DRAW_TEXT, "files");
+    CHECK(op && !strcmp(op->text, "File 3"));
+    /* fewer rows: the selection of those that stay kept */
+    olui_vlist_select(ui, v, 7, 1);
+    olui_vlist_select(ui, v, 12, 1);
+    olui_vlist_set(ui, v, 10, cell, NULL);
+    CHECK(olui_vlist_selected(v, 7) && !olui_vlist_selected(v, 12) && olui_get_scroll(v) == 0);
+    olui_vlist_set(ui, v, 20, cell, NULL);
+    CHECK(!olui_vlist_selected(v, 12));
+    olui_vlist_set_current(ui, v, 15);
+    CHECK(olui_vlist_current(v) == 15);
+
+    /* the menu button: OLUI_CONTEXT, and the contextmenu's menu at the pointer */
+    CHECK(olui_mouse(ui, r.x + 20, r.y + 20, OLUI_MOUSE_MENU));
+    CHECK(g.contexts == 1 && !strcmp(g.el, "files") && !strcmp(g.item, "filemenu"));
+    CHECK(olui_select_is_open(ui, olui_find(ui, "filemenu")));
+    l->n = 0;
+    olui_draw(ui, NULL, log_op, l);
+    op = find_op(l, 0, OLUI_DRAW_BOX, "");     /* the pop-up's box: the made popup element */
+    for (i = 0; i < l->n && !(l->r[i].kind == OLUI_DRAW_TEXT && !strcmp(l->r[i].text, "Open")); ++i) {}
+    CHECK(i < l->n && l->r[i].box.y >= r.y + 20 && l->r[i].box.x >= r.x + 20);
+    /* its release chooses nothing; a click on Information chooses it */
+    olui_mouse(ui, r.x + 20, r.y + 20, OLUI_MOUSE_UP);
+    CHECK(g.activates == 2 && olui_select_is_open(ui, olui_find(ui, "filemenu")));
+    {
+        int y = l->r[i].box.y + 3 + 18;     /* the next row */
+        olui_mouse(ui, l->r[i].box.x + 5, y, OLUI_MOUSE_MOVE);
+        olui_mouse(ui, l->r[i].box.x + 5, y, OLUI_MOUSE_DOWN);
+        olui_mouse(ui, l->r[i].box.x + 5, y, OLUI_MOUSE_UP);
+    }
+    CHECK(g.activates == 3 && !strcmp(g.el, "filemenu") && !strcmp(g.value, "info") && g.last_index == 1);
+    CHECK(!olui_select_is_open(ui, olui_find(ui, "filemenu")));
+    /* elsewhere, another; the menu button again closes the first; Escape closes it */
+    olui_mouse(ui, 50, 280, OLUI_MOUSE_MENU);
+    CHECK(g.contexts == 2 && !strcmp(g.el, "space") && olui_select_is_open(ui, olui_find(ui, "deskmenu")));
+    CHECK(olui_key(ui, OLUI_KEY_ESCAPE, 0) && !olui_select_is_open(ui, olui_find(ui, "deskmenu")));
+    CHECK(g.activates == 3);
+    /* opened by the program, chosen with the keys */
+    CHECK(olui_menu_open(ui, olui_find(ui, "deskmenu"), 10, 10));
+    CHECK(olui_key(ui, OLUI_KEY_DOWN, 0) && olui_key(ui, OLUI_KEY_RETURN, 0));
+    CHECK(g.activates == 4 && !strcmp(g.value, "clean"));
+    CHECK(!olui_menu_open(ui, v, 10, 10));
+    /* a menu takes no room and no click */
+    CHECK(olui_hit(ui, 50, 285) == olui_find(ui, "space"));
+
+    /* a second window sharing the sheet: CSS added to one is both's */
+    ui2 = olui_new_sharing(ui);
+    CHECK(ui2 != NULL);
+    olui_set_measure(ui2, measure, NULL);
+    CHECK(olui_load(ui2, "<div id=d2 class=late>Drawer</div>", NULL, err, sizeof err));
+    CHECK(olui_layout(ui2, 200, 100));
+    CHECK(olui_add_css(ui, ".late{height:33px}"));
+    {
+        olui_rect b;
+        CHECK(olui_damaged(ui2, NULL));
+        CHECK(olui_box(ui2, olui_find(ui2, "d2"), &b) && b.h == 33);
+    }
+    CHECK(olui_add_css(ui2, "#space{background:#123456}"));
+    l->n = 0;
+    olui_draw(ui, NULL, log_op, l);
+    op = find_op(l, 0, OLUI_DRAW_BOX, "space");
+    CHECK(op && op->stops == 1);
+    olui_free(ui);                      /* the sheet stays with the second */
+    l->n = 0;
+    olui_draw(ui2, NULL, log_op, l);
+    CHECK(find_op(l, 0, OLUI_DRAW_TEXT, "d2") != NULL);
+    olui_free(ui2);
+    free(l);
+}
+
 int main(void)
 {
     test_positions();
     test_look();
     test_selection();
+    test_lists_menus_windows();
     printf("OLUI DESKTOP %d checks, %d failed\n", checks, failed);
     if (failed) return 20;
     printf("OLUI DESKTOP PASS version=%s\n", OLUI_VERSION);

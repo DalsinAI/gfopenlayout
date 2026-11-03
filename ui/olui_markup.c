@@ -33,6 +33,7 @@ olui_el *olui_el_new(int kind, const char *tag)
     }
     el->imax = 100;
     el->want_x = -1;
+    el->vcur = -1;
     return el;
 }
 
@@ -48,6 +49,9 @@ void olui_el_free(olui_el *el)
     free(el->text); free(el->style); free(el->placeholder); free(el->title);
     free(el->for_id); free(el->num_attr[0]); free(el->num_attr[1]); free(el->num_attr[2]);
     free(el->lines);
+    free(el->menu_id);
+    free(el->vsel);
+    olui_el_free(el->vrow);
     free(el);
 }
 
@@ -118,6 +122,8 @@ static int kind_of(const char *tag, const char *type)
     if (!strcmp(tag, "progress")) return K_PROGRESS;
     if (!strcmp(tag, "img")) return K_IMAGE;
     if (!strcmp(tag, "slider")) return K_SLIDER;
+    if (!strcmp(tag, "menu")) return K_SELECT;     /* 0.4: never shown, its pop-up opened by the program */
+    if (!strcmp(tag, "vlist")) return K_VLIST;
     return K_BOX;
 }
 
@@ -235,6 +241,18 @@ static int set_attr(olui_el *el, const char *name, const char *value, char *type
     else if (!strcmp(name, "draggable")) { if (strcmp(value, "false")) el->flags |= F_DRAGGABLE; }
     else if (!strcmp(name, "droppable")) el->flags |= F_DROPPABLE;
     else if (!strcmp(name, "marquee")) el->flags |= F_MARQUEE;
+    else if (!strcmp(name, "contextmenu")) ok = olui_set_str(&el->menu_id, value);
+    else if (!strcmp(name, "columns")) {
+        /* a vlist's columns' widths, CSS pixels, by spaces or commas */
+        const char *p = value;
+        el->ncols = 0;
+        while (*p && el->ncols < 8) {
+            while (*p == ' ' || *p == ',') ++p;
+            if (!*p) break;
+            el->colw[el->ncols++] = atoi(p);
+            while (*p && *p != ' ' && *p != ',') ++p;
+        }
+    }
     else if (!strcmp(name, "wrap")) { if (!strcmp(value, "off")) el->flags |= F_NOWRAP; }
     else if (!strcmp(name, "tabindex")) el->tabindex = atoi(value);
     else if (!strcmp(name, "rows") || !strcmp(name, "size")) el->rows = atoi(value);
@@ -358,6 +376,7 @@ static int parse_content(parser *ps, olui_el *parent, int depth)
                 free(value);
             }
             el->kind = kind_of(tag, type[0] ? type : NULL);
+            if (!strcmp(tag, "menu")) el->flags |= F_MENU;
             if (el->kind == K_INPUT && !strcmp(type, "password")) el->flags |= F_PASSWORD;
             if (el->kind == K_INPUT && (!strcmp(type, "number") || !strcmp(tag, "spinner"))) el->flags |= F_NUMBER;
             if (el->kind == K_TEXTAREA && !self_closed) {

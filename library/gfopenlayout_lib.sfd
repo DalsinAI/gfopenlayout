@@ -166,5 +166,13 @@ int OLUI_IsSelected(const olui_el *el)(a0)
 olui_el * OLUI_NextSelected(olui *ui, const olui_el *scope, const olui_el *after)(a0,a1,a2)
 int OLUI_SelectAll(olui *ui, olui_el *scope, int selected)(a0,a1,d0)
 olui_el * OLUI_DragItem(const olui *ui, int index)(a0,d0)
+void OLUI_VlistSet(olui *ui, olui_el *vlist, int rows, olui_row_fn fn, void *userdata)(a0,a1,d0,a2,a3)
+int OLUI_VlistRows(const olui_el *vlist)(a0)
+int OLUI_VlistSelected(const olui_el *vlist, int row)(a0,d0)
+void OLUI_VlistSelect(olui *ui, olui_el *vlist, int row, int selected)(a0,a1,d0,d1)
+int OLUI_VlistCurrent(const olui_el *vlist)(a0)
+void OLUI_VlistSetCurrent(olui *ui, olui_el *vlist, int row)(a0,a1,d0)
+int OLUI_MenuOpen(olui *ui, olui_el *menu, int x, int y)(a0,a1,d0,d1)
+olui * OLUI_NewSharing(olui *from)(a0)
 * ---- end of version 10 ----
 ==end
