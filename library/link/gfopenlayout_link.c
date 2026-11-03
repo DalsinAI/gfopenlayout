@@ -573,14 +573,14 @@ olui * olui_new_sharing(olui *from)
     return OLUI_NewSharing(from);
 }
 
-void olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h)
+int olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h)
 {
-    if (OpenLayoutBase->lib_Version < 11) return;
-    OLUI_AmigaStrip(a, x, y, w, h);
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_AmigaStrip(a, x, y, w, h);
 }
 
-void olui_amiga_keys(olui_amiga *a, int keys)
+int olui_amiga_keys(olui_amiga *a, int keys)
 {
-    if (OpenLayoutBase->lib_Version < 11) return;
-    OLUI_AmigaKeys(a, keys);
+    if (OpenLayoutBase->lib_Version < 11) return 0;
+    return OLUI_AmigaKeys(a, keys);
 }

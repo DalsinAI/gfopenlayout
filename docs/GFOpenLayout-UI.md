@@ -246,14 +246,23 @@ window in one blit, so nothing flickers.
 window itself, such as the browser with its page, gives olui only a strip:
 `olui_amiga_strip(a, x, y, w, h)` from the window's inside, `w` or `h` 0 to
 its edge, so the strip follows the window's size (`0, 0, 0, 40` is a
-toolbar 40 pixels tall). The buffer is then the strip's size, not the
-window's. olui takes a press only inside the strip and keeps it until the
+toolbar 40 pixels tall); `y` below 0 counts from the bottom, so `0, -20, 0,
+0` is a status bar that stays at the bottom. Called after the first layout
+it lays out again at once. Both calls return 1, and 0 from a version 10
+library, where olui would still have the whole window: a program that
+needs them checks. The buffer is then the strip's size, not the
+window's. Pop-ups (a select's list, a menu, a tooltip) are drawn inside the
+strip, so a strip one line tall has no room for them: open those in a
+window of the program's own. olui takes a press only inside the strip and keeps it until the
 button is let go, takes the hover off when the pointer leaves, and gives
 `IDCMP_REFRESHWINDOW` and `IDCMP_NEWSIZE` back as `OLUI_AMIGA_NONE` after
 drawing the strip, for the program's own refresh and layout.
 `olui_amiga_keys(a, OLUI_AMIGA_KEYS_FOCUS)` gives olui the keys only while
 one of its widgets has the focus; a press outside the strip takes the
-focus away. A window opened without `IDCMP_VANILLAKEY`, to have every key
+focus away and draws the strip without it. Tab can't then bring the focus
+back (the keys are the program's): a click does, or the program's
+`olui_focus`. In a strip, IntuiTicks are always given back, for the
+program too. A window opened without `IDCMP_VANILLAKEY`, to have every key
 as a RAWKEY, works too: the glue maps the keys to characters with
 keymap.library's `MapRawKey`.
 

@@ -527,6 +527,16 @@ static void free_buffer(olui_amiga *a)
     a->bw = a->bh = 0;
 }
 
+/* Where the strip's top is in the window's inside: sy below 0 counts from
+ * its bottom, so a status bar stays at the bottom as the window is sized */
+static int strip_y(const olui_amiga *a)
+{
+    const struct Window *w = a->win;
+    int all = w->Height - w->BorderTop - w->BorderBottom;
+    if (a->sy >= 0) return a->sy;
+    return all + a->sy > 0 ? all + a->sy : 0;
+}
+
 /* The size of what olui has: the window's inside, or the strip of it */
 static int inner_w(const olui_amiga *a)
 {
@@ -538,7 +548,7 @@ static int inner_w(const olui_amiga *a)
 static int inner_h(const olui_amiga *a)
 {
     const struct Window *w = a->win;
-    int all = w->Height - w->BorderTop - w->BorderBottom - a->sy;
+    int all = w->Height - w->BorderTop - w->BorderBottom - strip_y(a);
     return a->strip && a->sh > 0 && a->sh < all ? a->sh : all;
 }
 
@@ -570,7 +580,7 @@ static void show(olui_amiga *a, const olui_rect *area)
     struct RegionRectangle *rr;
     struct Rectangle rect;
     olui_rect all;
-    int i, x0 = a->win->BorderLeft + a->sx, y0 = a->win->BorderTop + a->sy;
+    int i, x0 = a->win->BorderLeft + a->sx, y0 = a->win->BorderTop + strip_y(a);
     int seen = 0;
     if (!a->bm) return;
     if (!area) {
@@ -679,20 +689,25 @@ void olui_amiga_free(olui_amiga *a)
     /* cybergraphics.library stays open with the program: the next window may want it */
 }
 
-void olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h)
+int olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h)
 {
-    if (!a) return;
-    a->strip = x > 0 || y > 0 || w > 0 || h > 0;
+    if (!a) return 0;
+    a->strip = x > 0 || y != 0 || w > 0 || h > 0;
     a->sx = x > 0 ? x : 0;
-    a->sy = y > 0 ? y : 0;
+    a->sy = y;
     a->sw = w > 0 ? w : 0;
     a->sh = h > 0 ? h : 0;
     a->inside = a->held = 0;
+    /* laid out already: again at the strip's size, so the old buffer isn't used for the mouse or drawing */
+    if (a->bm) olui_amiga_layout(a);
+    return 1;
 }
 
-void olui_amiga_keys(olui_amiga *a, int keys)
+int olui_amiga_keys(olui_amiga *a, int keys)
 {
-    if (a) a->keys = keys;
+    if (!a) return 0;
+    a->keys = keys;
+    return 1;
 }
 
 int olui_amiga_own(olui_amiga *a, const olui_el *el, olui_amiga_own_fn fn, void *userdata)
@@ -832,7 +847,7 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
     unsigned shift, command;
     if (!a || !m) return OLUI_AMIGA_NONE;
     x = m->MouseX - a->win->BorderLeft - a->sx;
-    y = m->MouseY - a->win->BorderTop - a->sy;
+    y = m->MouseY - a->win->BorderTop - strip_y(a);
     shift = (m->Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT)) ? OLUI_QUAL_SHIFT : 0;
     command = (m->Qualifier & (IEQUALIFIER_LCOMMAND | IEQUALIFIER_RCOMMAND)) ? OLUI_QUAL_COMMAND : 0;
     alt = (m->Qualifier & (IEQUALIFIER_LALT | IEQUALIFIER_RALT)) != 0;
@@ -861,7 +876,10 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
             if (m->Code == SELECTDOWN) {
                 if (!in) {
                     /* a press in the program's part takes the keys from olui's widgets */
-                    if (a->keys == OLUI_AMIGA_KEYS_FOCUS) olui_focus(a->ui, NULL);
+                    if (a->keys == OLUI_AMIGA_KEYS_FOCUS && olui_focused(a->ui)) {
+                        olui_focus(a->ui, NULL);
+                        olui_amiga_draw(a);     /* the focus ring and the cursor off now */
+                    }
                     return OLUI_AMIGA_NONE;
                 }
                 a->held = 1;
@@ -930,6 +948,8 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
     case IDCMP_INTUITICKS:
         /* about ten a second while the window is active: tooltips, a held arrow button */
         used = olui_tick(a->ui, 100);
+        /* in a strip the ticks are the program's too */
+        if (a->strip) used = 0;
         break;
     case IDCMP_RAWKEY:
         switch (m->Code) {
