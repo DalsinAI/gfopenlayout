@@ -619,6 +619,34 @@ static void test_lists_menus_windows(void)
     olui_draw(ui, NULL, log_op, l);
     op = find_op(l, 0, OLUI_DRAW_TEXT, "files");
     CHECK(op && !strcmp(op->text, "File 3"));
+    /* the scroll bar down its right: a thumb dragged, the track paged; no row chosen */
+    {
+        int32_t bx = r.x + r.w - 1 - 6, top = r.y + 1, ty, cur = olui_vlist_current(v);
+        olui_set_scroll(ui, v, 0);
+        l->n = 0;
+        olui_draw(ui, NULL, log_op, l);
+        for (i = 0, ty = -1; i < l->n; ++i)
+            if (l->r[i].kind == OLUI_DRAW_BOX && !strcmp(l->r[i].id, "files") && l->r[i].box.w == 8) ty = l->r[i].box.y;
+        CHECK(ty == top + 1);                                   /* the thumb at the top */
+        CHECK(olui_mouse(ui, bx, top + 5, OLUI_MOUSE_DOWN));
+        CHECK(olui_mouse(ui, bx, top + 5 + 198, OLUI_MOUSE_MOVE) && olui_get_scroll(v) == 5000 * rh - 198);
+        CHECK(olui_mouse(ui, bx, top + 5 + 99, OLUI_MOUSE_MOVE) && olui_get_scroll(v) > 0 &&
+              olui_get_scroll(v) < 5000 * rh - 198);
+        olui_mouse(ui, bx, top + 5 + 99, OLUI_MOUSE_UP);
+        olui_set_scroll(ui, v, 0);
+        CHECK(olui_mouse(ui, bx, top + 150, OLUI_MOUSE_DOWN) && olui_get_scroll(v) == 198 - rh);   /* a page */
+        olui_mouse(ui, bx, top + 150, OLUI_MOUSE_UP);
+        CHECK(olui_vlist_current(v) == cur);
+        /* the rows stop short of the bar */
+        l->n = 0;
+        olui_draw(ui, NULL, log_op, l);
+        for (i = 0, n = 0; i < l->n; ++i)
+            if (l->r[i].kind == OLUI_DRAW_BOX && !strcmp(l->r[i].id, "files") && l->r[i].box.h == rh &&
+                l->r[i].box.x + l->r[i].box.w > r.x + r.w - 1 - 12)
+                ++n;
+        CHECK(n == 0);
+        olui_set_scroll(ui, v, 3 * rh);
+    }
     /* fewer rows: the selection of those that stay kept */
     olui_vlist_select(ui, v, 7, 1);
     olui_vlist_select(ui, v, 12, 1);
