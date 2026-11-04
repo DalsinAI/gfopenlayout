@@ -115,6 +115,8 @@ struct olui {
     int tip_x, tip_y;           /* the pointer */
     olui_rect tip_rect;
     olui_el *spin;              /* a number field's arrow button held */
+    olui_el *vbar_el;           /* a vlist whose scroll bar's thumb is dragged */
+    int32_t vbar_grab;          /* the pointer from the thumb's top */
     int spin_dir, spin_wait;
     /* 0.4: selecting and dragging */
     unsigned qual;              /* the qualifiers of the mouse event being handled */
@@ -446,7 +448,7 @@ int olui_load(olui *ui, const char *markup, const char *css, char *err, size_t e
     olui_el_free(ui->root);
     ui->root = root;
     ui->focus = ui->hover = ui->pressed = NULL;
-    ui->popup = ui->drag = ui->label_down = ui->tip_for = ui->spin = NULL;
+    ui->popup = ui->drag = ui->label_down = ui->tip_for = ui->spin = ui->vbar_el = NULL;
     ui->desk_down = ui->collapse = ui->drop = ui->band_scope = NULL;
     ui->ndragged = 0;
     ui->tip_on = 0;
@@ -2518,6 +2520,67 @@ static void vlist_press(olui *ui, olui_el *v, int y, int what)
     vrow_choose(ui, v, row, (ui->qual & OLUI_QUAL_SHIFT) != 0);
 }
 
+/* a of 255 parts of fg over bg, opaque */
+static uint32_t mix_argb(uint32_t fg, uint32_t bg, unsigned a)
+{
+    uint32_t out = 0xff000000u;
+    int sh;
+    for (sh = 0; sh < 24; sh += 8) {
+        unsigned f = (fg >> sh) & 255, g = (bg >> sh) & 255;
+        out |= (uint32_t)((f * a + g * (255 - a)) / 255) << sh;
+    }
+    return out;
+}
+
+/* a vlist's scroll bar: a track down its right, its rows beside it,
+ * and a thumb the pointer drags; a press on the track pages. The track and
+ * thumb in the inner box in; 0 when the list doesn't scroll. */
+static int vbar(olui *ui, olui_el *v, olui_rect in, olui_rect *track, olui_rect *thumb)
+{
+    int32_t total = (int32_t)v->vrows * vrow_h(ui, v), most = total - in.h, least = px(ui, PX(16));
+    if (most <= 0 || in.h <= 0) return 0;
+    track->w = px(ui, PX(12));
+    if (track->w > in.w / 2) track->w = in.w / 2;
+    track->x = in.x + in.w - track->w;
+    track->y = in.y;
+    track->h = in.h;
+    *thumb = *track;
+    thumb->h = (int32_t)((int64_t)in.h * in.h / total);
+    if (thumb->h < least) thumb->h = least;
+    if (thumb->h > in.h) thumb->h = in.h;
+    thumb->y = in.y + (in.h > thumb->h ? (int32_t)((int64_t)(in.h - thumb->h) * v->scroll / most) : 0);
+    return 1;
+}
+
+/* The thumb's top at y: the list scrolled to match */
+static void vbar_to(olui *ui, olui_el *v, int y)
+{
+    olui_rect in = inside(ui, v, rect_of(ui, v)), track, thumb;
+    int32_t room;
+    if (!vbar(ui, v, in, &track, &thumb)) return;
+    room = track.h - thumb.h;
+    if (room <= 0) return;
+    scroll_set(ui, v, (int32_t)((int64_t)(y - ui->vbar_grab - track.y) * scroll_most(ui, v) / room));
+}
+
+/* A press on the bar: the thumb taken, or a page up or down. 0 when it missed the bar. */
+static int vbar_press(olui *ui, olui_el *v, int x, int y)
+{
+    olui_rect in = inside(ui, v, rect_of(ui, v)), track, thumb;
+    int32_t page;
+    if (!vbar(ui, v, in, &track, &thumb) || !in_rect(track, x, y)) return 0;
+    if (in_rect(thumb, x, y)) {
+        ui->vbar_el = v;
+        ui->vbar_grab = y - thumb.y;
+        damage_el(ui, v);
+        return 1;
+    }
+    page = in.h - vrow_h(ui, v);
+    if (page < vrow_h(ui, v)) page = vrow_h(ui, v);
+    scroll_set(ui, v, v->scroll + (y < thumb.y ? -page : page));
+    return 1;
+}
+
 static int vlist_key(olui *ui, olui_el *v, unsigned code)
 {
     olui_rect in;
@@ -2874,6 +2937,10 @@ static int mouse_in(olui *ui, int x, int y, int what)
     switch (what) {
     case OLUI_MOUSE_MOVE: {
         olui_el *tip = tip_target(under);
+        if (ui->vbar_el) {
+            vbar_to(ui, ui->vbar_el, y);
+            return 1;
+        }
         if (tip != ui->tip_for) {
             tip_hide(ui, 0);
             ui->tip_for = tip;
@@ -2963,7 +3030,7 @@ static int mouse_in(olui *ui, int x, int y, int what)
                          item_index(ui, list, w), 0);
             }
         } else if (w->kind == K_VLIST) {
-            vlist_press(ui, w, y, what);
+            if (!vbar_press(ui, w, x, y)) vlist_press(ui, w, y, what);
         } else if (w->kind != K_LIST) {
             ui->pressed = w;
             set_state(ui, w, S_ACTIVE, 1);
@@ -2971,6 +3038,11 @@ static int mouse_in(olui *ui, int x, int y, int what)
         }
         return 1;
     case OLUI_MOUSE_UP:
+        if (ui->vbar_el) {
+            damage_el(ui, ui->vbar_el);
+            ui->vbar_el = NULL;
+            return 1;
+        }
         if (ui->spin) {
             damage_el(ui, ui->spin);
             ui->spin = NULL;
@@ -3853,11 +3925,13 @@ static void draw_vlist(drawer *d, const olui_el *el, olui_rect r, const olui_rec
 {
     olui *ui = d->ui;
     olui_el *v = (olui_el *)el;
-    olui_rect in = inside(ui, v, r), view;
+    olui_rect in = inside(ui, v, r), view, track, thumb;
     olui_cs plain, chosen;
-    int32_t rh, line;
-    int first, last, i, c;
+    int32_t rh, line, rows_w;
+    int first, last, i, c, bar;
     if (!v->vrows) return;
+    bar = vbar(ui, v, in, &track, &thumb);
+    rows_w = bar ? in.w - track.w : in.w;
     view = outer ? cut(in, *outer) : in;
     if (view.w <= 0 || view.h <= 0) return;
     rh = vrow_h(ui, v);
@@ -3876,7 +3950,7 @@ static void draw_vlist(drawer *d, const olui_el *el, olui_rect r, const olui_rec
         int32_t x, right;
         row.x = in.x;
         row.y = in.y + (int32_t)i * rh - v->scroll;
-        row.w = in.w;
+        row.w = rows_w;
         row.h = rh;
         if (!crosses(row, d->area)) continue;
         out_box(d, v, row, cs);
@@ -3914,7 +3988,17 @@ static void draw_vlist(drawer *d, const olui_el *el, olui_rect r, const olui_rec
         out_clip(d, &view);
     }
     out_clip(d, outer);
-    scroll_bar(d, v, in, (int32_t)v->vrows * rh, v->scroll);
+    if (bar) {
+        /* the text's colour over the list's, mixed here (the Amiga glue doesn't
+         * blend): faint for the track, stronger for the thumb, more when held */
+        uint32_t bg = (v->cs.ol.background >> 24) >= 0x80 ? v->cs.ol.background : 0xffffffffu;
+        out_flat(d, v, track, mix_argb(plain.ol.foreground, bg, 40), 0, 0, 0);
+        thumb.x += 2;
+        thumb.w -= 4;
+        thumb.y += 1;
+        thumb.h -= 2;
+        out_flat(d, v, thumb, mix_argb(plain.ol.foreground, bg, ui->vbar_el == v ? 200 : 140), 0, 0, 3);
+    }
 }
 
 /* 0.4: an element with its opacity, and its outline over what it holds */
@@ -4454,6 +4538,7 @@ static void forget(olui *ui, olui_el *el)
     if (ui->drag == el) ui->drag = NULL;
     if (ui->label_down == el) ui->label_down = NULL;
     if (ui->spin == el) ui->spin = NULL;
+    if (ui->vbar_el == el) ui->vbar_el = NULL;
     if (ui->tip_for == el) {
         ui->tip_for = NULL;
         ui->tip_on = 0;
