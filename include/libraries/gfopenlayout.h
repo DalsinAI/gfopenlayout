@@ -44,6 +44,12 @@
                                                (OL_BOX_FIT_CONTENT). Through
                                                libgfopenlayout_link.a a version 11 call on
                                                version 10 does nothing and returns 0. */
+#define OPENLAYOUTLIB_TOOLKIT_VERSION 12    /* what a toolkit over the UI needs (GFOpenLayout UI
+                                               0.5, the wxWidgets port): OLUI_Repaint (a
+                                               program's picture drawn again, all or part) and
+                                               OLUI_Popup (the pop-up open over the window).
+                                               Through libgfopenlayout_link.a a version 12 call
+                                               on version 11 does nothing and returns 0. */
 
 struct OLNodeAppend {
     ol_document *document;

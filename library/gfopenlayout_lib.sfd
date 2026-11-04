@@ -177,5 +177,8 @@ olui * OLUI_NewSharing(olui *from)(a0)
 * version 11: the Amiga glue in a strip of a window
 int OLUI_AmigaStrip(olui_amiga *a, int x, int y, int w, int h)(a0,d0,d1,d2,d3)
 int OLUI_AmigaKeys(olui_amiga *a, int keys)(a0,d0)
+* version 12: what a toolkit over the UI needs (GFOpenLayout UI 0.5)
+void OLUI_Repaint(olui *ui, olui_el *el, const olui_rect *part)(a0,a1,a2)
+olui_el * OLUI_Popup(const olui *ui)(a0)
 * ---- end of version 10 ----
 ==end

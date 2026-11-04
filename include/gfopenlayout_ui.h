@@ -26,7 +26,7 @@
 extern "C" {
 #endif
 
-#define OLUI_VERSION "0.4"
+#define OLUI_VERSION "0.5"
 
 typedef struct olui olui;
 typedef struct olui_el olui_el;
@@ -56,7 +56,7 @@ enum {
                            contextmenu attribute opened (NULL: none; the handler may open one) */
 };
 
-typedef struct {
+typedef struct olui_event {
     int type;           /* OLUI_... */
     olui_el *el;        /* the widget: the button, field, list, tabs */
     const char *id;     /* its id attribute ("" when it has none) */
@@ -133,7 +133,7 @@ enum {
 #define OLUI_MAX_STOPS 4
 #define OLUI_MAX_SHADOWS 4              /* a text's shadows (text-shadow) drawn at most */
 
-typedef struct {
+typedef struct olui_rect {
     int32_t x, y, w, h;
 } olui_rect;
 
@@ -447,6 +447,15 @@ olui *olui_new_sharing(olui *from);
 olui_el *olui_parent(const olui_el *el);
 olui_el *olui_first_child(const olui_el *el);
 olui_el *olui_next(const olui_el *el);
+
+/* Drawing again (0.5): el is drawn again at the next olui_draw, all of it
+ * (part NULL) or the part of it in part (the window's inner box's pixels):
+ * for a picture the program draws (an img) that changed. */
+void olui_repaint(olui *ui, olui_el *el, const olui_rect *part);
+
+/* 0.5: the pop-up open over the window (a select's list, a menu), or NULL:
+ * while there is one, the program gives olui the pointer wherever it is */
+olui_el *olui_popup(const olui *ui);
 
 /* ---- The theme ------------------------------------------------------------------ */
 

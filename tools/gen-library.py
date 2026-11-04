@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gfopenlayout.library's version 10 and 11 calls, made from the C API itself.
+"""gfopenlayout.library's version 10, 11 and 12 calls, made from the C API itself.
 
 Version 10 folds GFCSS's document calls, GFOpenLayout UI and its Amiga glue
 into gfopenlayout.library. The calls are the C functions as the headers
@@ -24,7 +24,8 @@ Version 11 (GFOpenLayout UI 0.4) adds the calls a desktop needs after version
 10's, the same way. Through the link library, a version 11 call on a
 version 10 library does nothing and returns 0 (NULL), so a program built
 with them still starts on a ROM with version 10 and can check
-OpenLayoutBase->lib_Version.
+OpenLayoutBase->lib_Version. Version 12 (GFOpenLayout UI 0.5) adds
+olui_repaint and olui_popup the same way.
 
 Run it after a header's calls change; --check says whether the files are
 as it would write them (the Makefile's test runs that).
@@ -67,15 +68,20 @@ olui_next_selected olui_select_all olui_drag_item olui_vlist_set olui_vlist_rows
 olui_vlist_select olui_vlist_current olui_vlist_set_current olui_menu_open olui_new_sharing""".split()
 # and what a program needs to give the glue only a strip of its window (the browser's toolbar)
 AMIGA11 = """olui_amiga_strip olui_amiga_keys""".split()
+# Version 12 (GFOpenLayout UI 0.5): what a toolkit over the UI needs (the
+# wxWidgets port): drawing a program's picture again, the open pop-up
+UI12 = """olui_repaint olui_popup""".split()
 CALLS = ([("core", n) for n in CORE] + [("ui", n) for n in UI] + [("amiga", n) for n in AMIGA] +
-         [("ui11", n) for n in UI11] + [("amiga11", n) for n in AMIGA11])
+         [("ui11", n) for n in UI11] + [("amiga11", n) for n in AMIGA11] +
+         [("ui12", n) for n in UI12])
 # the library version each part's calls came in: a call of a later one is
 # not called through an older library (the link library's side says so)
-VERSION_OF = {"core": 10, "ui": 10, "amiga": 10, "ui11": 11, "amiga11": 11}
+VERSION_OF = {"core": 10, "ui": 10, "amiga": 10, "ui11": 11, "amiga11": 11, "ui12": 12}
 TITLES = {"core": "version 10: GFCSS in documents", "ui": "version 10: GFOpenLayout UI",
           "amiga": "version 10: GFOpenLayout UI's Amiga glue",
           "ui11": "version 11: what a desktop needs (GFOpenLayout UI 0.4)",
-          "amiga11": "version 11: the Amiga glue in a strip of a window"}
+          "amiga11": "version 11: the Amiga glue in a strip of a window",
+          "ui12": "version 12: what a toolkit over the UI needs (GFOpenLayout UI 0.5)"}
 
 # the program's side, where a call's plain one won't do: olui_theme_css's
 # string is the program's to free(), so it is copied out of the library's
@@ -95,7 +101,7 @@ LINK_BODY = {
 
 HEADERS = {"core": "include/gfopenlayout.h", "ui": "include/gfopenlayout_ui.h",
            "amiga": "include/gfopenlayout_ui_amiga.h", "ui11": "include/gfopenlayout_ui.h",
-           "amiga11": "include/gfopenlayout_ui_amiga.h"}
+           "amiga11": "include/gfopenlayout_ui_amiga.h", "ui12": "include/gfopenlayout_ui.h"}
 
 
 def lib_name(c):
