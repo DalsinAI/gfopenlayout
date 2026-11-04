@@ -95,7 +95,8 @@ int olui_amiga_keys(olui_amiga *a, int keys);
  * every key, so a program that needs them checks. With KEYS_FOCUS, Tab
  * can't bring the focus into olui's widgets (the keys are the program's
  * then): a click, or the program's olui_focus, gives it. IntuiTicks in a
- * strip are always OLUI_AMIGA_NONE, so the program has them too.
+ * strip are always OLUI_AMIGA_NONE, so the program has them too; what a
+ * tick changes in the strip is drawn before it comes back.
  * A window opened without IDCMP_VANILLAKEY (to have every key as a RAWKEY)
  * works too: the keymap gives olui the characters. */
 
