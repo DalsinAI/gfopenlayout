@@ -247,8 +247,10 @@ window itself, such as the browser with its page, gives olui only a strip:
 `olui_amiga_strip(a, x, y, w, h)` from the window's inside, `w` or `h` 0 to
 its edge, so the strip follows the window's size (`0, 0, 0, 40` is a
 toolbar 40 pixels tall); `y` below 0 counts from the bottom, so `0, -20, 0,
-0` is a status bar that stays at the bottom. Called after the first layout
-it lays out again at once. Both calls return 1, and 0 from a version 10
+0` is a status bar that stays at the bottom. Set the strip before the
+first `olui_amiga_layout`: that call draws all olui has, the whole window
+when it has no strip yet. Set again later, the strip lays out again at
+once. Both calls return 1, and 0 from a version 10
 library, where olui would still have the whole window: a program that
 needs them checks. The buffer is then the strip's size, not the
 window's. Pop-ups (a select's list, a menu, a tooltip) are drawn inside the

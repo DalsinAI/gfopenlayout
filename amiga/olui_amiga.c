@@ -67,6 +67,7 @@ static struct Library *OluiKeymapBase;
 typedef struct {
     ULONG rgb;
     LONG pen;
+    int owned;                  /* ObtainBestPen's, to release; else FindColor's nearest */
 } pen_slot;
 
 typedef struct {
@@ -130,17 +131,25 @@ static LONG pen_for(olui_amiga *a, ULONG argb)
     LONG pen;
     for (i = 0; i < a->npens; ++i)
         if (a->pens[i].rgb == rgb) return a->pens[i].pen;
-    pen = ObtainBestPen(a->scr->ViewPort.ColorMap, ((rgb >> 16) & 255) * 0x01010101UL,
-                        ((rgb >> 8) & 255) * 0x01010101UL, (rgb & 255) * 0x01010101UL,
-                        OBP_Precision, PRECISION_GUI, TAG_DONE);
+    struct ColorMap *cm = a->scr->ViewPort.ColorMap;
+    ULONG r = ((rgb >> 16) & 255) * 0x01010101UL, g = ((rgb >> 8) & 255) * 0x01010101UL,
+          b = (rgb & 255) * 0x01010101UL;
+    int owned = 0;
+    pen = -1;
+    /* a pen of its own while there's room to keep it, to release when the window goes */
+    if (a->npens < MAX_PENS) {
+        pen = ObtainBestPen(cm, r, g, b, OBP_Precision, PRECISION_GUI, TAG_DONE);
+        owned = pen >= 0;
+    }
+    /* none free, or the table full: the nearest colour the screen has, which is never
+     * released, so it can't change under what was drawn with it */
+    if (pen < 0) pen = FindColor(cm, r, g, b, -1);
     if (pen < 0) pen = 1;
-    else if (a->npens < MAX_PENS) {
+    if (a->npens < MAX_PENS) {
         a->pens[a->npens].rgb = rgb;
         a->pens[a->npens].pen = pen;
+        a->pens[a->npens].owned = owned;
         ++a->npens;
-    } else {
-        /* full: this colour stays the pen until the window closes (not kept to release) */
-        ReleasePen(a->scr->ViewPort.ColorMap, pen);
     }
     return pen;
 }
@@ -684,7 +693,8 @@ void olui_amiga_free(olui_amiga *a)
     free_buffer(a);
     if (a->region) DisposeRegion(a->region);
     for (i = 0; i < a->nfonts; ++i) CloseFont(a->fonts[i].tf);
-    for (i = 0; i < a->npens; ++i) ReleasePen(a->scr->ViewPort.ColorMap, a->pens[i].pen);
+    for (i = 0; i < a->npens; ++i)
+        if (a->pens[i].owned) ReleasePen(a->scr->ViewPort.ColorMap, a->pens[i].pen);
     FreeVec(a);
     /* cybergraphics.library stays open with the program: the next window may want it */
 }
