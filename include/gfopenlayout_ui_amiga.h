@@ -71,8 +71,9 @@ void olui_amiga_fonts(olui_amiga *a, const char *font, const char *mono);
 /* olui in a strip of the window (a toolbar, a tab strip), x,y from the
  * window's inside, w or h 0 to its edge, so it follows the window's size;
  * y below 0 from the inside's bottom (-20, h 0: a status bar 20 pixels
- * tall that stays at the bottom); all 0: the whole inside again. Called
- * after olui_amiga_layout, it lays out again at once. The buffer is the
+ * tall that stays at the bottom); all 0: the whole inside again. Set it
+ * before the first olui_amiga_layout, which otherwise lays out and draws
+ * the whole window; set again later, it lays out again at once. The buffer is the
  * strip's size. Pop-ups (a select's list, a menu, a tooltip) are drawn in
  * the strip too, so a strip a line tall has no room for them: open those
  * in a window of the program's own. olui then
