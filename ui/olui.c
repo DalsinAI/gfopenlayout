@@ -2333,6 +2333,30 @@ static void damage_el(olui *ui, olui_el *el)
     damage(ui, r);
 }
 
+/* An element drawn again at the next olui_draw: a picture the program
+ * draws changed (all of it, or part, in the window's pixels) */
+void olui_repaint(olui *ui, olui_el *el, const olui_rect *part)
+{
+    int32_t dy;
+    olui_rect r, clip;
+    int clipped;
+    if (!ui || !el) return;
+    if (!part) {
+        damage_el(ui, el);
+        return;
+    }
+    if (ui->stale || !el->node) {
+        ui->damaged = 1;
+        return;
+    }
+    if (!visible(el)) return;
+    r = rect_of_node(ui, el->node);
+    clipped = view_of(ui, el, &dy, &clip);
+    r.y -= dy;
+    if (clipped) r = cut(r, clip);
+    damage(ui, cut(*part, r));
+}
+
 /* How far a scrolling thing scrolls at most, pixels */
 static int32_t vrow_h(olui *ui, olui_el *v);
 
@@ -4722,6 +4746,11 @@ void olui_select_clear(olui *ui, olui_el *select)
     select->ivalue = -1;
     select->scroll = 0;
     touch(ui);
+}
+
+olui_el *olui_popup(const olui *ui)
+{
+    return ui ? ui->popup : NULL;
 }
 
 int olui_select_is_open(const olui *ui, const olui_el *select)

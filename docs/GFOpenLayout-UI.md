@@ -383,6 +383,20 @@ glue: its root (`window{background-image:url(1)}`) draws the program's
 picture in the window's box, the icons over it, and only what changed is
 drawn again.
 
+## Toolkits over the UI (0.5)
+
+0.5 (in `gfopenlayout.library` 12) has two calls a toolkit that puts its
+own widgets in olui windows needs (gfopenwx, the wxWidgets port):
+
+- `olui_repaint(ui, el, part)`: `el` is drawn again at the next `olui_draw`,
+  all of it (`part` NULL) or the part of it in `part`, in the window's
+  pixels (cut to the element and to the box it scrolls in). For a picture the
+  program draws (an `img`) that changed: nothing else is laid out or drawn.
+- `olui_popup(ui)`: the pop-up open over the window (a select's list, a
+  menu), or NULL. While there is one the program gives olui the pointer
+  wherever it is, even over the program's own widgets, so the pop-up gets
+  the click that closes it.
+
 ## GFOpenLayout 0.8
 
 What the UI needed in GFOpenLayout itself, for any program:

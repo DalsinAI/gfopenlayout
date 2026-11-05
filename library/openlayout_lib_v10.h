@@ -668,8 +668,22 @@ static int OLUI_AmigaKeys(REG(a0, olui_amiga * a), REG(d0, int keys), REG(a6, st
     return olui_amiga_keys(a, keys);
 }
 
+/* ---- what a toolkit over the UI needs (GFOpenLayout UI 0.5) ---- */
+
+static void OLUI_Repaint(REG(a0, olui * ui), REG(a1, olui_el * el), REG(a2, const olui_rect * part), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    olui_repaint(ui, el, part);
+}
+
+static olui_el * OLUI_Popup(REG(a0, const olui * ui), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_popup(ui);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x3d8
+#define OL_V10_LAST_BIAS 0x3e4
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -708,4 +722,4 @@ static int OLUI_AmigaKeys(REG(a0, olui_amiga * a), REG(d0, int keys), REG(a6, st
     (APTR)OLUI_VlistSet, (APTR)OLUI_VlistRows, (APTR)OLUI_VlistSelected, \
     (APTR)OLUI_VlistSelect, (APTR)OLUI_VlistCurrent, (APTR)OLUI_VlistSetCurrent, \
     (APTR)OLUI_MenuOpen, (APTR)OLUI_NewSharing, (APTR)OLUI_AmigaStrip, \
-    (APTR)OLUI_AmigaKeys
+    (APTR)OLUI_AmigaKeys, (APTR)OLUI_Repaint, (APTR)OLUI_Popup

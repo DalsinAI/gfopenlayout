@@ -584,3 +584,15 @@ int olui_amiga_keys(olui_amiga *a, int keys)
     if (OpenLayoutBase->lib_Version < 11) return 0;
     return OLUI_AmigaKeys(a, keys);
 }
+
+void olui_repaint(olui *ui, olui_el *el, const olui_rect *part)
+{
+    if (OpenLayoutBase->lib_Version < 12) return;
+    OLUI_Repaint(ui, el, part);
+}
+
+olui_el * olui_popup(const olui *ui)
+{
+    if (OpenLayoutBase->lib_Version < 12) return 0;
+    return OLUI_Popup(ui);
+}

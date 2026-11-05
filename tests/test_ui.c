@@ -496,6 +496,20 @@ static int frames(void)
         CHECK(olui_box(plain, olui_find(plain, "ok"), &b));
         CHECK(olui_mouse(plain, b.x + 2, b.y + 2, OLUI_MOUSE_MOVE) && !olui_damaged(plain, &r));
         CHECK(!olui_mouse(plain, 3, FH - 2, OLUI_MOUSE_MOVE) && !olui_damaged(plain, &r));
+        /* olui_repaint: the part asked for, inside the element, and no more */
+        {
+            olui_rect part;
+            part.x = b.x + 1; part.y = b.y + 1; part.w = 3; part.h = 2;
+            olui_repaint(plain, olui_find(plain, "ok"), &part);
+            CHECK(olui_damaged(plain, &r) && r.x == b.x + 1 && r.y == b.y + 1 && r.w == 3 && r.h == 2);
+            frame_draw(plain, full, NULL);
+            part.x = b.x - 50; part.y = b.y - 50; part.w = 10; part.h = 10;   /* outside it: nothing */
+            olui_repaint(plain, olui_find(plain, "ok"), &part);
+            CHECK(!olui_damaged(plain, &r));
+            olui_repaint(plain, olui_find(plain, "ok"), NULL);                 /* all of it */
+            CHECK(olui_damaged(plain, &r) && r.x <= b.x && r.y <= b.y && r.x + r.w >= b.x + b.w && r.y + r.h >= b.y + b.h);
+            frame_draw(plain, full, NULL);
+        }
         olui_free(plain);
     }
     printf("frames: %d partial draws, at most %ld ops each, each the same as a full draw\n", partial, most);
@@ -1001,8 +1015,9 @@ static int widgets(void)
         big = olui_find(u2, "big");
         hid = olui_find(u2, "hid");
         CHECK(olui_select_count(big) == 30 && olui_select_index(big) == 1);   /* Zero's group is disabled */
+        CHECK(!olui_popup(u2));
         olui_select_open(u2, big, 1);
-        CHECK(olui_select_is_open(u2, big));
+        CHECK(olui_select_is_open(u2, big) && olui_popup(u2) == big);
         CHECK(olui_key(u2, OLUI_KEY_END, 0) && olui_key(u2, OLUI_KEY_RETURN, 0));
         CHECK(olui_select_index(big) == 29 && !strcmp(w_last_value, "v29"));
         olui_select_open(u2, big, 1);
@@ -1021,7 +1036,7 @@ static int widgets(void)
         l2 = seek(u2, "A26", NULL);
         CHECK(l2.found);                                /* scrolled to it */
         olui_select_open(u2, big, 0);
-        CHECK(!olui_select_is_open(u2, big) && olui_select_index(big) == 28);
+        CHECK(!olui_select_is_open(u2, big) && olui_select_index(big) == 28 && !olui_popup(u2));
         olui_select_open(u2, big, 1);
         olui_set_disabled(u2, big, 1);                  /* disabled while open: it closes */
         CHECK(olui_layout(u2, 300, 400) && !olui_select_is_open(u2, big));

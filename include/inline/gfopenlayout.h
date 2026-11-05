@@ -176,6 +176,9 @@
 /* version 11: the Amiga glue in a strip of a window */
 #define OLUI_AmigaStrip(a,x,y,w,h) LP5(0x3d2, int, OLUI_AmigaStrip, olui_amiga *, (a), a0, int, (x), d0, int, (y), d1, int, (w), d2, int, (h), d3, , OPENLAYOUT_BASE_NAME)
 #define OLUI_AmigaKeys(a,keys) LP2(0x3d8, int, OLUI_AmigaKeys, olui_amiga *, (a), a0, int, (keys), d0, , OPENLAYOUT_BASE_NAME)
+/* version 12: what a toolkit over the UI needs (GFOpenLayout UI 0.5) */
+#define OLUI_Repaint(ui,el,part) LP3NR(0x3de, OLUI_Repaint, olui *, (ui), a0, olui_el *, (el), a1, const olui_rect *, (part), a2, , OPENLAYOUT_BASE_NAME)
+#define OLUI_Popup(ui) LP1(0x3e4, olui_el *, OLUI_Popup, const olui *, (ui), a0, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif
