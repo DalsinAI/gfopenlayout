@@ -1570,7 +1570,7 @@ static int ta_wrap(olui *ui, olui_el *el)
     int32_t line;
     olui_rect v = ta_view(ui, el, rect_of_node(ui, el->node), &line);
     if (el->lines && el->wrap_rev == el->text_rev && el->wrap_room == v.w &&
-        el->wrap_font == el->cs.ol.font_size + (ol_unit)(el->cs.ol.text_flags & (OL_TEXT_BOLD | OL_TEXT_MONO)))
+        el->wrap_font == ((el->cs.ol.font_size + (ol_unit)(el->cs.ol.text_flags & (OL_TEXT_BOLD | OL_TEXT_MONO))) ^ (ol_unit)(OL_TEXT_FONT_OF(el->cs.ol.text_flags) << 22)))
         return (int32_t)el->nlines * line > v.h;
     if (!ta_break(ui, el, v.w)) {
         el->nlines = el->lines ? 1 : 0;
@@ -1583,7 +1583,7 @@ static int ta_wrap(olui *ui, olui_el *el)
     }
     el->wrap_rev = el->text_rev;
     el->wrap_room = v.w;
-    el->wrap_font = el->cs.ol.font_size + (ol_unit)(el->cs.ol.text_flags & (OL_TEXT_BOLD | OL_TEXT_MONO));
+    el->wrap_font = ((el->cs.ol.font_size + (ol_unit)(el->cs.ol.text_flags & (OL_TEXT_BOLD | OL_TEXT_MONO))) ^ (ol_unit)(OL_TEXT_FONT_OF(el->cs.ol.text_flags) << 22));
     return (int32_t)el->nlines * line > v.h;
 }
 

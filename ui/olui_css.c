@@ -365,6 +365,48 @@ static int gradient(const gfcss_text *t, olui_cs *cs)
     return 1;
 }
 
+/* Named font families (font-family's first name, when it isn't a generic):
+ * a number for each, 1 up, carried in text_flags' top 16 bits
+ * (OL_TEXT_FONT), so the measure callback and the renderer open that face.
+ * The numbers are for the program's life; 0 is the default face. */
+#define OLUI_FAMILIES 64
+static char olui_family_names[OLUI_FAMILIES][48];
+static unsigned olui_nfamilies;
+
+static int olui_name_ieq(const char *a, const char *b)
+{
+    for (; *a && *b; ++a, ++b) {
+        char x = *a, y = *b;
+        if (x >= 'A' && x <= 'Z') x = (char)(x + 32);
+        if (y >= 'A' && y <= 'Z') y = (char)(y + 32);
+        if (x != y) return 0;
+    }
+    return *a == *b;
+}
+
+static unsigned olui_family_id(const gfcss_text *t)
+{
+    static const char *const generic[] = { "monospace", "sans-serif", "serif", "cursive", "fantasy",
+                                           "system-ui", "ui-monospace", "ui-sans-serif", "ui-serif", "math" };
+    char name[48];
+    size_t n, k;
+    if (!t->text || !t->length) return 0;
+    n = gfcss_text_copy(t, name, sizeof(name));
+    if (n == 0 || n >= sizeof(name)) return 0;
+    for (k = 0; k < sizeof(generic) / sizeof(generic[0]); ++k)
+        if (olui_name_ieq(name, generic[k])) return 0;
+    for (k = 0; k < olui_nfamilies; ++k)
+        if (olui_name_ieq(name, olui_family_names[k])) return (unsigned)k + 1;
+    if (olui_nfamilies == OLUI_FAMILIES) return 0;
+    memcpy(olui_family_names[olui_nfamilies], name, n + 1);
+    return ++olui_nfamilies;
+}
+
+const char *olui_family_name(unsigned id)
+{
+    return id >= 1 && id <= olui_nfamilies ? olui_family_names[id - 1] : NULL;
+}
+
 static ol_unit units_of(const gfcss_length *l)
 {
     return l->kind == GFCSS_LEN ? l->units : 0;     /* a percentage of what? the UI leaves it out */
@@ -459,6 +501,8 @@ static void from_computed(olui_sheet *s, const gfcss_computed *c, const olui_cs 
     else flags &= ~(uint32_t)OL_TEXT_ITALIC;
     if (c->font_generic == GFCSS_FONT_MONOSPACE) flags |= OL_TEXT_MONO;
     else flags &= ~(uint32_t)OL_TEXT_MONO;
+    if (gfcss_is_set(c, GFCSS_P_FONT_FAMILY))
+        flags = (flags & 0xffffu) | OL_TEXT_FONT(olui_family_id(&c->font_family));
     if (gfcss_is_set(c, GFCSS_P_TEXT_DECORATION_LINE)) {
         flags &= ~(uint32_t)(OL_TEXT_UNDERLINE | OL_TEXT_STRIKE);
         if (c->text_decoration & GFCSS_UNDERLINE) flags |= OL_TEXT_UNDERLINE;

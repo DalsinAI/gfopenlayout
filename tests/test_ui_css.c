@@ -115,6 +115,44 @@ static void test_gains(void)
     olui_free(ui);
 }
 
+/* ui/olui_css.c: a named font family by its number in text_flags */
+const char *olui_family_name(unsigned id);
+
+/* font-family's first name reaches the renderer as a number in text_flags
+ * (OL_TEXT_FONT); generics stay 0, so the theme's faces are used */
+static void test_families(void)
+{
+    olui *ui = olui_new();
+    char err[128];
+    look l;
+    unsigned f1, f2;
+    CHECK(ui && olui_load(ui, "<column><label id=n1>a</label><label id=n2>b</label>"
+                              "<label id=n3>c</label><label id=n4>d</label></column>",
+                          "#n1{font-family:\"DejaVu Sans Mono\",monospace}"
+                          "#n2{font-family:dejavu sans mono}"
+                          "#n3{font-family:monospace}", err, sizeof(err)));
+    olui_set_measure(ui, measure, NULL);
+    CHECK(olui_layout(ui, 400, 300));
+    l = look_at(ui, "n1");
+    f1 = OL_TEXT_FONT_OF((uint32_t)l.flags);
+    CHECK(f1 != 0 && (l.flags & OL_TEXT_MONO));
+    CHECK(olui_family_name(f1) && strcmp(olui_family_name(f1), "DejaVu Sans Mono") == 0);
+    l = look_at(ui, "n2");
+    CHECK(OL_TEXT_FONT_OF((uint32_t)l.flags) == f1);             /* the same name, any case */
+    l = look_at(ui, "n3");
+    CHECK(OL_TEXT_FONT_OF((uint32_t)l.flags) == 0 && (l.flags & OL_TEXT_MONO));
+    l = look_at(ui, "n4");
+    CHECK(OL_TEXT_FONT_OF((uint32_t)l.flags) == 0);
+    /* a style set later (as a toolkit's SetFont does) */
+    olui_set_style(ui, olui_find(ui, "n4"), "font-family:Courier;font-size:10px");
+    CHECK(olui_layout(ui, 400, 300));
+    l = look_at(ui, "n4");
+    f2 = OL_TEXT_FONT_OF((uint32_t)l.flags);
+    CHECK(f2 != 0 && f2 != f1 && strcmp(olui_family_name(f2), "Courier") == 0);
+    CHECK(olui_family_name(0) == NULL);
+    olui_free(ui);
+}
+
 /* a window of many widgets, styled again from the start each time */
 static void test_speed(void)
 {
@@ -148,6 +186,7 @@ static void test_speed(void)
 int main(void)
 {
     test_gains();
+    test_families();
     test_speed();
     printf("OLUI CSS %d checks, %d failed\n", checks, failed);
     if (failed) return 20;
