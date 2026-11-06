@@ -186,4 +186,7 @@ int olui_set_str(char **dst, const char *s);
 /* The markup as a tree under a new root element. NULL with why in err. */
 olui_el *olui_markup_parse(const char *markup, char *err, size_t errlen);
 
+/* a named font family's name, by the number in text_flags (OL_TEXT_FONT_OF): NULL for 0 */
+const char *olui_family_name(unsigned id);
+
 #endif

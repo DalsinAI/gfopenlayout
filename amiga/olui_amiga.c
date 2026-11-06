@@ -36,6 +36,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ui/olui_css.c: a named font family by its number in text_flags */
+const char *olui_family_name(unsigned id);
+
 /* cybergraphics.library through its vectors, as GFOpenGadTools' look_draw.c
  * calls it: FillPixelArray (-150) and GetCyberMapAttr (-96) */
 static struct Library *CyberGfxBase;
@@ -72,7 +75,7 @@ typedef struct {
 
 typedef struct {
     int px;
-    unsigned style;             /* OL_TEXT_BOLD | OL_TEXT_MONO */
+    unsigned style;             /* OL_TEXT_BOLD | OL_TEXT_MONO | OL_TEXT_FONT(family) */
     struct TextFont *tf;
 } font_slot;
 
@@ -262,21 +265,55 @@ static void draw_box(olui_amiga *a, const olui_draw_op *op)
 
 /* ---- Fonts --------------------------------------------------------------------- */
 
+/* a named family's face (font-family's first name): Name.font, else the
+ * name with its spaces taken out ("DejaVu Sans Mono" is DejaVuSansMono.font) */
+static struct TextFont *named_font(const char *family, struct TextAttr *ta)
+{
+    char name[64];
+    size_t i, n = 0;
+    struct TextFont *tf;
+    for (i = 0; family[i] && n + 6 < sizeof(name); ++i) name[n++] = family[i];
+    name[n] = 0;
+    if (n < 5 || strcmp(name + n - 5, ".font") != 0) strcpy(name + n, ".font");
+    ta->ta_Name = (STRPTR)name;
+    tf = OpenDiskFont(ta);
+    if (!tf && strchr(name, ' ')) {
+        char *d = name;
+        for (i = 0; name[i]; ++i)
+            if (name[i] != ' ') *d++ = name[i];
+        *d = 0;
+        tf = OpenDiskFont(ta);
+    }
+    ta->ta_Name = NULL;
+    return tf;
+}
+
 static struct TextFont *font_for(olui_amiga *a, int px, unsigned style)
 {
     struct TextAttr ta;
-    struct TextFont *tf;
+    struct TextFont *tf = NULL;
+    const char *family;
     int i;
-    style &= OL_TEXT_BOLD | OL_TEXT_MONO;
+    style &= OL_TEXT_BOLD | OL_TEXT_MONO | 0xffff0000u;
     if (px < 6) px = 6;
     for (i = 0; i < a->nfonts; ++i)
         if (a->fonts[i].px == px && a->fonts[i].style == style) return a->fonts[i].tf;
-    ta.ta_Name = (STRPTR)((style & OL_TEXT_MONO) ? a->mono_name : a->font_name);
     ta.ta_YSize = (UWORD)px;
     ta.ta_Style = (style & OL_TEXT_BOLD) ? FSF_BOLD : FS_NORMAL;
     ta.ta_Flags = 0;
     /* in gfopenlayout.library diskfont.library may not have opened */
-    tf = DiskfontBase ? OpenDiskFont(&ta) : NULL;
+    family = olui_family_name(OL_TEXT_FONT_OF(style));
+    if (family && DiskfontBase) {
+        tf = named_font(family, &ta);
+        if (!tf && (style & OL_TEXT_BOLD)) {
+            ta.ta_Style = FS_NORMAL;
+            tf = named_font(family, &ta);
+            ta.ta_Style = FSF_BOLD;
+        }
+    }
+    /* else the theme's face */
+    ta.ta_Name = (STRPTR)((style & OL_TEXT_MONO) ? a->mono_name : a->font_name);
+    if (!tf && DiskfontBase) tf = OpenDiskFont(&ta);
     if (!tf && DiskfontBase) {
         ta.ta_Style = FS_NORMAL;
         tf = OpenDiskFont(&ta);
