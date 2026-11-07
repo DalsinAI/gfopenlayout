@@ -230,6 +230,7 @@ static int set_attr(olui_el *el, const char *name, const char *value, char *type
     else if (!strcmp(name, "checked")) el->state |= S_CHECKED;
     else if (!strcmp(name, "disabled")) el->state |= S_DISABLED;
     else if (!strcmp(name, "hidden")) el->state |= S_HIDDEN;
+    else if (!strcmp(name, "separator")) { el->flags |= F_SEPARATOR; el->state |= S_DISABLED; }
     else if (!strcmp(name, "selected")) el->state |= S_SELECTED;
     else if (!strcmp(name, "open")) el->state |= S_OPEN;
     else if (!strcmp(name, "max")) { el->imax = atoi(value); ok = olui_set_str(&el->num_attr[1], value); }

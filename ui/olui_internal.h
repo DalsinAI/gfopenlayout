@@ -41,7 +41,8 @@ enum {
     F_DRAGGABLE = 1u << 6,   /* draggable */
     F_DROPPABLE = 1u << 7,   /* droppable: a drop target */
     F_MARQUEE = 1u << 8,     /* marquee: a scope; a band dragged on its space selects */
-    F_MENU = 1u << 9         /* menu: a select never shown, its pop-up opened by olui_menu_open */
+    F_MENU = 1u << 9,        /* menu: a select never shown, its pop-up opened by olui_menu_open */
+    F_SEPARATOR = 1u << 10   /* option separator: a line between rows, never chosen */
 };
 
 /* overflow (olui_cs.overflow) */

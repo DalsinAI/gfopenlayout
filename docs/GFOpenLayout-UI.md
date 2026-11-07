@@ -69,7 +69,7 @@ fills it.
 | `input type=number`, `spinner` | A number field with up and down arrow buttons: `OLUI_CHANGE` with the value in `index`. Decimals are fixed point: with `step=0.5` the value is in tenths (`olui_number_decimals`). Typed, it is held to `min` and `max` on Return or when the keyboard goes elsewhere | `value`, `min`, `max`, `step` |
 | `textarea` | Text of many lines, wrapped at words, that scrolls (a bar when it is taller than its box): `OLUI_CHANGE` on each edit. Its text is as written, spaces and newlines kept | `rows`, `cols` (its size when CSS gives none), `placeholder`, `readonly`, `maxlength`, `wrap=off` |
 | `select` | A drop-down: the chosen option and a mark; a click, Return or space opens its list over the window. With `size` above 1, a list box in place. `OLUI_CHANGE` with the option's number from 0 in `index`, its `value` (its text when it has none) in `value` and the option in `item` | `size` |
-| `option` | One of a select's choices (`</option>` may be left out, as in HTML) | `value`, `selected`, `disabled`, `label` |
+| `option` | One of a select's choices (`</option>` may be left out, as in HTML). With `separator`, a line between rows that keys and clicks pass over (a menu's separator) | `value`, `selected`, `disabled`, `label`, `separator` |
 | `optgroup` | A row with its `label`, and the options in it under it | `label`, `disabled` |
 | `fieldset`, `legend` | A box round a group, its legend on its top edge, the edge broken where it is | |
 | `list`, `tree` | A list that scrolls; with items inside items, a tree: `OLUI_SELECT`, `OLUI_ACTIVATE`, `OLUI_EXPAND`, `OLUI_COLLAPSE` | |
@@ -463,8 +463,8 @@ A program links `libolui.a` and includes `gfopenlayout_ui.h` and
 - A select chooses one option (no `multiple`); its pop-up shows 12 rows
   at most and scrolls the rest. A select is as wide as its widest option,
   measured at each layout.
-- Menu bars (Intuition's are the program's); a context menu's separators and submenus (`optgroup`
-  gives a labelled part).
+- Menu bars (Intuition's are the program's); a context menu's submenus (`optgroup` gives a
+  labelled part; `option separator` draws its separators).
 - A vlist's columns are fixed widths (no header, no dragging them), its rows one line, and a drag
   from it is the program's.
 - Dragging between windows: the program's. The drag events have the pointer even outside the

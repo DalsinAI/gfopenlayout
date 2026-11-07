@@ -597,6 +597,16 @@ static const char *w_ops_path; /* where to write the widgets' window as ops (arg
 
 /* Draws the window to see what it shows: what was damaged is drawn on
  * w_screen first, as the window's loop would have */
+/* A separator row: drawn as a box one pixel high, never as text */
+typedef struct { const olui_el *sep; int lines, texts; } sep_look;
+static void look_sep(void *userdata, const olui_draw_op *op)
+{
+    sep_look *l = (sep_look *)userdata;
+    if (op->el != l->sep) return;
+    if (op->kind == OLUI_DRAW_BOX && op->box.h == 1 && op->box.w > 0) ++l->lines;
+    if (op->kind == OLUI_DRAW_TEXT) ++l->texts;
+}
+
 static looker seek(olui *ui, const char *text, const olui_el *box_el)
 {
     looker l;
@@ -997,6 +1007,30 @@ static int widgets(void)
     olui_key(ui, OLUI_KEY_ESCAPE, 0);
     CHECK(!olui_tick(ui, 2000));
     SAME(0);
+
+    /* ---- a separator option: a line in the pop-up, skipped by keys, never chosen ---- */
+    {
+        olui *u3 = olui_new();
+        olui_el *ms, *sep;
+        sep_look sl;
+        CHECK(u3);
+        w_screen = NULL;
+        olui_set_measure(u3, measure, NULL);
+        CHECK(olui_load(u3, "<select id=ms><option>Open</option><option id=sep separator></option>"
+                            "<option>Quit</option></select>", NULL, err, sizeof(err)) && olui_layout(u3, 300, 200));
+        ms = olui_find(u3, "ms");
+        sep = olui_find(u3, "sep");
+        CHECK(ms && sep && olui_select_count(ms) == 3 && olui_select_index(ms) == 0);
+        olui_select_open(u3, ms, 1);
+        CHECK(olui_popup(u3) == ms);
+        memset(&sl, 0, sizeof(sl));
+        sl.sep = sep;
+        olui_draw(u3, NULL, look_sep, &sl);
+        CHECK(sl.lines == 1 && sl.texts == 0);
+        CHECK(olui_key(u3, OLUI_KEY_DOWN, 0) && olui_key(u3, OLUI_KEY_RETURN, 0));
+        CHECK(olui_select_index(ms) == 2);              /* past the separator, to Quit */
+        olui_free(u3);
+    }
 
     /* ---- a long select: its pop-up shows 12 rows and scrolls; a group disabled; the API opens it ---- */
     {
