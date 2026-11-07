@@ -3804,6 +3804,17 @@ static void draw_rows(drawer *d, olui_el *sel, olui_rect area, int32_t scroll, i
         rr.w = area.w;
         rr.h = row_h;
         out_box(d, r, rr, &r->cs);
+        if (r->flags & F_SEPARATOR) {
+            /* a separator: one line across the row, inside its padding */
+            olui_rect ln;
+            int32_t pl = px(ui, r->cs.ol.padding_left), pr = px(ui, r->cs.ol.padding_right);
+            ln.x = rr.x + pl;
+            ln.w = rr.w - pl - pr;
+            ln.y = y + row_h / 2;
+            ln.h = 1;
+            if (ln.w > 0) out_flat(d, r, ln, r->cs.ol.foreground | 0xff000000u, 0, 0, 0);
+            continue;
+        }
         t = row_text(r);
         line = line_px(ui, &r->cs.ol);
         tb.x = rr.x + px(ui, r->cs.ol.padding_left);
