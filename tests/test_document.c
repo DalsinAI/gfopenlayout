@@ -461,6 +461,175 @@ static void test_pages(void)
     ol_document_free(doc);
 }
 
+/* Newspaper columns are virtual narrow pages grouped left-to-right on each
+ * physical page.  Exercise the editor-facing coordinates as well as flow. */
+static void test_page_columns(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_page page;
+    ol_node *paras[24], *texts[24], *fblock, *fpage;
+    const ol_display_op *second = NULL;
+    ol_text_position pos;
+    ol_rect caret;
+    ol_unit column_width, second_x, gap_x;
+    size_t first, count, i;
+    int caret_page = -1;
+    char line[64];
+
+    memset(&page, 0, sizeof(page));
+    page.width = OL_CSSPX(400);
+    page.height = OL_CSSPX(300);
+    page.margin_top = page.margin_bottom = OL_CSSPX(20);
+    page.margin_left = page.margin_right = OL_CSSPX(20);
+    column_width = OL_CSSPX(170); /* (360 - 20 gap) / 2 */
+    second_x = page.margin_left + column_width + OL_CSSPX(20);
+    gap_x = page.margin_left + column_width + OL_CSSPX(10);
+
+    for (i = 0; i < 24; ++i) {
+        ol_style s;
+        paras[i] = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+        ol_style_init(&s);
+        s.margin_top = OL_CSSPX(10);
+        s.line_height = OL_CSSPX(20);
+        ol_node_set_style(paras[i], &s);
+        snprintf(line, sizeof line, "column paragraph %02u short words", (unsigned)i);
+        texts[i] = text(doc, paras[i], line, OL_CSSPX(16), 0);
+    }
+    fblock = anchored(doc, paras[8], OL_ANCHOR_ON,
+                      OL_CSSPX(5), OL_CSSPX(3), OL_CSSPX(20), OL_CSSPX(20));
+    picture(doc, fblock, 31, OL_CSSPX(20), OL_CSSPX(20));
+    fpage = anchored(doc, paras[8],
+                     OL_ANCHOR_X(OL_ANCHOR_PAGE) | OL_ANCHOR_Y(OL_ANCHOR_PAGE) | OL_ANCHOR_BEHIND,
+                     OL_CSSPX(7), OL_CSSPX(8), OL_CSSPX(18), OL_CSSPX(18));
+    picture(doc, fpage, 32, OL_CSSPX(18), OL_CSSPX(18));
+
+    CHECK(ol_layout_pages_columns(doc, &page, 2, OL_CSSPX(20), measure, NULL));
+    CHECK(ol_page_count(doc) >= 2);
+    CHECK(ol_display_page_range(doc, 0, &first, &count));
+    CHECK(count > 0);
+    for (i = first; i < first + count; ++i) {
+        const ol_display_op *op = ol_display_get(doc, i);
+        CHECK(op->page == 0);
+        if (!second && op->type == OL_OP_TEXT && op->u.text.bounds.x >= second_x)
+            second = op;
+    }
+    CHECK(second != NULL);
+    if (second) {
+        const ol_node *hit = ol_hit_test_page(doc, 0,
+            second->u.text.bounds.x + OL_CSSPX(2),
+            second->u.text.bounds.y + OL_CSSPX(2));
+        CHECK(hit != NULL);
+        CHECK(hit == ol_node_by_id(doc, second->u.text.node_id));
+        pos.node_id = second->u.text.node_id;
+        pos.offset = second->u.text.text_offset;
+        CHECK(ol_caret_box(doc, &pos, measure, NULL, &caret_page, &caret));
+        CHECK(caret_page == 0);
+        CHECK(caret.x >= second_x);
+        CHECK(caret.x == second->u.text.bounds.x);
+    }
+    {
+        const ol_display_op *anchor_text = first_text(doc, texts[8]);
+        ol_rect at;
+        int fp = -1;
+        CHECK(anchor_text != NULL);
+        CHECK(ol_frame_place(doc, fblock, &fp, &at));
+        CHECK(anchor_text && fp == anchor_text->page);
+        CHECK(anchor_text && at.x == anchor_text->u.text.bounds.x + OL_CSSPX(5));
+        CHECK(ol_frame_place(doc, fpage, &fp, &at));
+        CHECK(anchor_text && fp == anchor_text->page);
+        CHECK(at.x == OL_CSSPX(7) && at.y == OL_CSSPX(8));
+        CHECK(ol_node_page_box(doc, ol_node_id(paras[8]), &fp, &at));
+        CHECK(anchor_text && fp == anchor_text->page && at.x == anchor_text->u.text.bounds.x &&
+              at.y == anchor_text->u.text.bounds.y);
+        CHECK(ol_node_page_box(doc, ol_node_id(fpage), &fp, &at));
+        CHECK(anchor_text && fp == anchor_text->page && at.x == OL_CSSPX(7) && at.y == OL_CSSPX(8));
+        CHECK(!ol_node_page_box(doc, 1000000, &fp, &at));
+    }
+    /* The inter-column gap is not editable content. */
+    CHECK(ol_hit_test_page(doc, 0, gap_x, page.margin_top + OL_CSSPX(5)) == NULL);
+    ol_document_free(doc);
+}
+
+/* Variable section widths are real line-breaking widths, then their virtual
+ * regions are grouped onto physical pages using each section's own columns. */
+static void test_page_sections(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_page page;
+    ol_page_section sections[2];
+    ol_node *paras[24], *texts[24];
+    const ol_display_op *ops[8];
+    ol_rect box;
+    int i, section_page = -1, saw_second_column = 0;
+    ol_unit preceding_bottom = 0;
+    size_t first, count, k, n;
+
+    memset(&page, 0, sizeof(page));
+    page.width = OL_CSSPX(400);
+    page.height = OL_CSSPX(300);
+    page.margin_top = page.margin_bottom = OL_CSSPX(20);
+    page.margin_left = page.margin_right = OL_CSSPX(20);
+    for (i = 0; i < 24; ++i) {
+        ol_style style;
+        paras[i] = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+        ol_style_init(&style);
+        style.margin_top = OL_CSSPX(10);
+        style.line_height = OL_CSSPX(20);
+        ol_node_set_style(paras[i], &style);
+        texts[i] = text(doc, paras[i], "wide words fit but narrow columns wrap", OL_CSSPX(16), 0);
+    }
+    sections[0].first_node = ol_node_id(paras[0]);
+    sections[0].columns = 1;
+    sections[0].gap = 0;
+    sections[0].break_before = OL_SECTION_CONTINUOUS;
+    sections[1].first_node = ol_node_id(paras[6]);
+    sections[1].columns = 2;
+    sections[1].gap = OL_CSSPX(20);
+    sections[1].break_before = OL_SECTION_NEW_PAGE;
+
+    CHECK(ol_layout_pages_sections(doc, &page, sections, 2, measure, NULL));
+    n = text_ops(doc, ol_node_id(texts[0]), ops, 8);
+    CHECK(n > 0 && ops[0]->u.text.bounds.y == ops[n - 1]->u.text.bounds.y);
+    n = text_ops(doc, ol_node_id(texts[6]), ops, 8);
+    CHECK(n > 1 && ops[0]->u.text.bounds.y < ops[n - 1]->u.text.bounds.y);
+    CHECK(ol_node_page_box(doc, ol_node_id(paras[6]), &section_page, &box));
+    CHECK(section_page > 0 && box.x == page.margin_left && box.y == page.margin_top + OL_CSSPX(10));
+    CHECK(ol_display_page_range(doc, section_page, &first, &count));
+    for (k = first; k < first + count; ++k) {
+        const ol_display_op *op = ol_display_get(doc, k);
+        CHECK(op->page == section_page);
+        if (op->type == OL_OP_TEXT && op->u.text.bounds.x >= OL_CSSPX(210))
+            saw_second_column = 1;
+    }
+    CHECK(saw_second_column);
+    CHECK(ol_hit_test_page(doc, section_page, OL_CSSPX(200), OL_CSSPX(30)) == NULL);
+
+    sections[1].break_before = OL_SECTION_CONTINUOUS;
+    CHECK(ol_layout_pages_sections(doc, &page, sections, 2, measure, NULL));
+    CHECK(ol_node_page_box(doc, ol_node_id(paras[6]), &section_page, &box));
+    CHECK(section_page == 0 && box.y > page.margin_top);
+
+    /* The final page of a multi-column section is balanced before a
+     * continuous successor. Both preceding columns are occupied, and the
+     * successor starts in a rectangular band below both of them. */
+    sections[0].columns = 2;
+    sections[0].gap = OL_CSSPX(20);
+    CHECK(ol_layout_pages_sections(doc, &page, sections, 2, measure, NULL));
+    saw_second_column = 0;
+    for (i = 0; i < 6; ++i) {
+        n = text_ops(doc, ol_node_id(texts[i]), ops, 8);
+        for (k = 0; k < n; ++k) {
+            ol_unit bottom = ops[k]->u.text.bounds.y + ops[k]->u.text.bounds.height;
+            if (bottom > preceding_bottom) preceding_bottom = bottom;
+            if (ops[k]->u.text.bounds.x >= OL_CSSPX(210)) saw_second_column = 1;
+        }
+    }
+    CHECK(saw_second_column);
+    CHECK(ol_node_page_box(doc, ol_node_id(paras[6]), &section_page, &box));
+    CHECK(section_page == 0 && box.y >= preceding_bottom);
+    ol_document_free(doc);
+}
+
 static void test_page_backgrounds_and_rows(void)
 {
     ol_document *doc = ol_document_new();
@@ -1448,6 +1617,8 @@ int main(void)
     test_frames();
     test_anchored_frames();
     test_pages();
+    test_page_columns();
+    test_page_sections();
     test_page_backgrounds_and_rows();
     test_editing();
     test_box_versions();

@@ -537,12 +537,47 @@ typedef struct {
 
 int ol_layout_pages(ol_document *doc, const ol_page *page,
                     ol_measure_text_fn measure, void *measure_userdata);
+/* Lay a continuous flow through equal newspaper columns, top-to-bottom and
+ * then left-to-right on each physical page. count 1 is ol_layout_pages.
+ * gap is between columns. Display ranges, hit testing and caret boxes use
+ * physical page coordinates. */
+int ol_layout_pages_columns(ol_document *doc, const ol_page *page,
+                            int count, ol_unit gap,
+                            ol_measure_text_fn measure, void *measure_userdata);
+typedef enum {
+    OL_SECTION_CONTINUOUS = 0,
+    OL_SECTION_NEW_PAGE,
+    OL_SECTION_ODD_PAGE,
+    OL_SECTION_EVEN_PAGE
+} ol_section_break;
+
+/* A section starts at a top-level flow node. Its paragraphs are laid out at
+ * that section's column width. The first section's break is ignored. */
+typedef struct {
+    ol_id first_node;
+    int columns;
+    ol_unit gap;
+    ol_section_break break_before;
+} ol_page_section;
+
+/* Variable column geometry by section. New/odd/even page sections are
+ * supported. A multi-column section is balanced before a continuous
+ * successor, which shares the rectangular lower band on the physical page. */
+int ol_layout_pages_sections(ol_document *doc, const ol_page *page,
+                             const ol_page_section *sections, int section_count,
+                             ol_measure_text_fn measure, void *measure_userdata);
 /* 1 after ol_layout; the number of pages after ol_layout_pages. */
 int ol_page_count(const ol_document *doc);
 /* The display ops of one page are together, in page order: the first and
  * how many. 0 when the page does not exist. */
 int ol_display_page_range(const ol_document *doc, int page,
                           size_t *first, size_t *count);
+
+/* The first rendered box belonging to node or one of its descendants, in
+ * physical page coordinates. This is the stable-node bridge for navigators,
+ * generated references and editor object outlines. */
+int ol_node_page_box(const ol_document *doc, ol_id node_id,
+                     int *page, ol_rect *box);
 
 /* The deepest node at (x, y) on a page, in its coordinates. */
 const ol_node *ol_hit_test_page(const ol_document *doc, int page,
