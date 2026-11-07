@@ -139,6 +139,17 @@ static void draw(void *userdata, const olui_draw_op *op)
     }
 }
 
+/* A picture that asks to be drawn again while it is drawn (a paint handler's Refresh) */
+typedef struct { olui *ui; olui_el *el; int asked; } reasker;
+static void reask(void *userdata, const olui_draw_op *op)
+{
+    reasker *r = (reasker *)userdata;
+    if (!r->asked && op->el == r->el) {
+        r->asked = 1;
+        olui_repaint(r->ui, r->el, NULL);
+    }
+}
+
 static olui_rect box_of(olui *ui, const char *id);
 
 /* The centre of an element, found by drawing and catching its box */
@@ -509,6 +520,17 @@ static int frames(void)
             olui_repaint(plain, olui_find(plain, "ok"), NULL);                 /* all of it */
             CHECK(olui_damaged(plain, &r) && r.x <= b.x && r.y <= b.y && r.x + r.w >= b.x + b.w && r.y + r.h >= b.y + b.h);
             frame_draw(plain, full, NULL);
+        }
+        /* a repaint asked while drawing is kept for the next draw, not lost */
+        {
+            reasker ra;
+            ra.ui = plain;
+            ra.el = olui_find(plain, "ok");
+            ra.asked = 0;
+            olui_draw(plain, NULL, reask, &ra);
+            CHECK(ra.asked && olui_damaged(plain, &r) && r.x <= b.x && r.y <= b.y);
+            frame_draw(plain, full, NULL);
+            CHECK(!olui_damaged(plain, &r));
         }
         olui_free(plain);
     }
