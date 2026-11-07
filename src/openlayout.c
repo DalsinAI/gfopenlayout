@@ -155,6 +155,13 @@ struct ol_document {
     ol_unit *page_shift;      /* 0.9: how far down a repeated table header puts its content */
     int *page_repeat;         /* 0.9: that header (doc->repeats); -1: none */
     int page_capacity;
+    /* Equal newspaper columns: the narrow virtual pages (regions) combined
+     * into physical pages after layout. Node bounds remain in their galley. */
+    int column_count, region_count;
+    ol_unit column_gap, column_width;
+    ol_unit *region_start, *region_end, *region_shift;
+    int *region_page;
+    ol_unit *region_x, *region_y, *region_width;
 };
 
 typedef struct {
@@ -412,6 +419,13 @@ void ol_document_free(ol_document *doc)
     free(doc->page_end);
     free(doc->page_first);
     free(doc->page_ops);
+    free(doc->region_start);
+    free(doc->region_end);
+    free(doc->region_shift);
+    free(doc->region_page);
+    free(doc->region_x);
+    free(doc->region_y);
+    free(doc->region_width);
     free(doc);
 }
 
@@ -2414,6 +2428,70 @@ static int layout_galley(ol_document *doc, ol_unit width,
     return 1;
 }
 
+/* The document galley with a different line width from each top-level
+ * section boundary. Section starts are galley coordinates used by the
+ * paginator after the pass. */
+static int layout_galley_sections(ol_document *doc, ol_unit body_width,
+                                  const ol_page_section *sections, int section_count,
+                                  ol_unit *section_starts,
+                                  ol_measure_text_fn measure, void *measure_userdata)
+{
+    ol_node *child, *root = doc->root;
+    ol_unit y = 0, keep_with_next = 0;
+    int has_keep_with_next = 0, section = 0;
+
+    section_starts[0] = 0;
+    zones_live(doc, root, 0, 0);
+    for (child = root->first_child; child; child = child->next_sibling) {
+        ol_unit width, column_width;
+        size_t keeps_before;
+        if (child->style.display == OL_DISPLAY_NONE || is_frame(child)) continue;
+        if (section + 1 < section_count && child->id == sections[section + 1].first_node) {
+            ++section;
+            section_starts[section] = y;
+            has_keep_with_next = 0; /* a section boundary ends the preceding keep chain */
+        }
+        column_width = (body_width - sections[section].gap * (sections[section].columns - 1)) /
+                       sections[section].columns;
+        width = column_width;
+        keeps_before = doc->keep_count;
+        if (is_inline(child)) {
+            ol_inline_flow flow;
+            start_flow(&flow, doc, NULL, measure, measure_userdata, 0, width, y,
+                       child->style.text_align, 0);
+            if (!layout_inline_node(&flow, child)) return 0;
+            if (!flush_flow(&flow, &y)) return 0;
+        } else {
+            ol_unit bottom, dx, w;
+            w = block_width(child, width, &dx);
+            if (!layout_block(doc, child, dx, y, w, measure, measure_userdata, &bottom))
+                return 0;
+            y = bottom;
+        }
+        if (has_keep_with_next && doc->keep_count > keeps_before) {
+            if (!add_keep(doc, keep_with_next, doc->keeps[keeps_before].bottom)) return 0;
+            has_keep_with_next = 0;
+        }
+        if ((child->box.flags & OL_BOX_KEEP_WITH_NEXT) && doc->keep_count > keeps_before) {
+            keep_with_next = doc->keeps[doc->keep_count - 1].top;
+            has_keep_with_next = 1;
+        }
+    }
+    if (section + 1 != section_count) return 0;
+    for (child = root->first_child; child; child = child->next_sibling)
+        if (child->style.display != OL_DISPLAY_NONE && is_frame(child) &&
+            !layout_frame(doc, child, 0, 0, 0, measure, measure_userdata))
+            return 0;
+
+    inline_bounds(doc);
+    root->bounds.x = 0;
+    root->bounds.y = 0;
+    root->bounds.width = body_width;
+    root->bounds.height = y;
+    doc->content_height = y;
+    return 1;
+}
+
 static void reset_layout(ol_document *doc)
 {
     size_t i;
@@ -2431,6 +2509,20 @@ static void reset_layout(ol_document *doc)
     doc->live_count = 0;
     for (i = 0; i < doc->node_count; ++i)
         memset(&doc->nodes[i]->bounds, 0, sizeof(doc->nodes[i]->bounds));
+}
+
+static void clear_column_regions(ol_document *doc)
+{
+    free(doc->region_start); doc->region_start = NULL;
+    free(doc->region_end); doc->region_end = NULL;
+    free(doc->region_shift); doc->region_shift = NULL;
+    free(doc->region_page); doc->region_page = NULL;
+    free(doc->region_x); doc->region_x = NULL;
+    free(doc->region_y); doc->region_y = NULL;
+    free(doc->region_width); doc->region_width = NULL;
+    doc->column_count = 0;
+    doc->column_gap = doc->column_width = 0;
+    doc->region_count = 0;
 }
 
 /* ---- Pages ----------------------------------------------------------------- */
@@ -2581,12 +2673,82 @@ static int cut_pages(ol_document *doc, ol_unit body_height)
     return 1;
 }
 
+/* Cut one section's galley interval into column-height regions. The next
+ * section may begin at the same galley coordinate as this one's last end. */
+static int cut_page_range(ol_document *doc, ol_unit start, ol_unit total,
+                          ol_unit body_height, ol_unit first_height,
+                          int columns, int balance_last)
+{
+    size_t b = 0;
+    int made = 0;
+    if (total < start) return 0;
+    while (b < doc->break_count && doc->breaks[b] <= start) ++b;
+    for (;;) {
+        int which = -1;
+        int column = made % columns;
+        int left = columns - column;
+        ol_unit height = made < columns ? first_height : body_height;
+        ol_unit cut_height = height;
+        ol_unit shift = start > 0 && doc->repeat_count ? header_for(doc, start, height, &which) : 0;
+        ol_unit remaining = total - start;
+        ol_unit limit, end;
+        int forced = 0;
+
+        /* A continuous successor needs the final physical page to end in a
+         * rectangular band. Once the section's remainder fits on this page,
+         * divide it across the columns still available. Recompute after each
+         * cut so paragraph keeps and explicit breaks cannot make later
+         * columns overlap the following section. */
+        if (balance_last && remaining > 0 && remaining <= height * left) {
+            cut_height = (remaining + left - 1) / left;
+            if (cut_height <= shift) cut_height = shift + 1;
+            if (cut_height > height) cut_height = height;
+        }
+        limit = start + cut_height - shift;
+        end = limit;
+        if (height <= 0 || limit <= start) return 0;
+        if (b < doc->break_count && doc->breaks[b] <= limit && doc->breaks[b] < total) {
+            end = doc->breaks[b++];
+            forced = 1;
+        }
+        if (!forced) {
+            if (limit >= total) {
+                end = total;
+            } else {
+                size_t i = span_after(doc, limit);
+                if (i < doc->keep_count && doc->keeps[i].top < limit && doc->keeps[i].top > start)
+                    end = doc->keeps[i].top;
+            }
+        }
+        if (!add_page(doc, start, end)) return 0;
+        doc->page_shift[doc->page_count - 1] = shift;
+        doc->page_repeat[doc->page_count - 1] = which;
+        ++made;
+        if (end >= total) break;
+        start = content_from(doc, end);
+        if (start >= total) break;
+    }
+    return 1;
+}
+
 static int page_holding(const ol_document *doc, ol_unit y)
 {
     int lo = 0, hi = doc->page_count - 1;
     while (lo < hi) {
         int mid = (lo + hi + 1) / 2;
         if (doc->page_start[mid] <= y) lo = mid;
+        else hi = mid - 1;
+    }
+    return lo;
+}
+
+static int column_region_holding(const ol_document *doc, ol_unit y)
+{
+    int lo = 0, hi = doc->region_count - 1;
+    if (hi < 0) return 0;
+    while (lo < hi) {
+        int mid = (lo + hi + 1) / 2;
+        if (doc->region_start[mid] <= y) lo = mid;
         else hi = mid - 1;
     }
     return lo;
@@ -2723,6 +2885,29 @@ int ol_frame_place(const ol_document *doc, const ol_node *frame, int *page, ol_r
         ol_unit ox, oy;
         int p;
         if (a->node != frame) continue;
+        if (doc->region_count > 0 && doc->region_page && doc->region_x && doc->region_y) {
+            int region = a->page >= 0 && a->page < doc->region_count
+                         ? a->page : column_region_holding(doc, a->y);
+            ol_unit start = doc->region_start[region];
+            switch (OL_ANCHOR_X_OF(a->anchor)) {
+            case OL_ANCHOR_PAGE: ox = a->frame.x; break;
+            case OL_ANCHOR_MARGIN: ox = doc->page.margin_left + a->frame.x; break;
+            default: ox = doc->region_x[region] + a->x + a->frame.x; break;
+            }
+            switch (OL_ANCHOR_Y_OF(a->anchor)) {
+            case OL_ANCHOR_PAGE: oy = a->frame.y; break;
+            case OL_ANCHOR_MARGIN: oy = doc->page.margin_top + a->frame.y; break;
+            default: oy = doc->page.margin_top + doc->region_y[region] + doc->region_shift[region] +
+                          a->y - start + a->frame.y; break;
+            }
+            p = doc->region_page[region];
+            if (page) *page = p;
+            if (rect) {
+                rect->x = ox; rect->y = oy;
+                rect->width = frame->bounds.width; rect->height = frame->bounds.height;
+            }
+            return 1;
+        }
         p = anchor_place(doc, a, doc->paged, &ox, &oy);
         if (page) *page = p;
         if (rect) {
@@ -3372,6 +3557,7 @@ int ol_layout(ol_document *doc, ol_unit viewport_width,
 {
     int pass, changed;
     if (!doc || viewport_width <= 0) return 0;
+    clear_column_regions(doc);
     if (doc->css && !ol_css_restyle(doc, viewport_width)) return 0;   /* GFCSS: its sheets first */
     doc->zone_count = 0;
     doc->paging = 0;
@@ -3399,6 +3585,7 @@ int ol_layout_pages(ol_document *doc, const ol_page *page,
     int pass, changed, ok;
     ol_header_copies copies;
     if (!doc || !page) return 0;
+    clear_column_regions(doc);
     body_w = page->width - page->margin_left - page->margin_right;
     body_h = page->height - page->margin_top - page->margin_bottom;
     if (body_w <= 0 || body_h <= 0) return 0;
@@ -3429,6 +3616,339 @@ int ol_layout_pages(ol_document *doc, const ol_page *page,
     return 1;
 }
 
+static ol_id display_node_id(const ol_display_op *op)
+{
+    switch (op->type) {
+    case OL_OP_TEXT: return op->u.text.node_id;
+    case OL_OP_IMAGE: return op->u.image.node_id;
+    case OL_OP_FILL_RECT: return op->u.fill_rect.node_id;
+    case OL_OP_RULE: return op->u.rule.node_id;
+    default: return 0;
+    }
+}
+
+static const ol_node *anchored_ancestor(const ol_node *node)
+{
+    for (; node; node = node->parent)
+        if ((node->box.flags & OL_BOX_ABSOLUTE) && node->box.anchor) return node;
+    return NULL;
+}
+
+static const ol_anchor *anchor_for_frame(const ol_document *doc, const ol_node *frame)
+{
+    size_t i;
+    for (i = 0; i < doc->anchor_count; ++i)
+        if (doc->anchors[i].node == frame) return &doc->anchors[i];
+    return NULL;
+}
+
+int ol_layout_pages_columns(ol_document *doc, const ol_page *page,
+                            int count, ol_unit gap,
+                            ol_measure_text_fn measure, void *measure_userdata)
+{
+    ol_page region_page;
+    ol_unit body_w, body_h, column_w;
+    ol_unit *starts, *ends, *shifts, *region_x, *region_y, *region_width;
+    int *region_page_ids;
+    int regions, pages, p, r;
+    size_t i;
+    if (!doc || !page || count < 1 || count > 16 || gap < 0) return 0;
+    if (count == 1) return ol_layout_pages(doc, page, measure, measure_userdata);
+    body_w = page->width - page->margin_left - page->margin_right;
+    body_h = page->height - page->margin_top - page->margin_bottom;
+    if (body_w <= gap * (count - 1) || body_h <= 0) return 0;
+    column_w = (body_w - gap * (count - 1)) / count;
+    memset(&region_page, 0, sizeof(region_page));
+    region_page.width = column_w;
+    region_page.height = body_h;
+    if (!ol_layout_pages(doc, &region_page, measure, measure_userdata)) return 0;
+    regions = doc->page_count;
+    starts = (ol_unit *)malloc((size_t)regions * sizeof(*starts));
+    ends = (ol_unit *)malloc((size_t)regions * sizeof(*ends));
+    shifts = (ol_unit *)malloc((size_t)regions * sizeof(*shifts));
+    region_page_ids = (int *)malloc((size_t)regions * sizeof(*region_page_ids));
+    region_x = (ol_unit *)malloc((size_t)regions * sizeof(*region_x));
+    region_y = (ol_unit *)calloc((size_t)regions, sizeof(*region_y));
+    region_width = (ol_unit *)malloc((size_t)regions * sizeof(*region_width));
+    if (!starts || !ends || !shifts || !region_page_ids || !region_x || !region_y || !region_width) {
+        free(starts); free(ends); free(shifts);
+        free(region_page_ids); free(region_x); free(region_y); free(region_width);
+        return 0;
+    }
+    memcpy(starts, doc->page_start, (size_t)regions * sizeof(*starts));
+    memcpy(ends, doc->page_end, (size_t)regions * sizeof(*ends));
+    memcpy(shifts, doc->page_shift, (size_t)regions * sizeof(*shifts));
+    for (r = 0; r < regions; ++r) {
+        int column = r % count;
+        region_page_ids[r] = r / count;
+        region_x[r] = page->margin_left + column * (column_w + gap);
+        region_width[r] = column_w;
+    }
+
+    /* The virtual pages are already contiguous in display order. Relabel
+     * groups of count and move each narrow page into its physical column. */
+    for (i = 0; i < doc->op_count; ++i) {
+        ol_display_op *op = &doc->ops[i];
+        int region = op->page;
+        ol_unit dx, dy;
+        const ol_node *frame;
+        const ol_anchor *anchor;
+        if (region < 0 || region >= regions) continue;
+        dx = region_x[region];
+        dy = page->margin_top;
+        frame = anchored_ancestor(node_for_id(doc, display_node_id(op)));
+        anchor = frame ? anchor_for_frame(doc, frame) : NULL;
+        if (anchor) {
+            if (OL_ANCHOR_X_OF(anchor->anchor) == OL_ANCHOR_PAGE) dx = 0;
+            else if (OL_ANCHOR_X_OF(anchor->anchor) == OL_ANCHOR_MARGIN) dx = page->margin_left;
+            if (OL_ANCHOR_Y_OF(anchor->anchor) == OL_ANCHOR_PAGE) dy = 0;
+        }
+        move_op(op, dx, dy);
+        op->page = region / count;
+    }
+    pages = (regions + count - 1) / count;
+    for (p = 0; p < pages; ++p) {
+        size_t first = 0, n = 0;
+        int last = (p + 1) * count;
+        if (last > regions) last = regions;
+        for (r = p * count; r < last; ++r) {
+            if (!n) first = doc->page_first[r];
+            n += doc->page_ops[r];
+        }
+        doc->page_first[p] = first;
+        doc->page_ops[p] = n;
+    }
+    doc->page_count = pages;
+    doc->page = *page;
+    doc->body_height = body_h;
+    doc->column_count = count;
+    doc->column_gap = gap;
+    doc->column_width = column_w;
+    doc->region_count = regions;
+    doc->region_start = starts;
+    doc->region_end = ends;
+    doc->region_shift = shifts;
+    doc->region_page = region_page_ids;
+    doc->region_x = region_x;
+    doc->region_y = region_y;
+    doc->region_width = region_width;
+    return 1;
+}
+
+static int section_specs_valid(const ol_document *doc, const ol_page *page,
+                               const ol_page_section *sections, int count)
+{
+    const ol_node *child;
+    ol_unit body_width;
+    int found = 0, i;
+    if (!doc || !page || !sections || count < 1) return 0;
+    body_width = page->width - page->margin_left - page->margin_right;
+    if (body_width <= 0 || page->height - page->margin_top - page->margin_bottom <= 0) return 0;
+    for (i = 0; i < count; ++i) {
+        if (sections[i].columns < 1 || sections[i].columns > 16 || sections[i].gap < 0 ||
+            body_width <= sections[i].gap * (sections[i].columns - 1) ||
+            sections[i].break_before < OL_SECTION_CONTINUOUS ||
+            sections[i].break_before > OL_SECTION_EVEN_PAGE)
+            return 0;
+    }
+    for (child = doc->root->first_child; child; child = child->next_sibling) {
+        if (child->style.display == OL_DISPLAY_NONE || is_frame(child)) continue;
+        if (found < count && child->id == sections[found].first_node) ++found;
+        else if (!found) return 0; /* the first section starts with the first flow node */
+    }
+    return found == count;
+}
+
+int ol_layout_pages_sections(ol_document *doc, const ol_page *page,
+                             const ol_page_section *sections, int section_count,
+                             ol_measure_text_fn measure, void *measure_userdata)
+{
+    ol_page virtual_page;
+    ol_unit body_width, body_height;
+    ol_unit *section_starts = NULL, *starts = NULL, *ends = NULL, *shifts = NULL;
+    ol_unit *region_x = NULL, *region_y = NULL, *region_width = NULL;
+    ol_unit *section_y = NULL;
+    int *first_region = NULL, *region_page_ids = NULL, *section_page = NULL;
+    size_t *virtual_ops = NULL, *physical_first = NULL, *physical_ops = NULL;
+    int pass, changed, i, r, virtual_regions, physical_pages = 0, ok = 0;
+    ol_header_copies copies;
+
+    if (!section_specs_valid(doc, page, sections, section_count)) return 0;
+    clear_column_regions(doc);
+    body_width = page->width - page->margin_left - page->margin_right;
+    body_height = page->height - page->margin_top - page->margin_bottom;
+    section_starts = (ol_unit *)malloc((size_t)section_count * sizeof(*section_starts));
+    first_region = (int *)malloc((size_t)(section_count + 1) * sizeof(*first_region));
+    section_page = (int *)malloc((size_t)section_count * sizeof(*section_page));
+    section_y = (ol_unit *)malloc((size_t)section_count * sizeof(*section_y));
+    if (!section_starts || !first_region || !section_page || !section_y) goto done;
+    if (doc->css && !ol_css_restyle(doc, body_width)) goto done;
+    memset(&virtual_page, 0, sizeof(virtual_page));
+    virtual_page.width = body_width;
+    virtual_page.height = body_height;
+    doc->zone_count = 0;
+    doc->paging = 1;
+    doc->page = virtual_page;
+    doc->body_height = body_height;
+    for (pass = 1;; ++pass) {
+        reset_layout(doc);
+        doc->viewport_width = body_width;
+        if (!layout_galley_sections(doc, body_width, sections, section_count, section_starts,
+                                    measure, measure_userdata))
+            goto done;
+        sort_keeps_and_breaks(doc);
+        physical_pages = 0;
+        for (i = 0; i < section_count; ++i) {
+            ol_unit end = i + 1 < section_count ? section_starts[i + 1] : doc->content_height;
+            ol_unit first_height = body_height;
+            int base = physical_pages;
+            first_region[i] = doc->page_count;
+            if (i > 0 && sections[i].break_before == OL_SECTION_CONTINUOUS) {
+                int prev_regions = first_region[i] - first_region[i - 1];
+                int prev_columns = sections[i - 1].columns;
+                int last_in_group = (prev_regions - 1) % prev_columns + 1;
+                int last_region = first_region[i] - 1;
+                int group_start = last_region - last_in_group + 1;
+                ol_unit last_y, used = 0;
+                if (prev_regions < 1) goto done;
+                last_y = group_start - first_region[i - 1] < prev_columns ? section_y[i - 1] : 0;
+                for (r = group_start; r <= last_region; ++r) {
+                    ol_unit occupied = doc->page_shift[r] + doc->page_end[r] - doc->page_start[r];
+                    if (occupied > used) used = occupied;
+                }
+                section_y[i] = last_y + used;
+                if (section_y[i] < body_height) {
+                    base = physical_pages - 1;
+                    first_height = body_height - section_y[i];
+                } else {
+                    section_y[i] = 0;
+                }
+            } else {
+                section_y[i] = 0;
+                if (i > 0 && sections[i].break_before == OL_SECTION_ODD_PAGE &&
+                    ((base + 1) & 1) == 0)
+                    ++base;
+                if (i > 0 && sections[i].break_before == OL_SECTION_EVEN_PAGE &&
+                    ((base + 1) & 1) != 0)
+                    ++base;
+            }
+            section_page[i] = base;
+            if (!cut_page_range(doc, section_starts[i], end, body_height, first_height,
+                                sections[i].columns,
+                                i + 1 < section_count &&
+                                sections[i + 1].break_before == OL_SECTION_CONTINUOUS))
+                goto done;
+            {
+                int regions = doc->page_count - first_region[i];
+                int after = base + (regions + sections[i].columns - 1) / sections[i].columns;
+                if (after > physical_pages) physical_pages = after;
+            }
+        }
+        first_region[section_count] = doc->page_count;
+        if ((changed = wrap_zones(doc)) < 0) goto done;
+        if (!changed || pass == OL_WRAP_PASSES) break;
+    }
+#ifdef OL_CHECK_SORT
+    if (doc->zone_count) { ++ol_wrap_layouts; ol_wrap_passes += pass; if (changed) ++ol_wrap_unsettled; }
+#endif
+    if (!header_copies(doc, &copies)) goto done;
+    ok = sort_ops_into_pages(doc) && header_copies_insert(doc, &copies);
+    header_copies_free(&copies);
+    if (!ok) { ok = 0; goto done; }
+
+    virtual_regions = doc->page_count;
+    starts = (ol_unit *)malloc((size_t)virtual_regions * sizeof(*starts));
+    ends = (ol_unit *)malloc((size_t)virtual_regions * sizeof(*ends));
+    shifts = (ol_unit *)malloc((size_t)virtual_regions * sizeof(*shifts));
+    region_page_ids = (int *)malloc((size_t)virtual_regions * sizeof(*region_page_ids));
+    region_x = (ol_unit *)malloc((size_t)virtual_regions * sizeof(*region_x));
+    region_y = (ol_unit *)malloc((size_t)virtual_regions * sizeof(*region_y));
+    region_width = (ol_unit *)malloc((size_t)virtual_regions * sizeof(*region_width));
+    virtual_ops = (size_t *)malloc((size_t)virtual_regions * sizeof(*virtual_ops));
+    if (!starts || !ends || !shifts || !region_page_ids || !region_x || !region_y || !region_width ||
+        !virtual_ops) {
+        ok = 0; goto done;
+    }
+    memcpy(starts, doc->page_start, (size_t)virtual_regions * sizeof(*starts));
+    memcpy(ends, doc->page_end, (size_t)virtual_regions * sizeof(*ends));
+    memcpy(shifts, doc->page_shift, (size_t)virtual_regions * sizeof(*shifts));
+    memcpy(virtual_ops, doc->page_ops, (size_t)virtual_regions * sizeof(*virtual_ops));
+
+    for (i = 0; i < section_count; ++i) {
+        int columns = sections[i].columns;
+        int regions = first_region[i + 1] - first_region[i];
+        ol_unit width = (body_width - sections[i].gap * (columns - 1)) / columns;
+        for (r = 0; r < regions; ++r) {
+            int region = first_region[i] + r;
+            int column = r % columns;
+            region_page_ids[region] = section_page[i] + r / columns;
+            region_x[region] = page->margin_left + column * (width + sections[i].gap);
+            region_y[region] = r < columns ? section_y[i] : 0;
+            region_width[region] = width;
+        }
+    }
+    while (doc->page_count < physical_pages)
+        if (!add_page(doc, 0, 0)) { ok = 0; goto done; }
+    physical_first = (size_t *)calloc((size_t)physical_pages, sizeof(*physical_first));
+    physical_ops = (size_t *)calloc((size_t)physical_pages, sizeof(*physical_ops));
+    if (!physical_first || !physical_ops) { ok = 0; goto done; }
+    for (r = 0; r < virtual_regions; ++r)
+        physical_ops[region_page_ids[r]] += virtual_ops[r];
+    for (i = 1; i < physical_pages; ++i)
+        physical_first[i] = physical_first[i - 1] + physical_ops[i - 1];
+
+    for (i = 0; i < (int)doc->op_count; ++i) {
+        ol_display_op *op = &doc->ops[i];
+        int region = op->page;
+        ol_unit dx, dy;
+        const ol_node *frame;
+        const ol_anchor *anchor;
+        if (region < 0 || region >= virtual_regions) continue;
+        dx = region_x[region];
+        dy = page->margin_top + region_y[region];
+        frame = anchored_ancestor(node_for_id(doc, display_node_id(op)));
+        anchor = frame ? anchor_for_frame(doc, frame) : NULL;
+        if (anchor) {
+            if (OL_ANCHOR_X_OF(anchor->anchor) == OL_ANCHOR_PAGE) dx = 0;
+            else if (OL_ANCHOR_X_OF(anchor->anchor) == OL_ANCHOR_MARGIN) dx = page->margin_left;
+            if (OL_ANCHOR_Y_OF(anchor->anchor) == OL_ANCHOR_PAGE) dy = 0;
+        }
+        move_op(op, dx, dy);
+        op->page = region_page_ids[region];
+    }
+    for (i = 0; i < physical_pages; ++i) {
+        doc->page_first[i] = physical_first[i];
+        doc->page_ops[i] = physical_ops[i];
+    }
+    doc->page_count = physical_pages;
+    doc->page = *page;
+    doc->body_height = body_height;
+    doc->column_count = 0;
+    doc->column_gap = doc->column_width = 0;
+    doc->region_count = virtual_regions;
+    doc->region_start = starts; starts = NULL;
+    doc->region_end = ends; ends = NULL;
+    doc->region_shift = shifts; shifts = NULL;
+    doc->region_page = region_page_ids; region_page_ids = NULL;
+    doc->region_x = region_x; region_x = NULL;
+    doc->region_y = region_y; region_y = NULL;
+    doc->region_width = region_width; region_width = NULL;
+    doc->paged = 1;
+    ++doc->generation;
+    ok = 1;
+
+done:
+    free(section_starts);
+    free(first_region);
+    free(section_page);
+    free(section_y);
+    free(starts); free(ends); free(shifts);
+    free(region_page_ids); free(region_x); free(region_y); free(region_width);
+    free(virtual_ops);
+    free(physical_first); free(physical_ops);
+    return ok;
+}
+
 int ol_page_count(const ol_document *doc)
 {
     return doc ? doc->page_count : 0;
@@ -3443,12 +3963,74 @@ int ol_display_page_range(const ol_document *doc, int page,
     return 1;
 }
 
+static int op_box(const ol_display_op *op, ol_rect *box)
+{
+    if (!op || !box) return 0;
+    switch (op->type) {
+    case OL_OP_TEXT: *box = op->u.text.bounds; return 1;
+    case OL_OP_FILL_RECT: *box = op->u.fill_rect.bounds; return 1;
+    case OL_OP_IMAGE: *box = op->u.image.bounds; return 1;
+    case OL_OP_RULE:
+        box->x = op->u.rule.x1 < op->u.rule.x2 ? op->u.rule.x1 : op->u.rule.x2;
+        box->y = op->u.rule.y1 < op->u.rule.y2 ? op->u.rule.y1 : op->u.rule.y2;
+        box->width = (op->u.rule.x1 < op->u.rule.x2 ? op->u.rule.x2 - op->u.rule.x1
+                                                   : op->u.rule.x1 - op->u.rule.x2) + op->u.rule.thickness;
+        box->height = (op->u.rule.y1 < op->u.rule.y2 ? op->u.rule.y2 - op->u.rule.y1
+                                                    : op->u.rule.y1 - op->u.rule.y2) + op->u.rule.thickness;
+        return 1;
+    default: return 0;
+    }
+}
+
+int ol_node_page_box(const ol_document *doc, ol_id node_id,
+                     int *page, ol_rect *box)
+{
+    const ol_node *target;
+    size_t i;
+    if (!doc || !box || !(target = node_for_id(doc, node_id))) return 0;
+    if ((target->box.flags & OL_BOX_ABSOLUTE) && target->box.anchor &&
+        ol_frame_place(doc, target, page, box))
+        return 1;
+    for (i = 0; i < doc->op_count; ++i) {
+        const ol_display_op *op = &doc->ops[i];
+        const ol_node *n = node_for_id(doc, display_node_id(op));
+        for (; n && n != target; n = n->parent)
+            if ((n->box.flags & OL_BOX_ABSOLUTE) && n->box.anchor) {
+                n = NULL;          /* an anchored descendant is not the paragraph's own box */
+                break;
+            }
+        if (n == target && op_box(op, box)) {
+            if (page) *page = op->page;
+            return 1;
+        }
+    }
+    if (target->style.display == OL_DISPLAY_BLOCK && !rect_empty(target->bounds)) {
+        ol_text_position pos;
+        pos.node_id = node_id;
+        pos.offset = 0;
+        return ol_caret_box(doc, &pos, NULL, NULL, page, box);
+    }
+    return 0;
+}
+
 const ol_node *ol_hit_test_page(const ol_document *doc, int page,
                                 ol_unit x, ol_unit y)
 {
     ol_unit gy;
     if (!doc || page < 0 || page >= doc->page_count) return NULL;
     if (!doc->paged) return ol_hit_test(doc, x, y);
+    if (doc->region_count > 0 && doc->region_page && doc->region_x && doc->region_width) {
+        int region;
+        for (region = 0; region < doc->region_count; ++region)
+            if (doc->region_page[region] == page && x >= doc->region_x[region] &&
+                x < doc->region_x[region] + doc->region_width[region])
+                break;
+        if (region >= doc->region_count) return NULL; /* outside a region, including a column gap */
+        gy = y - doc->page.margin_top - doc->region_y[region] -
+             doc->region_shift[region] + doc->region_start[region];
+        if (gy < doc->region_start[region] || gy >= doc->region_end[region]) return NULL;
+        return ol_hit_test(doc, x - doc->region_x[region], gy);
+    }
     gy = y - doc->page.margin_top - doc->page_shift[page] + doc->page_start[page];
     if (gy < doc->page_start[page] || gy >= doc->page_end[page]) return NULL;
     return ol_hit_test(doc, x - doc->page.margin_left, gy);
@@ -3556,9 +4138,17 @@ int ol_caret_box(const ol_document *doc, const ol_text_position *pos,
         ol_unit gy = node->bounds.y + inset_top(node);
         int p = 0;
         if (doc->paged) {
-            p = page_holding(doc, gy);
-            gx += doc->page.margin_left;
-            gy += doc->page.margin_top + doc->page_shift[p] - doc->page_start[p];
+            if (doc->region_count > 0 && doc->region_page && doc->region_x && doc->region_y) {
+                int region = column_region_holding(doc, gy);
+                p = doc->region_page[region];
+                gx += doc->region_x[region];
+                gy += doc->page.margin_top + doc->region_y[region] +
+                      doc->region_shift[region] - doc->region_start[region];
+            } else {
+                p = page_holding(doc, gy);
+                gx += doc->page.margin_left;
+                gy += doc->page.margin_top + doc->page_shift[p] - doc->page_start[p];
+            }
         }
         box->x = gx;
         box->y = gy;
