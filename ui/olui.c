@@ -4262,13 +4262,15 @@ void olui_draw(olui *ui, const olui_rect *area, olui_draw_fn fn, void *userdata)
     d.area = area;
     d.alpha = 255;
     d.ghost = 0;
+    /* what was damaged is drawn now: a repaint asked while drawing (a
+     * program's picture asking for itself again) is kept for the next draw */
+    ui->damaged = 0;
+    ui->part.w = ui->part.h = 0;
     draw_el(&d, ui->root, 0, NULL);
     if (ui->band_scope && ui->band_rect.w > 0 && ui->band_rect.h > 0 && crosses(ui->band_rect, area))
         out_box(&d, ui->band_box, ui->band_rect, &ui->band_box->cs);
     if (ui->ndragged) draw_ghost(&d, ui->drag_dx, ui->drag_dy);
     draw_over(&d);
-    ui->damaged = 0;
-    ui->part.w = ui->part.h = 0;
 }
 
 int olui_damaged(const olui *ui, olui_rect *area)
