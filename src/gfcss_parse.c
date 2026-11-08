@@ -1122,7 +1122,7 @@ static int supports_in_parens(gfcss_engine *e, glex *lx, int depth)
 static int supports_cond(gfcss_engine *e, glex *lx, gtok *t, int depth)
 {
     int v, op = 0;
-    if (depth > 16) return 0;
+    if (depth > 6) return 0;
     if (t->type == T_IDENT && g_ieq(t->s, t->n, "not")) {
         g_next_nows(lx, t);
         if (t->type != T_LPAREN) return 0;
@@ -1287,6 +1287,9 @@ static int add_import(gfcss_sheet *s, const char *p, const char *end)
 }
 
 /* A list of rules from p to end; media: the @media they are in (-1: none) */
+/* @media and @supports inside each other: deeper is left out, as each level is a big stack frame */
+#define MAX_RULE_NESTING 6
+
 static void parse_rules(gfcss_sheet *s, const char *p, const char *end, int32_t media, int top)
 {
     glex lx;
@@ -1320,10 +1323,18 @@ static void parse_rules(gfcss_sheet *s, const char *p, const char *end, int32_t 
                 lx.p = bend;
                 if (g_ieqz(name, "media")) {
                     int32_t m = g_parse_media_list(s, prelude, pend, media);
-                    if (m >= 0) parse_rules(s, bstart, inner_end, m, 0);
+                    if (m >= 0 && s->nesting < MAX_RULE_NESTING) {
+                        ++s->nesting;
+                        parse_rules(s, bstart, inner_end, m, 0);
+                        --s->nesting;
+                    }
                     s->rules_seen = 1;
                 } else if (g_ieqz(name, "supports")) {
-                    if (supports(s->engine, prelude, pend)) parse_rules(s, bstart, inner_end, media, 0);
+                    if (s->nesting < MAX_RULE_NESTING && supports(s->engine, prelude, pend)) {
+                        ++s->nesting;
+                        parse_rules(s, bstart, inner_end, media, 0);
+                        --s->nesting;
+                    }
                     s->rules_seen = 1;
                 }
                 /* @font-face, @keyframes, @page and the rest: skipped, block and all */

@@ -173,6 +173,7 @@ struct gfcss_sheet {
     gfcss_sheet *next;          /* the engine's list */
     gfcss_sheet *owner;         /* the sheet that imports it; NULL: the engine's */
     int origin;
+    int nesting;                /* @media and @supports being parsed inside each other */
     char *text;                 /* every text parsed into it */
     size_t text_n, text_cap;
     char *pool;                 /* names, ended with 0 */

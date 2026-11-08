@@ -99,6 +99,7 @@ static int zone_same(const ol_wrap_zone *a, const ol_wrap_zone *b)
 }
 
 struct ol_document {
+    int layout_depth;           /* blocks inside each other being laid out */
     ol_node *root;
     ol_node **nodes;
     size_t node_count;
@@ -2033,6 +2034,9 @@ static ol_unit cell_hint(const ol_node *cell, ol_unit width)
  * top, middle or bottom of its row (box.valign); and the header rows
  * (OL_BOX_REPEAT_HEADER from the first row on) are kept with the first row
  * after them, and noted for the pages the table goes on to. */
+#ifdef __GNUC__
+__attribute__((noinline))   /* its arrays stay out of every other block's stack frame */
+#endif
 static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
                         ol_unit width, ol_measure_text_fn measure,
                         void *measure_userdata, ol_unit *bottom_out)
@@ -2286,6 +2290,8 @@ static ol_unit content_width_in(ol_document *doc, const ol_node *node, int frame
     return clamp_width(node, w + inset_left(node) + inset_right(node), 0) + ml + mr;
 }
 
+#define OL_MAX_LAYOUT_DEPTH 64
+
 static int layout_block_in(ol_document *doc, ol_node *node,
                            ol_unit x, ol_unit y, ol_unit width,
                            ol_measure_text_fn measure, void *measure_userdata,
@@ -2459,7 +2465,7 @@ static int layout_children(ol_document *doc, ol_node *node, ol_inline_flow *flow
     return 1;
 }
 
-static int layout_block_in(ol_document *doc, ol_node *node,
+static int layout_block_at(ol_document *doc, ol_node *node,
                            ol_unit x, ol_unit y, ol_unit width,
                            ol_measure_text_fn measure, void *measure_userdata,
                            ol_unit *bottom_out)
@@ -2626,6 +2632,23 @@ static int layout_block_in(ol_document *doc, ol_node *node,
     *bottom_out = is_frame(node) ? node->bounds.y + node->bounds.height
                                  : content_bottom + mb;
     return 1;
+}
+
+static int layout_block_in(ol_document *doc, ol_node *node,
+                           ol_unit x, ol_unit y, ol_unit width,
+                           ol_measure_text_fn measure, void *measure_userdata,
+                           ol_unit *bottom_out)
+{
+    int ok;
+    /* deeper than any window or page means to go: left out, before the stack runs out */
+    if (doc->layout_depth >= OL_MAX_LAYOUT_DEPTH) {
+        *bottom_out = y;
+        return 1;
+    }
+    ++doc->layout_depth;
+    ok = layout_block_at(doc, node, x, y, width, measure, measure_userdata, bottom_out);
+    --doc->layout_depth;
+    return ok;
 }
 
 static int layout_block(ol_document *doc, ol_node *node,
