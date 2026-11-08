@@ -228,38 +228,69 @@ static int corner_inset(int r, int row)
     return r - (isqrt(4 * r * r - dy * dy) + 1) / 2;
 }
 
+/* A row of a box: a border's two sides and the fill, or the border's whole
+ * row in the first (w 0: not there) */
+typedef struct {
+    int x[3], w[3];
+    ULONG argb[3];
+} box_row;
+
+static void row_of(const olui_amiga *a, const olui_draw_op *op, int r, int b, int row, box_row *s)
+{
+    int x = op->box.x, w = op->box.w, h = op->box.h;
+    int ir = r - b > 0 ? r - b : 0, ih = h - 2 * b;
+    int out = corner_inset(r, row < h - 1 - row ? row : h - 1 - row);
+    int irow = row - b;
+    ULONG fill = 0;
+    memset(s, 0, sizeof(*s));
+    if (op->stops) {
+        int t = h > 1 ? row * 1000 / (h - 1) : 0;
+        if (!a->direct) t = (t * 4 / 1001) * 250 + 125;     /* four bands on a palette */
+        fill = stop_colour(op, t);
+    }
+    if (b && (irow < 0 || irow >= ih)) {
+        s->x[0] = x + out;
+        s->w[0] = w - 2 * out;
+        s->argb[0] = op->border_argb | 0xff000000UL;
+    } else if (b) {
+        int in = corner_inset(ir, irow < ih - 1 - irow ? irow : ih - 1 - irow);
+        int ix = x + b + in, iwr = w - 2 * b - 2 * in;
+        s->x[0] = x + out;
+        s->w[0] = ix - (x + out);
+        s->argb[0] = s->argb[1] = op->border_argb | 0xff000000UL;
+        s->x[1] = ix + iwr;
+        s->w[1] = (x + w - out) - (ix + iwr);
+        if (op->stops) {
+            s->x[2] = ix;
+            s->w[2] = iwr;
+            s->argb[2] = fill;
+        }
+    } else if (op->stops) {
+        s->x[0] = x + out;
+        s->w[0] = w - 2 * out;
+        s->argb[0] = fill;
+    }
+}
+
+/* Rows that are the same are filled together: a library call each is what a box costs */
 static void draw_box(olui_amiga *a, const olui_draw_op *op)
 {
-    int x = op->box.x, y = op->box.y, w = op->box.w, h = op->box.h;
-    int r = op->radius, b = op->border, row;
-    int ir, iw, ih;
+    int y = op->box.y, w = op->box.w, h = op->box.h;
+    int r = op->radius, b = op->border, row, end, i;
+    box_row now, next;
     if (w <= 0 || h <= 0) return;
     if (r > w / 2) r = w / 2;
     if (r > h / 2) r = h / 2;
     if (b * 2 > w || b * 2 > h) b = 0;
-    ir = r - b > 0 ? r - b : 0;
-    iw = w - 2 * b;
-    ih = h - 2 * b;
-    for (row = 0; row < h; ++row) {
-        int out = corner_inset(r, row < h - 1 - row ? row : h - 1 - row);
-        int irow = row - b;
-        ULONG fill = 0;
-        if (op->stops) {
-            int t = h > 1 ? row * 1000 / (h - 1) : 0;
-            if (!a->direct) t = (t * 4 / 1001) * 250 + 125;     /* four bands on a palette */
-            fill = stop_colour(op, t);
+    row_of(a, op, r, b, 0, &now);
+    next = now;
+    for (row = 0; row < h; row = end) {
+        for (end = row + 1; end < h; ++end) {
+            row_of(a, op, r, b, end, &next);
+            if (memcmp(&now, &next, sizeof(now))) break;
         }
-        if (b && (irow < 0 || irow >= ih)) {
-            span(a, x + out, y + row, w - 2 * out, 1, op->border_argb | 0xff000000UL);
-        } else if (b) {
-            int in = corner_inset(ir, irow < ih - 1 - irow ? irow : ih - 1 - irow);
-            int ix = x + b + in, iwr = iw - 2 * in;
-            span(a, x + out, y + row, ix - (x + out), 1, op->border_argb | 0xff000000UL);
-            span(a, ix + iwr, y + row, (x + w - out) - (ix + iwr), 1, op->border_argb | 0xff000000UL);
-            if (op->stops) span(a, ix, y + row, iwr, 1, fill);
-        } else if (op->stops) {
-            span(a, x + out, y + row, w - 2 * out, 1, fill);
-        }
+        for (i = 0; i < 3; ++i) span(a, now.x[i], y + row, now.w[i], end - row, now.argb[i]);
+        now = next;
     }
 }
 

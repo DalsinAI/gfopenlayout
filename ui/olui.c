@@ -1190,13 +1190,33 @@ static void slider_track(olui *ui, const olui_el *el, int32_t *x0, int32_t *x1)
     if (*x1 <= *x0) *x1 = *x0 + 1;
 }
 
+static void add_extent(olui *ui, olui_el *el, olui_rect *area);
+
+/* A progress bar's or slider's value: drawn again where it was and where it is, a knob reaching past the box */
+static void paint_value(olui *ui, olui_el *el, int v)
+{
+    olui_rect area, win;
+    if (ui->stale || !el->node) {
+        el->ivalue = v;
+        ui->damaged = 1;
+        return;
+    }
+    memset(&area, 0, sizeof(area));
+    add_extent(ui, el, &area);
+    el->ivalue = v;
+    add_extent(ui, el, &area);
+    win.x = win.y = 0;
+    win.w = ui->width;
+    win.h = ui->height;
+    grow_to(&ui->part, cut(area, win));
+}
+
 static void slider_set(olui *ui, olui_el *el, int v)
 {
     if (v < el->imin) v = el->imin;
     if (v > el->imax) v = el->imax;
     if (v == el->ivalue) return;
-    el->ivalue = v;
-    ui->damaged = 1;
+    paint_value(ui, el, v);
     {
         char num[16];
         snprintf(num, sizeof(num), "%d", v);
@@ -4534,15 +4554,13 @@ void olui_set_slider(olui *ui, olui_el *el, int value)
     if (value < el->imin) value = el->imin;
     if (value > el->imax) value = el->imax;
     if (el->ivalue == value) return;
-    el->ivalue = value;
-    ui->damaged = 1;
+    paint_value(ui, el, value);
 }
 
 void olui_set_progress(olui *ui, olui_el *el, int value)
 {
     if (!ui || !el || el->ivalue == value) return;
-    el->ivalue = value;
-    ui->damaged = 1;
+    paint_value(ui, el, value);
 }
 
 olui_el *olui_list_add(olui *ui, olui_el *list, olui_el *parent, const char *text, const char *value)
