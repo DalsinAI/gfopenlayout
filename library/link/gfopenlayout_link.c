@@ -614,3 +614,9 @@ int ol_node_set_image_crop(ol_node *node, const ol_image_crop *crop)
     if (OpenLayoutBase->lib_Version < 13) return 0;
     return OL_NodeSetImageCrop(node, crop);
 }
+
+int ol_shape_path(const ol_graphic *graphic, const ol_rect *bounds, ol_point *points, int capacity, int *closed)
+{
+    if (OpenLayoutBase->lib_Version < 14) return 0;
+    return OL_ShapePath(graphic, bounds, points, capacity, closed);
+}

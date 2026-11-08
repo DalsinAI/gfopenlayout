@@ -599,6 +599,8 @@ int ol_node_set_shape(ol_node *node, const ol_shape_style *style,
              ((s.type == OL_SHAPE_LINE || s.type == OL_SHAPE_POLYLINE) && count < 2) ||
              (s.type == OL_SHAPE_POLYGON && count < 3))
         return 0;
+    s.rotation_tenths %= 3600;
+    if (s.rotation_tenths < 0) s.rotation_tenths += 3600;
     if (s.type == OL_SHAPE_RECT || s.type == OL_SHAPE_ROUND_RECT || s.type == OL_SHAPE_ELLIPSE)
         count = 0;
     if (count) {
@@ -652,6 +654,143 @@ int ol_node_set_image_crop(ol_node *node, const ol_image_crop *crop)
         }
     }
     return 1;
+}
+
+/* sin(degrees) * 16384, 0 to 90. The ten subdivisions between entries are
+ * linearly interpolated; shape coordinates do not need floating point. */
+static const int16_t shape_sine[91] = {
+    0, 286, 572, 857, 1143, 1428, 1713, 1997, 2280, 2563, 2845, 3126, 3406, 3686, 3964, 4240,
+    4516, 4790, 5063, 5334, 5604, 5872, 6138, 6402, 6664, 6924, 7182, 7438, 7692, 7943, 8192,
+    8438, 8682, 8923, 9162, 9397, 9630, 9860, 10087, 10311, 10531, 10749, 10963, 11174, 11381,
+    11585, 11786, 11982, 12176, 12365, 12551, 12733, 12911, 13085, 13255, 13421, 13583, 13741,
+    13894, 14044, 14189, 14330, 14466, 14598, 14726, 14849, 14968, 15082, 15191, 15296, 15396,
+    15491, 15582, 15668, 15749, 15826, 15897, 15964, 16026, 16083, 16135, 16182, 16225, 16262,
+    16294, 16322, 16344, 16362, 16374, 16382, 16384
+};
+
+static int32_t shape_sin(int tenths)
+{
+    int t = tenths % 3600, quadrant, degree, rest;
+    int32_t value;
+    if (t < 0) t += 3600;
+    quadrant = t / 900;
+    t %= 900;
+    if (quadrant & 1) t = 900 - t;
+    degree = t / 10;
+    rest = t % 10;
+    value = shape_sine[degree] +
+            (degree < 90 ? (shape_sine[degree + 1] - shape_sine[degree]) * rest / 10 : 0);
+    return quadrant >= 2 ? -value : value;
+}
+
+static int32_t div_round_16384(int64_t value)
+{
+    return (int32_t)(value >= 0 ? (value + 8192) / 16384 : -((-value + 8192) / 16384));
+}
+
+static int32_t div_round_2(int64_t value)
+{
+    return (int32_t)(value >= 0 ? (value + 1) / 2 : -((-value + 1) / 2));
+}
+
+static void rotate_path(ol_point *points, int count, const ol_rect *bounds, int tenths)
+{
+    int32_t c, s;
+    int64_t cx2, cy2;
+    int i;
+    if (!tenths) return;
+    c = shape_sin(tenths + 900);
+    s = shape_sin(tenths);
+    cx2 = (int64_t)bounds->x * 2 + bounds->width;
+    cy2 = (int64_t)bounds->y * 2 + bounds->height;
+    for (i = 0; i < count; i++) {
+        int64_t dx2 = (int64_t)points[i].x * 2 - cx2;
+        int64_t dy2 = (int64_t)points[i].y * 2 - cy2;
+        points[i].x = div_round_2(cx2 + div_round_16384(dx2 * c + dy2 * s));
+        points[i].y = div_round_2(cy2 + div_round_16384(-dx2 * s + dy2 * c));
+    }
+}
+
+int ol_shape_path(const ol_graphic *graphic, const ol_rect *bounds,
+                  ol_point *points, int capacity, int *closed)
+{
+    static const int16_t circle[24][2] = {
+        {1000, 0}, {966, 259}, {866, 500}, {707, 707}, {500, 866}, {259, 966}, {0, 1000},
+        {-259, 966}, {-500, 866}, {-707, 707}, {-866, 500}, {-966, 259}, {-1000, 0},
+        {-966, -259}, {-866, -500}, {-707, -707}, {-500, -866}, {-259, -966}, {0, -1000},
+        {259, -966}, {500, -866}, {707, -707}, {866, -500}, {966, -259}
+    };
+    static const int16_t cos15[7] = {1000, 966, 866, 707, 500, 259, 0};
+    const ol_shape_style *s;
+    int count = 0, k, r, right, bottom;
+    if (closed) *closed = 0;
+    if (!graphic || !bounds || !points || capacity < 0 || bounds->width < 0 || bounds->height < 0)
+        return 0;
+    s = &graphic->shape;
+    switch (s->type) {
+    case OL_SHAPE_RECT:
+        count = 4;
+        if (capacity < count) return 0;
+        points[0].x = bounds->x; points[0].y = bounds->y;
+        points[1].x = bounds->x + bounds->width; points[1].y = bounds->y;
+        points[2].x = bounds->x + bounds->width; points[2].y = bounds->y + bounds->height;
+        points[3].x = bounds->x; points[3].y = bounds->y + bounds->height;
+        if (closed) *closed = 1;
+        break;
+    case OL_SHAPE_ROUND_RECT:
+        r = (bounds->width < bounds->height ? bounds->width : bounds->height) *
+            s->radius_permille / OL_SHAPE_COORDS;
+        if (r <= 0) {
+            ol_graphic rectangle = *graphic;
+            rectangle.shape.type = OL_SHAPE_RECT;
+            return ol_shape_path(&rectangle, bounds, points, capacity, closed);
+        }
+        count = 28;
+        if (capacity < count) return 0;
+        right = bounds->x + bounds->width - r;
+        bottom = bounds->y + bounds->height - r;
+        for (k = 0; k < 7; k++) {
+            points[k].x = right + r * cos15[6 - k] / 1000;
+            points[k].y = bounds->y + r - r * cos15[k] / 1000;
+            points[7 + k].x = right + r * cos15[k] / 1000;
+            points[7 + k].y = bottom + r * cos15[6 - k] / 1000;
+            points[14 + k].x = bounds->x + r - r * cos15[6 - k] / 1000;
+            points[14 + k].y = bottom + r * cos15[k] / 1000;
+            points[21 + k].x = bounds->x + r - r * cos15[k] / 1000;
+            points[21 + k].y = bounds->y + r - r * cos15[6 - k] / 1000;
+        }
+        if (closed) *closed = 1;
+        break;
+    case OL_SHAPE_ELLIPSE:
+        count = 24;
+        if (capacity < count) return 0;
+        for (k = 0; k < count; k++) {
+            points[k].x = bounds->x + bounds->width / 2 +
+                          (int32_t)((int64_t)bounds->width * circle[k][0] / 2000);
+            points[k].y = bounds->y + bounds->height / 2 +
+                          (int32_t)((int64_t)bounds->height * circle[k][1] / 2000);
+        }
+        if (closed) *closed = 1;
+        break;
+    case OL_SHAPE_LINE:
+    case OL_SHAPE_POLYLINE:
+    case OL_SHAPE_POLYGON:
+        count = graphic->point_count;
+        if (count < 0 || count > OL_MAX_SHAPE_POINTS || capacity < count || (count && !graphic->points))
+            return 0;
+        for (k = 0; k < count; k++) {
+            points[k].x = bounds->x + (int32_t)((int64_t)bounds->width * graphic->points[k].x /
+                                                OL_SHAPE_COORDS);
+            points[k].y = bounds->y + (int32_t)((int64_t)bounds->height * graphic->points[k].y /
+                                                OL_SHAPE_COORDS);
+        }
+        if (closed) *closed = s->type == OL_SHAPE_POLYGON;
+        break;
+    default:
+        return 0;
+    }
+    rotate_path(points, count, bounds, s->rotation_tenths);
+    return count;
 }
 
 void ol_box_style_init(ol_box_style *box)

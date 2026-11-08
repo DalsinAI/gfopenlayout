@@ -1,4 +1,4 @@
-==id $Id: gfopenlayout_lib.sfd 13.0 (8.11.2026) $
+==id $Id: gfopenlayout_lib.sfd 14.0 (8.11.2026) $
 * "gfopenlayout.library"
 ==base _OpenLayoutBase
 ==basetype struct Library *
@@ -184,5 +184,7 @@ olui_el * OLUI_Popup(const olui *ui)(a0)
 void OL_ShapeStyleInit(ol_shape_style *style)(a0)
 int OL_NodeSetShape(ol_node *node, const ol_shape_style *style, int count, const ol_point *points)(a0,a1,d0,a2)
 int OL_NodeSetImageCrop(ol_node *node, const ol_image_crop *crop)(a0,a1)
+* version 14: shared shape paths and rotation
+int OL_ShapePath(const ol_graphic *graphic, const ol_rect *bounds, ol_point *points, int capacity, int *closed)(a0,a1,a2,d0,a3)
 * ---- end of version 10 ----
 ==end

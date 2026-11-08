@@ -91,6 +91,7 @@ typedef struct {
     int32_t radius_permille;   /* round rectangle corner, 0..500 */
     uint32_t flags;            /* OL_SHAPE_... */
     uint32_t stroke_style;     /* ol_stroke_style */
+    int32_t rotation_tenths;   /* 0.14: anticlockwise tenths of a degree */
 } ol_shape_style;
 
 /* Source-image crop insets in thousandths. The four insets are non-negative
@@ -309,6 +310,11 @@ int ol_node_set_shape(ol_node *node, const ol_shape_style *style,
  * insets. Crop metadata is ignored by pre-13 renderers, which draw the full
  * image as before. */
 int ol_node_set_image_crop(ol_node *node, const ol_image_crop *crop);
+/* Makes an allocation-free device path for a shape, including primitive
+ * flattening and rotation about bounds' centre. Returns the point count, or
+ * 0 when graphic/bounds/output are invalid or capacity is too small. */
+int ol_shape_path(const ol_graphic *graphic, const ol_rect *bounds,
+                  ol_point *points, int capacity, int *closed);
 
 const ol_node *ol_node_by_id(const ol_document *doc, ol_id id);
 const ol_node *ol_node_parent(const ol_node *node);

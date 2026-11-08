@@ -702,8 +702,16 @@ static int OL_NodeSetImageCrop(REG(a0, ol_node * node), REG(a1, const ol_image_c
     return ol_node_set_image_crop(node, crop);
 }
 
+/* ---- shared shape paths and rotation ---- */
+
+static int OL_ShapePath(REG(a0, const ol_graphic * graphic), REG(a1, const ol_rect * bounds), REG(a2, ol_point * points), REG(d0, int capacity), REG(a3, int * closed), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_shape_path(graphic, bounds, points, capacity, closed);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x3f6
+#define OL_V10_LAST_BIAS 0x3fc
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -743,4 +751,5 @@ static int OL_NodeSetImageCrop(REG(a0, ol_node * node), REG(a1, const ol_image_c
     (APTR)OLUI_VlistSelect, (APTR)OLUI_VlistCurrent, (APTR)OLUI_VlistSetCurrent, \
     (APTR)OLUI_MenuOpen, (APTR)OLUI_NewSharing, (APTR)OLUI_AmigaStrip, \
     (APTR)OLUI_AmigaKeys, (APTR)OLUI_Repaint, (APTR)OLUI_Popup, \
-    (APTR)OL_ShapeStyleInit, (APTR)OL_NodeSetShape, (APTR)OL_NodeSetImageCrop
+    (APTR)OL_ShapeStyleInit, (APTR)OL_NodeSetShape, (APTR)OL_NodeSetImageCrop, \
+    (APTR)OL_ShapePath

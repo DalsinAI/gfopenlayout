@@ -1621,6 +1621,17 @@ typedef struct {
 } ol_display_op_v12;
 
 typedef struct {
+    uint32_t size;
+    uint32_t type;
+    uint32_t fill_argb;
+    uint32_t stroke_argb;
+    ol_unit stroke_width;
+    int32_t radius_permille;
+    uint32_t flags;
+    uint32_t stroke_style;
+} ol_shape_style_v13;
+
+typedef struct {
     int shapes;
     ol_id hidden_id;
     int hidden_drawn;
@@ -1638,7 +1649,7 @@ static void capture_drawing(void *userdata, const ol_device_op *op)
         ++c->hidden_drawn;
 }
 
-static void test_drawing_v13(void)
+static void test_drawing_v14(void)
 {
     ol_document *doc = ol_document_new();
     ol_node *frame = block(doc, NULL, OL_ROLE_BLOCK, OL_ALIGN_START);
@@ -1654,6 +1665,9 @@ static void test_drawing_v13(void)
     drawing_capture capture;
     ol_scale scale;
     ol_page page;
+    ol_rect path_bounds;
+    ol_point path[OL_MAX_SHAPE_POINTS];
+    int path_count, closed;
     size_t i;
 
     /* Version 13 only appends fields: every v12 field retains its offset. */
@@ -1661,6 +1675,8 @@ static void test_drawing_v13(void)
     CHECK(offsetof(ol_display_op_v12, u) == offsetof(ol_display_op, u));
     CHECK(offsetof(ol_display_op_v12, page) == offsetof(ol_display_op, page));
     CHECK(sizeof(ol_display_op_v12) == offsetof(ol_display_op, graphic));
+    /* Version 14 only appends rotation to the size-versioned shape style. */
+    CHECK(sizeof(ol_shape_style_v13) == offsetof(ol_shape_style, rotation_tenths));
 
     ol_box_style_init(&box_style);
     box_style.flags = OL_BOX_ABSOLUTE | OL_BOX_CLIP_CONTENT;
@@ -1691,6 +1707,7 @@ static void test_drawing_v13(void)
     shape_style.radius_permille = 200;
     shape_style.flags = OL_SHAPE_ARROW_END;
     shape_style.stroke_style = OL_STROKE_DASHED;
+    shape_style.rotation_tenths = 900;
     CHECK(ol_node_set_shape(frame, &shape_style, 3, points));
     points[0].x = 7; /* the node owns a copy */
 
@@ -1709,6 +1726,7 @@ static void test_drawing_v13(void)
     CHECK(shape && shape->graphic && shape->graphic->point_count == 3);
     CHECK(shape && shape->graphic && shape->graphic->points[0].x == 500);
     CHECK(shape && shape->graphic && shape->graphic->shape.stroke_style == OL_STROKE_DASHED);
+    CHECK(shape && shape->graphic && shape->graphic->shape.rotation_tenths == 900);
     CHECK(shape && shape->clip.height != 0);
     CHECK(shape && shape->clip.x == OL_CSSPX(10) && shape->clip.y == OL_CSSPX(20));
     CHECK(shape && shape->clip.width == OL_CSSPX(100) && shape->clip.height == OL_CSSPX(50));
@@ -1717,6 +1735,39 @@ static void test_drawing_v13(void)
     CHECK(picture && picture->clip.height != 0);
     CHECK(picture && picture->clip.width == OL_CSSPX(60));
     CHECK(picture && picture->clip.height == OL_CSSPX(30));
+
+    path_bounds.x = 10;
+    path_bounds.y = 20;
+    path_bounds.width = 100;
+    path_bounds.height = 50;
+    closed = 0;
+    path_count = ol_shape_path(shape->graphic, &path_bounds, path,
+                               OL_MAX_SHAPE_POINTS, &closed);
+    CHECK(path_count == 3 && closed);
+    CHECK(path[0].x == 35 && path[0].y == 45);
+    CHECK(path[1].x == 85 && path[1].y == -5);
+    CHECK(path[2].x == 85 && path[2].y == 95);
+    CHECK(ol_shape_path(shape->graphic, &path_bounds, path, 2, &closed) == 0);
+    {
+        ol_graphic primitive = *shape->graphic;
+        primitive.shape.type = OL_SHAPE_RECT;
+        primitive.shape.rotation_tenths = -900;
+        path_count = ol_shape_path(&primitive, &path_bounds, path,
+                                   OL_MAX_SHAPE_POINTS, &closed);
+        CHECK(path_count == 4 && closed);
+        CHECK(path[0].x == 85 && path[0].y == -5);
+        CHECK(path[1].x == 85 && path[1].y == 95);
+        CHECK(path[2].x == 35 && path[2].y == 95);
+        CHECK(path[3].x == 35 && path[3].y == -5);
+        primitive.shape.type = OL_SHAPE_ELLIPSE;
+        primitive.shape.rotation_tenths = 0;
+        CHECK(ol_shape_path(&primitive, &path_bounds, path,
+                            OL_MAX_SHAPE_POINTS, &closed) == 24 && closed);
+        primitive.shape.type = OL_SHAPE_ROUND_RECT;
+        primitive.shape.radius_permille = 200;
+        CHECK(ol_shape_path(&primitive, &path_bounds, path,
+                            OL_MAX_SHAPE_POINTS, &closed) == 28 && closed);
+    }
 
     memset(&capture, 0, sizeof(capture));
     capture.hidden_id = ol_node_id(outside);
@@ -1766,7 +1817,7 @@ int main(void)
     test_wrap_pages();
     test_wrap_random();
     test_exact_lines();
-    test_drawing_v13();
+    test_drawing_v14();
     if (failures) {
         printf("OPENLAYOUT DOCUMENT FAIL (%d)\n", failures);
         return 20;

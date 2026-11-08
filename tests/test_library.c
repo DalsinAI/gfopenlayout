@@ -460,6 +460,20 @@ int main(void)
         CHECK(shapes == 1 && images == 1);
     }
 
+    if (OpenLayoutBase->lib_Version >= OPENLAYOUTLIB_PATH_VERSION) {
+        ol_graphic graphic;
+        ol_rect bounds = {10, 20, 100, 50};
+        ol_point path[OL_MAX_SHAPE_POINTS];
+        int closed = 0;
+        memset(&graphic, 0, sizeof(graphic));
+        graphic.shape.size = sizeof(graphic.shape);
+        graphic.shape.type = OL_SHAPE_RECT;
+        graphic.shape.rotation_tenths = 900;
+        CHECK(OL_ShapePath(&graphic, &bounds, path, OL_MAX_SHAPE_POINTS, &closed) == 4);
+        CHECK(closed && path[0].x == 35 && path[0].y == 95);
+        CHECK(path[1].x == 35 && path[1].y == -5);
+    }
+
     printf("LAYOUTLIB PASS version=%s height=%ld ops=%lu link=%lu\n",
            (const char *)OL_VersionString(),
            (long)(OL_DocumentContentHeight(doc) / OL_UNITS_PER_CSSPX),

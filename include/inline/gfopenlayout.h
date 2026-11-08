@@ -183,6 +183,8 @@
 #define OL_ShapeStyleInit(style) LP1NR(0x3ea, OL_ShapeStyleInit, ol_shape_style *, (style), a0, , OPENLAYOUT_BASE_NAME)
 #define OL_NodeSetShape(node,style,count,points) LP4(0x3f0, int, OL_NodeSetShape, ol_node *, (node), a0, const ol_shape_style *, (style), a1, int, (count), d0, const ol_point *, (points), a2, , OPENLAYOUT_BASE_NAME)
 #define OL_NodeSetImageCrop(node,crop) LP2(0x3f6, int, OL_NodeSetImageCrop, ol_node *, (node), a0, const ol_image_crop *, (crop), a1, , OPENLAYOUT_BASE_NAME)
+/* version 14: shared shape paths and rotation */
+#define OL_ShapePath(graphic,bounds,points,capacity,closed) LP5(0x3fc, int, OL_ShapePath, const ol_graphic *, (graphic), a0, const ol_rect *, (bounds), a1, ol_point *, (points), a2, int, (capacity), d0, int *, (closed), a3, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif

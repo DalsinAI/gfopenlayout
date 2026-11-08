@@ -55,6 +55,9 @@
                                                OL_NodeSetShape and OL_NodeSetImageCrop. Existing
                                                display-op fields and all older vectors retain
                                                their offsets. */
+#define OPENLAYOUTLIB_PATH_VERSION 14       /* allocation-free primitive flattening and shape
+                                               rotation: OL_ShapePath. The shape style extension
+                                               is appended after every version 13 field. */
 
 struct OLNodeAppend {
     ol_document *document;
