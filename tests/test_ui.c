@@ -98,7 +98,7 @@ typedef struct {
     int saw_text_ok;
 } sink;
 
-static void draw_nothing(void *userdata, const olui_draw_op *op)
+static void ignore_op(void *userdata, const olui_draw_op *op)
 {
     (void)userdata;
     (void)op;
@@ -129,6 +129,12 @@ static void retext(olui *ui, const olui_event *ev, void *userdata)
     olui_set_text(ui, ev->el, "x");
 }
 
+static void renumber(olui *ui, const olui_event *ev, void *userdata)
+{
+    (void)userdata;
+    olui_set_number(ui, ev->el, ev->index + 1);
+}
+
 static void read_value(olui *ui, const olui_event *ev, void *userdata)
 {
     (void)ui;
@@ -148,7 +154,7 @@ static int test_handlers_take_away(void)
     olui_focus(ui, olui_find(ui, "f"));
     CHECK(olui_key(ui, OLUI_KEY_RETURN, 0));
     CHECK(!olui_find(ui, "f") && !olui_focused(ui));
-    olui_draw(ui, NULL, draw_nothing, NULL);
+    olui_draw(ui, NULL, ignore_op, NULL);
     olui_free(ui);
 
     ui = olui_new();
@@ -157,7 +163,7 @@ static int test_handlers_take_away(void)
     olui_focus(ui, olui_find(ui, "f"));
     CHECK(olui_key(ui, OLUI_KEY_RETURN, 0));
     CHECK(!olui_find(ui, "f") && !olui_focused(ui));
-    olui_draw(ui, NULL, draw_nothing, NULL);
+    olui_draw(ui, NULL, ignore_op, NULL);
     olui_free(ui);
 
     ui = olui_new();
@@ -166,7 +172,7 @@ static int test_handlers_take_away(void)
     olui_on(ui, "l", OLUI_SELECT, clear_it, NULL);
     olui_focus(ui, olui_find(ui, "l"));
     olui_key(ui, OLUI_KEY_DOWN, 0);
-    olui_draw(ui, NULL, draw_nothing, NULL);
+    olui_draw(ui, NULL, ignore_op, NULL);
     olui_free(ui);
 
     /* the handler after it reads the event's text */
@@ -176,6 +182,17 @@ static int test_handlers_take_away(void)
     olui_on(ui, "f", OLUI_CHANGE, retext, NULL);    /* the last added is called first */
     olui_focus(ui, olui_find(ui, "f"));
     CHECK(olui_key(ui, 'q', 0) && got == 1);
+    olui_free(ui);
+
+    /* and a number field's, made again by the handler before */
+    ui = olui_new();
+    got = 0;
+    CHECK(ui && olui_load(ui, "<input id=f type=number value=1 min=0 max=99>", NULL, err, sizeof(err)) &&
+          olui_layout(ui, 300, 100));
+    olui_on(ui, "f", OLUI_CHANGE, read_value, &got);
+    olui_on(ui, "f", OLUI_CHANGE, renumber, NULL);
+    olui_focus(ui, olui_find(ui, "f"));
+    CHECK(olui_key(ui, '5', 0) && got > 0);
     olui_free(ui);
 
     /* a spin button goes while its arrow is held */

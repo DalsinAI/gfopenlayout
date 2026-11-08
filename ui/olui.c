@@ -311,6 +311,19 @@ static int drop_text(olui *ui, olui_el *el)
     return 1;
 }
 
+/* el's text is s now; 0: no memory, and it stays as it was */
+static int replace_text(olui *ui, olui_el *el, const char *s)
+{
+    char *p = NULL;
+    if (!olui_set_str(&p, s)) return 0;
+    if (!drop_text(ui, el)) {
+        free(p);
+        return 0;
+    }
+    el->text = p;
+    return 1;
+}
+
 static void emit(olui *ui, int type, olui_el *el, olui_el *item, const char *value, int index, int checked)
 {
     olui_event ev;
@@ -1570,7 +1583,7 @@ static void number_commit(olui *ui, olui_el *el)
     else v = el->ivalue;
     fixed_format(v, el->decimals, num, sizeof(num));
     if (!strcmp(num, el->text) && v == el->ivalue) return;
-    if (!olui_set_str(&el->text, num)) return;
+    if (!replace_text(ui, el, num)) return;
     el->ivalue = v;
     el->caret = el->anchor = strlen(num);
     ++el->text_rev;
@@ -1591,7 +1604,7 @@ static void number_step(olui *ui, olui_el *el, int steps)
     if (nv > el->imax) nv = el->imax;
     fixed_format((int)nv, el->decimals, num, sizeof(num));
     if ((int)nv == el->ivalue && el->text && !strcmp(el->text, num)) return;
-    if (!olui_set_str(&el->text, num)) return;
+    if (!replace_text(ui, el, num)) return;
     el->ivalue = (int)nv;
     el->caret = el->anchor = strlen(num);
     ++el->text_rev;
@@ -4661,13 +4674,7 @@ void *olui_user(const olui_el *el) { return el ? el->user : NULL; }
 
 int olui_set_text(olui *ui, olui_el *el, const char *utf8)
 {
-    char *s = NULL;
-    if (!ui || !el || !olui_set_str(&s, utf8 ? utf8 : "")) return 0;
-    if (!drop_text(ui, el)) {
-        free(s);
-        return 0;
-    }
-    el->text = s;
+    if (!ui || !el || !replace_text(ui, el, utf8 ? utf8 : "")) return 0;
     if (el->kind == K_INPUT) el->caret = el->anchor = strlen(el->text);
     if (el->kind == K_TEXTAREA) {
         el->caret = el->anchor = 0;
@@ -4968,7 +4975,7 @@ void olui_set_number(olui *ui, olui_el *el, int value)
     value = number_clamp(el, value);
     fixed_format(value, el->decimals, num, sizeof(num));
     if (value == el->ivalue && el->text && !strcmp(el->text, num)) return;
-    if (!olui_set_str(&el->text, num)) return;
+    if (!replace_text(ui, el, num)) return;
     el->ivalue = value;
     el->caret = el->anchor = strlen(num);
     ++el->text_rev;
