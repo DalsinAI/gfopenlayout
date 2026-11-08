@@ -83,6 +83,8 @@ GtkWidget *gtk_widget_ref(GtkWidget *widget)
 void gtk_widget_unref(GtkWidget *widget)
 {
     if (!widget || !widget->ref_count) return;
+    /* the last reference, and not destroyed yet: destroyed now, so it leaves no grab or child behind */
+    if (widget->ref_count == 1 && !(widget->flags & GTK_DESTROYED)) gtk_widget_destroy(widget);
     if (--widget->ref_count == 0) free_widget(GTKC(widget));
 }
 
@@ -114,6 +116,15 @@ static void clear_data(gtkc_widget *w)
     }
 }
 
+/* It and what it holds have no elements now: their window goes without them */
+static void release_elements(gtkc_widget *w)
+{
+    gtkc_widget *c;
+    if (w->el && !w->alias) olui_set_user(w->el, NULL);
+    w->el = NULL;
+    for (c = w->first; c; c = c->next) release_elements(c);
+}
+
 static gboolean emit(gtkc_widget *w, const char *name, GdkEvent *event);
 
 void gtk_widget_destroy(GtkWidget *widget)
@@ -130,6 +141,7 @@ void gtk_widget_destroy(GtkWidget *widget)
         gtk_widget_ref(&c->pub);            /* it takes itself out of w, and w's reference with it */
         gtk_widget_destroy(&c->pub);
         if (c->pub.parent == widget) {      /* destroyed before but still here: out it goes */
+            release_elements(c);
             unlink_child(w, c);
             gtk_widget_unref(&c->pub);
         }
@@ -442,8 +454,7 @@ void gtk_container_remove(GtkContainer *container, GtkWidget *widget)
     gtkc_widget *c = GTKC(container), *w = GTKC(widget);
     if (!c || !w || w->pub.parent != container) return;
     changed(c);
-    if (w->el && !w->alias) olui_set_user(w->el, NULL);
-    w->el = NULL;
+    release_elements(w);
     w->alias = 0;
     unlink_child(c, w);
     gtk_widget_unref(widget);
@@ -536,7 +547,7 @@ void gtk_table_attach(GtkTable *table, GtkWidget *child, guint left, guint right
                       GtkAttachOptions xoptions, GtkAttachOptions yoptions, guint xpadding, guint ypadding)
 {
     gtkc_widget *t = GTKC(table), *c = GTKC(child);
-    if (!t || !c || t->kind != GTKC_TABLE || right <= left || bottom <= top) return;
+    if (!t || !c || t->kind != GTKC_TABLE || right <= left || bottom <= top || c->pub.parent) return;
     if (right > t->cols) t->cols = right;
     if (bottom > t->rows) t->rows = bottom;
     c->col0 = left;
@@ -925,15 +936,22 @@ static void set_active(gtkc_widget *w, int active, int send)
     if (w->pub.active == active) return;
     gtk_widget_ref(&w->pub);
     if (w->kind == GTKC_RADIO) {
-        GSList *p;
+        /* a copy, each kept: a handler of "toggled" may destroy any of them */
+        GSList *p, *group = NULL;
         for (p = w->group; p; p = p->next) {
+            group = g_slist_prepend(group, p->data);
+            gtk_widget_ref(&GTKC(p->data)->pub);
+        }
+        for (p = group; p; p = p->next) {
             gtkc_widget *o = GTKC(p->data);
-            if (o != w && o->pub.active) {
+            if (o != w && o->pub.active && !(o->pub.flags & GTK_DESTROYED)) {
                 o->pub.active = FALSE;
                 if (has_element(o) && ui_of(o)) olui_set_checked(ui_of(o), o->el, 0);
                 if (send) emit(o, "toggled", NULL);
             }
         }
+        for (p = group; p; p = p->next) gtk_widget_unref(&GTKC(p->data)->pub);
+        g_slist_free(group);
     }
     w->pub.active = active;
     if (has_element(w) && ui_of(w)) olui_set_checked(ui_of(w), w->el, active);
@@ -1291,32 +1309,37 @@ static void packed_style(char *style, size_t room, const gtkc_widget *box, const
                  c->padding, c->padding);
 }
 
+/* on the heap, as these recurse once for each widget in another */
+#define STYLE_ROOM 256
+#define INNER_ROOM 320
+
 static void put_box(buf *b, gtkc_widget *w, const char *style)
 {
     int across = w->kind == GTKC_HBOX, grows = 0, ends = 0;
     gtkc_widget *c;
-    char inner[320];
+    char *inner = g_new(char, INNER_ROOM);
     for (c = w->first; c; c = c->next) {
         if (c->expand || w->homogeneous) grows = 1;
         if (c->pack_end) ends = 1;
     }
     putf(b, "<%s", across ? "row" : "column");
-    snprintf(inner, sizeof(inner), "%sgap:%dpx;", style, w->spacing);
+    snprintf(inner, INNER_ROOM, "%sgap:%dpx;", style, w->spacing);
     put_common(b, w, inner);
     puts_(b, ">");
     /* pack_start's in order, then pack_end's from the end back */
     for (c = w->first; c; c = c->next)
         if (!c->pack_end) {
-            packed_style(inner, sizeof(inner), w, c);
+            packed_style(inner, INNER_ROOM, w, c);
             put_widget(b, c, inner);
         }
     if (ends && !grows) puts_(b, "<spacer></spacer>");
     for (c = w->last; c; c = c->prev)
         if (c->pack_end) {
-            packed_style(inner, sizeof(inner), w, c);
+            packed_style(inner, INNER_ROOM, w, c);
             put_widget(b, c, inner);
         }
     putf(b, "</%s>", across ? "row" : "column");
+    g_free(inner);
 }
 
 /* A table is a column of rows: a cell is as wide as its columns (those
@@ -1327,10 +1350,10 @@ static void put_table(buf *b, gtkc_widget *t, const char *style)
 {
     int *width = g_new0(int, t->cols * 2), *grows = width + t->cols;
     unsigned r, col, i;
-    char inner[320];
+    char *inner = g_new(char, INNER_ROOM);
     table_columns(t, width, grows);
     puts_(b, "<column");
-    snprintf(inner, sizeof(inner), "%sgap:%upx;", style, t->row_spacing);
+    snprintf(inner, INNER_ROOM, "%sgap:%upx;", style, t->row_spacing);
     put_common(b, t, inner);
     puts_(b, ">");
     for (r = 0; r < t->rows; ++r) {
@@ -1354,11 +1377,11 @@ static void put_table(buf *b, gtkc_widget *t, const char *style)
                 else fixed += width[i];
             }
             fixed += (int)(end - col - 1) * (int)t->col_spacing;
-            snprintf(inner, sizeof(inner), "width:%dpx;flex:%d;", fixed, share);
+            snprintf(inner, INNER_ROOM, "width:%dpx;flex:%d;", fixed, share);
             if (cell && cell->row0 == r && cell->col0 == col) {
                 size_t n = strlen(inner);
                 if (cell->xpad || cell->ypad)
-                    snprintf(inner + n, sizeof(inner) - n, "margin:%upx %upx;", cell->ypad, cell->xpad);
+                    snprintf(inner + n, INNER_ROOM - n, "margin:%upx %upx;", cell->ypad, cell->xpad);
                 put_widget(b, cell, inner);
             } else {
                 putf(b, "<div style=\"%s\"></div>", inner);
@@ -1369,13 +1392,14 @@ static void put_table(buf *b, gtkc_widget *t, const char *style)
     }
     puts_(b, "</column>");
     free(width);
+    g_free(inner);
 }
 
 static void put_widget(buf *b, gtkc_widget *w, const char *outer)
 {
-    char style[256];
+    char *style = g_new(char, STYLE_ROOM);
     const char *t;
-    style_for(style, sizeof(style), w, outer);
+    style_for(style, STYLE_ROOM, w, outer);
     switch (w->kind) {
     case GTKC_VBOX: case GTKC_HBOX: put_box(b, w, style); break;
     case GTKC_TABLE: put_table(b, w, style); break;
@@ -1383,10 +1407,10 @@ static void put_widget(buf *b, gtkc_widget *w, const char *outer)
         size_t n = strlen(style);
         const char *align = w->xalign < 250 ? "left" : w->xalign > 750 ? "right" : "center";
         if (w->justify == GTK_JUSTIFY_RIGHT && strchr(w->text, '\n')) align = "right";
-        snprintf(style + n, sizeof(style) - n, "text-align:%s;", align);
+        snprintf(style + n, STYLE_ROOM - n, "text-align:%s;", align);
         n = strlen(style);
-        if ((w->misc_xpad || w->misc_ypad) && n < sizeof(style))
-            snprintf(style + n, sizeof(style) - n, "padding:%dpx %dpx;", w->misc_ypad, w->misc_xpad);
+        if ((w->misc_xpad || w->misc_ypad) && n < STYLE_ROOM)
+            snprintf(style + n, STYLE_ROOM - n, "padding:%dpx %dpx;", w->misc_ypad, w->misc_xpad);
         puts_(b, "<label");
         put_common(b, w, style);
         puts_(b, ">");
@@ -1440,7 +1464,7 @@ static void put_widget(buf *b, gtkc_widget *w, const char *outer)
         break;
     case GTKC_VSEP: {
         size_t n = strlen(style);
-        snprintf(style + n, sizeof(style) - n, "width:0;border-left:1px solid #808080;margin:0 2px;");
+        snprintf(style + n, STYLE_ROOM - n, "width:0;border-left:1px solid #808080;margin:0 2px;");
         puts_(b, "<div");
         put_common(b, w, style);
         puts_(b, "></div>");
@@ -1457,6 +1481,7 @@ static void put_widget(buf *b, gtkc_widget *w, const char *outer)
         break;
     }
     (void)t;
+    g_free(style);
 }
 
 /* Elements found again after a build: each widget's, and olui's back to it */
@@ -1754,11 +1779,10 @@ gboolean gtkc_key(GtkWidget *window, guint keyval, guint state)
     unsigned code, qual = 0;
     int used = 0;
     if (!win || !win->top || !win->top->open) return FALSE;
+    gtk_widget_ref(&win->pub);      /* a handler may destroy it */
     if (gtkc_key_signal(win, keyval, state)) {
-        gtkc_flush();
-        return TRUE;
-    }
-    if ((code = olui_code(keyval)) != 0 && win->top->open) {
+        used = 1;
+    } else if ((code = olui_code(keyval)) != 0 && win->top->open) {
         if (state & GDK_SHIFT_MASK) qual |= OLUI_QUAL_SHIFT;
         if (state & (GDK_CONTROL_MASK | GDK_MOD4_MASK)) qual |= OLUI_QUAL_COMMAND;
         gtkc_enter(win);
@@ -1766,6 +1790,7 @@ gboolean gtkc_key(GtkWidget *window, guint keyval, guint state)
         gtkc_leave(win);
     }
     gtkc_flush();
+    gtk_widget_unref(&win->pub);
     return used ? TRUE : FALSE;
 }
 
@@ -1794,7 +1819,9 @@ gboolean gtkc_type(GtkWidget *entry, const gchar *text)
     gtkc_flush();
     if (!GTKC(entry)->el) return FALSE;
     gtk_widget_grab_focus(entry);
-    for (; text && *text; ++text) gtkc_key(win, (guchar)*text, 0);
+    gtk_widget_ref(win);
+    for (; text && *text && !(win->flags & GTK_DESTROYED); ++text) gtkc_key(win, (guchar)*text, 0);
+    gtk_widget_unref(win);
     return TRUE;
 }
 
@@ -1872,6 +1899,7 @@ struct source {
     GSourceFunc fn;
     gpointer data;
     int dead;
+    int running;                /* in its function: a loop run from there leaves it be */
 };
 static source *sources;
 static guint next_source = 1;
@@ -1933,16 +1961,22 @@ static void sweep_sources(void)
 /* Runs what is due (idle: the idle functions); 1 when one ran. */
 static int run_sources(int idle)
 {
+    static int depth;           /* a function may run a loop, with these still being walked */
     source *s;
     int ran = 0;
     guint32 now = gtkc_host_now();
+    ++depth;
     for (s = sources; s; s = s->next) {
-        if (s->dead || s->idle != idle || (!idle && (gint32)(now - s->due) < 0)) continue;
+        gboolean again;
+        if (s->dead || s->running || s->idle != idle || (!idle && (gint32)(now - s->due) < 0)) continue;
         ran = 1;
-        if (!s->fn(s->data)) s->dead = 1;
+        s->running = 1;
+        again = s->fn(s->data);
+        s->running = 0;
+        if (!again) s->dead = 1;
         else if (!idle) s->due = gtkc_host_now() + s->interval;
     }
-    sweep_sources();
+    if (!--depth) sweep_sources();
     return ran;
 }
 
@@ -1954,7 +1988,7 @@ static long next_due(void)
     guint32 now = gtkc_host_now();
     for (s = sources; s; s = s->next) {
         long d;
-        if (s->dead) continue;
+        if (s->dead || s->running) continue;
         if (s->idle) return 0;
         d = (gint32)(s->due - now);
         if (d < 0) d = 0;
@@ -2025,6 +2059,13 @@ void gtk_exit(gint code)
 
 static void at_exit(void)
 {
+    GList *p;
+    /* gtk_exit from a callback, or main returning with one still up: no window outlives the task */
+    for (p = toplevels; p; p = p->next) {
+        gtkc_widget *win = p->data;
+        win->top->busy = 0;
+        do_close(win);
+    }
     gtkc_host_exit();
 }
 
