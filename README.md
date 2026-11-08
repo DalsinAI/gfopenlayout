@@ -185,6 +185,15 @@ the two calls a toolkit over the UI needs (the wxWidgets port, gfopenwx):
 `libgfopenlayout_link.a` a version 12 call on version 11 does nothing and
 returns 0. `tests/test_ui.c` tests both.
 
+GFOpenGTK (`gtk/`, 0.1) is GTK 1.2's API, with 2.x's names beside it, over
+the UI, so a Linux program whose windows are GTK (dialogs, settings) is
+relinked rather than given a new interface: windows, boxes, tables, labels,
+buttons, check and radio buttons, entries, signals, `gtk_main` nested for
+modal dialogs, timeouts, and the glib programs lean on. LinBolo (WinBolo's
+Linux client) is the first it is for. [docs/GTK-COMPAT.md](docs/GTK-COMPAT.md)
+says what is done and the phases to come; `tests/test_gtk.c` tests it, and
+`./build-gtk-amiga.sh` builds `libgfopengtk.a` and `GtkHello` for the 68040.
+
 ## Build and test
 
 Host:

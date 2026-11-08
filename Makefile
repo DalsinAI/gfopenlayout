@@ -22,8 +22,13 @@ CSS_SRC = src/gfcss_parse.c src/gfcss_values.c src/gfcss_select.c src/openlayout
 CSS_OBJ = $(CSS_SRC:src/%.c=$(BUILD)/%.o)
 CSS_HDR = include/gfopenlayout.h include/gfopenlayout_css.h src/gfcss_internal.h src/openlayout_css.h
 
+# GFOpenGTK: GTK 1.2 / 2.x's API on the UI (gtk/), with the host's window-less backend
+GTK_SRC = gtk/gtk.c gtk/glib.c gtk/gtkc_host.c
+GTK_HDR = gtk/include/glib.h gtk/include/gtk/gtk.h gtk/include/gtk/gtkc.h gtk/include/gdk/gdk.h \
+          gtk/include/gdk/gdkkeysyms.h gtk/gtkc_internal.h
+
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_web $(BUILD)/test_ui \
-     $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop
+     $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -60,11 +65,14 @@ $(BUILD)/test_ui_css: tests/test_ui_css.c $(UI_SRC) ui/olui_internal.h include/g
 $(BUILD)/test_desktop: tests/test_desktop.c $(UI_SRC) ui/olui_internal.h include/gfopenlayout_ui.h $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) -std=c99 -Wall -Wextra -Werror -Iinclude -Iui $(UI_INC) tests/test_desktop.c $(UI_SRC) $(BUILD)/libopenlayout.a -o $@
 
+$(BUILD)/test_gtk: tests/test_gtk.c $(GTK_SRC) $(GTK_HDR) $(UI_SRC) ui/olui_internal.h include/gfopenlayout_ui.h $(BUILD)/libopenlayout.a
+	$(CC) $(CFLAGS) -std=c99 -Wall -Wextra -Werror -Igtk/include -Igtk -Iinclude -Iui $(UI_INC) tests/test_gtk.c $(GTK_SRC) $(UI_SRC) $(BUILD)/libopenlayout.a -o $@
+
 $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
 test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
-      $(BUILD)/test_ui_css $(BUILD)/test_desktop
+      $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
@@ -73,6 +81,7 @@ test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/te
 	./$(BUILD)/test_css
 	./$(BUILD)/test_ui_css
 	./$(BUILD)/test_desktop
+	./$(BUILD)/test_gtk
 	python3 tools/gen-library.py --check
 
 clean:
