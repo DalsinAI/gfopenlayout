@@ -596,3 +596,21 @@ olui_el * olui_popup(const olui *ui)
     if (OpenLayoutBase->lib_Version < 12) return 0;
     return OLUI_Popup(ui);
 }
+
+void ol_shape_style_init(ol_shape_style *style)
+{
+    if (OpenLayoutBase->lib_Version < 13) return;
+    OL_ShapeStyleInit(style);
+}
+
+int ol_node_set_shape(ol_node *node, const ol_shape_style *style, int count, const ol_point *points)
+{
+    if (OpenLayoutBase->lib_Version < 13) return 0;
+    return OL_NodeSetShape(node, style, count, points);
+}
+
+int ol_node_set_image_crop(ol_node *node, const ol_image_crop *crop)
+{
+    if (OpenLayoutBase->lib_Version < 13) return 0;
+    return OL_NodeSetImageCrop(node, crop);
+}

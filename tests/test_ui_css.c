@@ -115,8 +115,12 @@ static void test_gains(void)
     olui_free(ui);
 }
 
-/* ui/olui_css.c: a named font family by its number in text_flags */
+/* ui/olui_css.c: a named font family by its number in text_flags. This is
+ * internal to the resident library, so its linked-client build checks the
+ * public numeric contract but not this private name table. */
+#ifndef OLUI_LINK_LIBRARY
 const char *olui_family_name(unsigned id);
+#endif
 
 /* font-family's first name reaches the renderer as a number in text_flags
  * (OL_TEXT_FONT); generics stay 0, so the theme's faces are used */
@@ -136,7 +140,9 @@ static void test_families(void)
     l = look_at(ui, "n1");
     f1 = OL_TEXT_FONT_OF((uint32_t)l.flags);
     CHECK(f1 != 0 && (l.flags & OL_TEXT_MONO));
+#ifndef OLUI_LINK_LIBRARY
     CHECK(olui_family_name(f1) && strcmp(olui_family_name(f1), "DejaVu Sans Mono") == 0);
+#endif
     l = look_at(ui, "n2");
     CHECK(OL_TEXT_FONT_OF((uint32_t)l.flags) == f1);             /* the same name, any case */
     l = look_at(ui, "n3");
@@ -148,8 +154,11 @@ static void test_families(void)
     CHECK(olui_layout(ui, 400, 300));
     l = look_at(ui, "n4");
     f2 = OL_TEXT_FONT_OF((uint32_t)l.flags);
-    CHECK(f2 != 0 && f2 != f1 && strcmp(olui_family_name(f2), "Courier") == 0);
+    CHECK(f2 != 0 && f2 != f1);
+#ifndef OLUI_LINK_LIBRARY
+    CHECK(strcmp(olui_family_name(f2), "Courier") == 0);
     CHECK(olui_family_name(0) == NULL);
+#endif
     olui_free(ui);
 }
 

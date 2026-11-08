@@ -1,4 +1,4 @@
-==id $Id: gfopenlayout_lib.sfd 3.0 (21.10.2026) $
+==id $Id: gfopenlayout_lib.sfd 13.0 (8.11.2026) $
 * "gfopenlayout.library"
 ==base _OpenLayoutBase
 ==basetype struct Library *
@@ -180,5 +180,9 @@ int OLUI_AmigaKeys(olui_amiga *a, int keys)(a0,d0)
 * version 12: what a toolkit over the UI needs (GFOpenLayout UI 0.5)
 void OLUI_Repaint(olui *ui, olui_el *el, const olui_rect *part)(a0,a1,a2)
 olui_el * OLUI_Popup(const olui *ui)(a0)
+* version 13: document drawing, image crops and clipping
+void OL_ShapeStyleInit(ol_shape_style *style)(a0)
+int OL_NodeSetShape(ol_node *node, const ol_shape_style *style, int count, const ol_point *points)(a0,a1,d0,a2)
+int OL_NodeSetImageCrop(ol_node *node, const ol_image_crop *crop)(a0,a1)
 * ---- end of version 10 ----
 ==end

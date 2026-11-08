@@ -27,6 +27,7 @@ struct ol_node {
     int image_id;
     ol_unit image_width;
     ol_unit image_height;
+    ol_graphic *graphic;      /* 0.13: lazily allocated shape/crop metadata */
 
     ol_box_style box;
     ol_unit *columns;
@@ -291,6 +292,29 @@ static void rect_add(ol_rect *dst, ol_rect src)
     dst->height = y2 - y1;
 }
 
+static ol_rect rect_intersection(ol_rect a, ol_rect b)
+{
+    ol_rect r;
+    ol_unit ax = a.x + a.width, ay = a.y + a.height;
+    ol_unit bx = b.x + b.width, by = b.y + b.height;
+    r.x = a.x > b.x ? a.x : b.x;
+    r.y = a.y > b.y ? a.y : b.y;
+    ax = ax < bx ? ax : bx;
+    ay = ay < by ? ay : by;
+    r.width = ax > r.x ? ax - r.x : 0;
+    r.height = ay > r.y ? ay - r.y : 0;
+    if (r.width <= 0 || r.height <= 0) {
+        r.width = 0;
+        r.height = -1;           /* empty clip, distinct from no clip */
+    }
+    return r;
+}
+
+static const ol_graphic *node_graphic(const ol_node *node)
+{
+    return node ? node->graphic : NULL;
+}
+
 static int point_in_rect(ol_rect r, ol_unit x, ol_unit y)
 {
     return !rect_empty(r) &&
@@ -394,6 +418,10 @@ static void free_node(ol_node *node)
     free(node->columns);
     free(node->tabs);
     free(node->tab_info);
+    if (node->graphic) {
+        free((void *)node->graphic->points);
+        free(node->graphic);
+    }
     free(node);
 }
 
@@ -537,6 +565,93 @@ void ol_node_set_image(ol_node *node, int image_id, ol_unit width, ol_unit heigh
     node->image_id = image_id;
     node->image_width = width;
     node->image_height = height;
+}
+
+void ol_shape_style_init(ol_shape_style *style)
+{
+    if (!style) return;
+    memset(style, 0, sizeof(*style));
+    style->size = sizeof(*style);
+    style->fill_argb = 0xffffffffu;
+    style->stroke_argb = 0xff000000u;
+    style->stroke_width = OL_CSSPX(1);
+}
+
+int ol_node_set_shape(ol_node *node, const ol_shape_style *style,
+                      int count, const ol_point *points)
+{
+    ol_point *copy = NULL;
+    ol_graphic *graphic;
+    ol_shape_style s;
+    if (!node || count < 0 || count > OL_MAX_SHAPE_POINTS || (count && !points)) return 0;
+    memset(&s, 0, sizeof(s));
+    if (style) {
+        size_t n = style->size < sizeof(s) ? style->size : sizeof(s);
+        if (n > sizeof(style->size))
+            memcpy((char *)&s + sizeof(style->size), (const char *)style + sizeof(style->size),
+                   n - sizeof(style->size));
+        s.size = sizeof(s);
+    }
+    if (!style || s.type == OL_SHAPE_NONE) count = 0;
+    else if (s.type > OL_SHAPE_POLYGON || s.stroke_style > OL_STROKE_DASH_DOT ||
+             s.stroke_width < 0 || s.radius_permille < 0 ||
+             s.radius_permille > 500 ||
+             ((s.type == OL_SHAPE_LINE || s.type == OL_SHAPE_POLYLINE) && count < 2) ||
+             (s.type == OL_SHAPE_POLYGON && count < 3))
+        return 0;
+    if (s.type == OL_SHAPE_RECT || s.type == OL_SHAPE_ROUND_RECT || s.type == OL_SHAPE_ELLIPSE)
+        count = 0;
+    if (count) {
+        copy = (ol_point *)malloc((size_t)count * sizeof(*copy));
+        if (!copy) return 0;
+        memcpy(copy, points, (size_t)count * sizeof(*copy));
+    }
+    graphic = node->graphic;
+    if (!graphic && s.type != OL_SHAPE_NONE) {
+        graphic = (ol_graphic *)calloc(1, sizeof(*graphic));
+        if (!graphic) {
+            free(copy);
+            return 0;
+        }
+        node->graphic = graphic;
+    }
+    if (graphic) {
+        free((void *)graphic->points);
+        graphic->shape = s;
+        graphic->point_count = count;
+        graphic->points = copy;
+        if (s.type == OL_SHAPE_NONE && !graphic->crop.left && !graphic->crop.top &&
+            !graphic->crop.right && !graphic->crop.bottom) {
+            free(graphic);
+            node->graphic = NULL;
+        }
+    }
+    return 1;
+}
+
+int ol_node_set_image_crop(ol_node *node, const ol_image_crop *crop)
+{
+    ol_image_crop c = {0, 0, 0, 0};
+    if (!node) return 0;
+    if (crop) c = *crop;
+    if (c.left < 0 || c.left >= OL_SHAPE_COORDS || c.top < 0 || c.top >= OL_SHAPE_COORDS ||
+        c.right < 0 || c.right >= OL_SHAPE_COORDS ||
+        c.bottom < 0 || c.bottom >= OL_SHAPE_COORDS ||
+        c.left + c.right >= OL_SHAPE_COORDS || c.top + c.bottom >= OL_SHAPE_COORDS)
+        return 0;
+    if (!node->graphic && (c.left || c.top || c.right || c.bottom)) {
+        node->graphic = (ol_graphic *)calloc(1, sizeof(*node->graphic));
+        if (!node->graphic) return 0;
+    }
+    if (node->graphic) {
+        node->graphic->crop = c;
+        if (node->graphic->shape.type == OL_SHAPE_NONE && !c.left && !c.top && !c.right && !c.bottom) {
+            free((void *)node->graphic->points);
+            free(node->graphic);
+            node->graphic = NULL;
+        }
+    }
+    return 1;
 }
 
 void ol_box_style_init(ol_box_style *box)
@@ -909,7 +1024,9 @@ static void shift_op_x(ol_display_op *op, ol_unit dx)
     case OL_OP_IMAGE: op->u.image.bounds.x += dx; break;
     case OL_OP_FILL_RECT: op->u.fill_rect.bounds.x += dx; break;
     case OL_OP_RULE: op->u.rule.x1 += dx; op->u.rule.x2 += dx; break;
+    case OL_OP_SHAPE: op->u.fill_rect.bounds.x += dx; break;
     }
+    if (op->clip.height) op->clip.x += dx;
 }
 
 /* Where the text after a decimal tab has its first '.', from the tab;
@@ -1472,6 +1589,7 @@ static int layout_inline_image(ol_inline_flow *flow, ol_node *node)
     op->u.image.bounds.width = w;
     op->u.image.bounds.height = h;
     op->u.image.image_id = node->image_id;
+    op->graphic = node_graphic(node);
 
     if (h > flow->ascent) flow->ascent = h;
     flow->cursor_x += w;
@@ -2212,7 +2330,7 @@ static int layout_block_in(ol_document *doc, ol_node *node,
     ol_unit mt = node ? node->style.margin_top : 0, mb = node ? node->style.margin_bottom : 0;
     ol_node *child;
     ol_inline_flow flow;
-    size_t background_index = (size_t)-1, keeps_at_start;
+    size_t background_index = (size_t)-1, shape_index = (size_t)-1, first_op, keeps_at_start;
     ol_unit first_line;
 
     if (!node || node->style.display == OL_DISPLAY_NONE) {
@@ -2220,6 +2338,7 @@ static int layout_block_in(ol_document *doc, ol_node *node,
         return 1;
     }
     keeps_at_start = doc->keep_count;
+    first_op = doc->op_count;
     if (is_frame(node)) ml = mr = mt = mb = 0;   /* a frame is where it is put */
     if ((node->box.flags & OL_BOX_PAGE_BREAK_BEFORE) && !add_break(doc, y)) return 0;
     fixed_h = node->force_height > 0 ? node->force_height : node->box.height;
@@ -2238,6 +2357,14 @@ static int layout_block_in(ol_document *doc, ol_node *node,
         background_index = doc->op_count - 1;
         bg->u.fill_rect.node_id = node->id;
         bg->u.fill_rect.argb = node->style.background;
+    }
+    if (node->graphic && node->graphic->shape.type != OL_SHAPE_NONE) {
+        ol_display_op *shape = append_op(doc, OL_OP_SHAPE);
+        if (!shape) return 0;
+        shape_index = doc->op_count - 1;
+        shape->u.fill_rect.node_id = node->id;
+        shape->u.fill_rect.argb = node->graphic->shape.fill_argb;
+        shape->graphic = node->graphic;
     }
 
     current_y = empty_top = box_y + inset_top(node);
@@ -2332,6 +2459,8 @@ static int layout_block_in(ol_document *doc, ol_node *node,
 
     if (background_index != (size_t)-1)
         doc->ops[background_index].u.fill_rect.bounds = node->bounds;
+    if (shape_index != (size_t)-1)
+        doc->ops[shape_index].u.fill_rect.bounds = node->bounds;
     /* a cell's borders come when its row's height is known */
     if (node->role != OL_ROLE_CELL && !add_borders(doc, node)) return 0;
     if ((node->box.flags & (OL_BOX_KEEP_TOGETHER | OL_BOX_ABSOLUTE)) &&
@@ -2344,6 +2473,16 @@ static int layout_block_in(ol_document *doc, ol_node *node,
             !layout_frame(doc, child, inner_x, box_y + inset_top(node), first_line,
                           measure, measure_userdata))
             return 0;
+
+    if ((node->box.flags & OL_BOX_CLIP_CONTENT) && !rect_empty(node->bounds)) {
+        size_t i;
+        for (i = first_op; i < doc->op_count; ++i) {
+            if (doc->ops[i].clip.height)
+                doc->ops[i].clip = rect_intersection(doc->ops[i].clip, node->bounds);
+            else
+                doc->ops[i].clip = node->bounds;
+        }
+    }
 
     *bottom_out = is_frame(node) ? node->bounds.y + node->bounds.height
                                  : content_bottom + mb;
@@ -2764,6 +2903,7 @@ static void op_pages(const ol_document *doc, const ol_display_op *op,
     switch (op->type) {
     case OL_OP_TEXT: top = op->u.text.bounds.y; bottom = top; break;
     case OL_OP_IMAGE: top = op->u.image.bounds.y; bottom = top; break;
+    case OL_OP_SHAPE: top = op->u.fill_rect.bounds.y; bottom = top; break;
     case OL_OP_FILL_RECT:
         top = op->u.fill_rect.bounds.y;
         bottom = top + op->u.fill_rect.bounds.height;
@@ -2803,6 +2943,10 @@ static int place_op(const ol_document *doc, ol_display_op *op, int p, int split)
         op->u.image.bounds.x += dx;
         op->u.image.bounds.y += dy;
         break;
+    case OL_OP_SHAPE:
+        op->u.fill_rect.bounds.x += dx;
+        op->u.fill_rect.bounds.y += dy;
+        break;
     case OL_OP_FILL_RECT: {
         ol_rect *r = &op->u.fill_rect.bounds;
         ol_unit t = r->y, b = r->y + r->height;
@@ -2836,6 +2980,10 @@ static int place_op(const ol_document *doc, ol_display_op *op, int p, int split)
         op->u.rule.y1 += dy;
         op->u.rule.y2 += dy;
         break;
+    }
+    if (op->clip.height) {
+        op->clip.x += dx;
+        op->clip.y += dy - up;
     }
     return 1;
 }
@@ -3140,7 +3288,9 @@ static void move_op(ol_display_op *op, ol_unit dx, ol_unit dy)
     case OL_OP_IMAGE: op->u.image.bounds.y += dy; break;
     case OL_OP_FILL_RECT: op->u.fill_rect.bounds.y += dy; break;
     case OL_OP_RULE: op->u.rule.y1 += dy; op->u.rule.y2 += dy; break;
+    case OL_OP_SHAPE: op->u.fill_rect.bounds.y += dy; break;
     }
+    if (op->clip.height) op->clip.y += dy;
 }
 
 /* Under the text (0), the text (1), over it (2). */
@@ -3623,6 +3773,7 @@ static ol_id display_node_id(const ol_display_op *op)
     case OL_OP_IMAGE: return op->u.image.node_id;
     case OL_OP_FILL_RECT: return op->u.fill_rect.node_id;
     case OL_OP_RULE: return op->u.rule.node_id;
+    case OL_OP_SHAPE: return op->u.fill_rect.node_id;
     default: return 0;
     }
 }
@@ -3970,6 +4121,7 @@ static int op_box(const ol_display_op *op, ol_rect *box)
     case OL_OP_TEXT: *box = op->u.text.bounds; return 1;
     case OL_OP_FILL_RECT: *box = op->u.fill_rect.bounds; return 1;
     case OL_OP_IMAGE: *box = op->u.image.bounds; return 1;
+    case OL_OP_SHAPE: *box = op->u.fill_rect.bounds; return 1;
     case OL_OP_RULE:
         box->x = op->u.rule.x1 < op->u.rule.x2 ? op->u.rule.x1 : op->u.rule.x2;
         box->y = op->u.rule.y1 < op->u.rule.y2 ? op->u.rule.y1 : op->u.rule.y2;
@@ -4349,6 +4501,15 @@ size_t ol_draw_page(const ol_document *doc, int page, const ol_scale *scale,
             if (culled && (b < top || t > bottom)) continue;
             d.box = ol_scale_rect(scale, op->u.image.bounds);
             break;
+        case OL_OP_SHAPE:
+            t = op->u.fill_rect.bounds.y;
+            b = t + op->u.fill_rect.bounds.height;
+            if (culled && (b < top || t > bottom)) continue;
+            d.box = ol_scale_rect(scale, op->u.fill_rect.bounds);
+            if (op->graphic) {
+                d.thickness = ol_scale_length(scale, op->graphic->shape.stroke_width);
+            }
+            break;
         case OL_OP_RULE:
             t = op->u.rule.y1 < op->u.rule.y2 ? op->u.rule.y1 : op->u.rule.y2;
             b = (op->u.rule.y1 < op->u.rule.y2 ? op->u.rule.y2 : op->u.rule.y1) + op->u.rule.thickness;
@@ -4365,6 +4526,11 @@ size_t ol_draw_page(const ol_document *doc, int page, const ol_scale *scale,
             break;
         default:
             continue;
+        }
+        if (op->clip.height) {
+            if (rect_empty(op->clip)) continue;
+            d.clip = ol_scale_rect(scale, op->clip);
+            if (!pixel_rects_cross(&d.box, &d.clip)) continue;
         }
         if (clip && !pixel_rects_cross(&d.box, clip)) continue;
         draw(userdata, &d);

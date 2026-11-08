@@ -185,6 +185,33 @@ the two calls a toolkit over the UI needs (the wxWidgets port, gfopenwx):
 `libgfopenlayout_link.a` a version 12 call on version 11 does nothing and
 returns 0. `tests/test_ui.c` tests both.
 
+## Shared drawing and clipping (13)
+
+`gfopenlayout.library` 13 moves reusable Office drawing mechanics into the
+layout engine instead of leaving each application to maintain its own shape,
+crop and overflow code:
+
+- `ol_node_set_shape` attaches rectangles, rounded rectangles, ellipses,
+  lines, polylines or polygons to any block/frame. Fill, solid/dashed/dotted
+  stroke, width, rounded corners and start/end arrows are renderer-neutral. Polygon points
+  are in thousandths of the node's bounds, so resizing and page placement do
+  not rewrite them;
+- `ol_node_set_image_crop` carries source-image crop insets, also in
+  thousandths, with the image display op;
+- `OL_BOX_CLIP_CONTENT` intersects all descendants with the box. Each
+  affected op carries the final clip rectangle, so renderers need no mutable
+  push/pop state and a partial redraw may begin at any op.
+
+The node owns one copy of its points and metadata; display ops only reference
+that immutable copy. Drawing allocates nothing, scaling remains integer-only,
+and paths are bounded by `OL_MAX_SHAPE_POINTS`. The `ol_display_op` and
+`ol_device_op` extensions are after every version-12 field, and the three new
+vectors are after version 12's last bias. Old programs therefore keep their
+field offsets and call biases; a program using the new calls opens
+`OPENLAYOUTLIB_DRAWING_VERSION` (13). `tests/test_document.c` verifies copied
+paths, nested clipping, crop metadata, pixel scaling, page placement and the
+version-12 structure offsets.
+
 ## Build and test
 
 Host:
@@ -231,7 +258,7 @@ Resident Amiga library and ABI test:
 ./build-library.sh
 ```
 
-The resident build produces `build-amiga/lib/gfopenlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `gfopenlayout.library` 12.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those; version 5 places frames anchored to their pages (`box.anchor`, GFOpenLayout 0.4) with no new calls; version 6 adds `OL_DocumentReserve` (GFOpenLayout 0.5); version 7 wraps text round anchored frames (`box.wrap`, GFOpenLayout 0.6) and adds `OL_FramePlace` (where a frame went); revision 7.1 lays a block's lines out exactly its line height with `OL_BOX_EXACT_LINES` (GFOpenLayout 0.7), a flag 7.0 ignores; version 8 lays out rows and the box style's width, height, grow, gap and align (GFOpenLayout 0.8), with no new calls; version 9 lays out web boxes (GFOpenLayout 0.9): per-side borders, widths in thousandths with their least and most, auto side margins, inline-blocks, cells' vertical alignment and repeated table headers, again with no new calls; version 10 (GFOpenLayout 0.10) is one library for documents, web pages and programs' windows: it adds GFCSS's document calls, GFOpenLayout UI and its Intuition glue (84 calls, below). A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4), one that anchors frames `OPENLAYOUTLIB_ANCHOR_VERSION` (5), one that reserves the display list's room `OPENLAYOUTLIB_RESERVE_VERSION` (6), one that wraps text round frames `OPENLAYOUTLIB_WRAP_VERSION` (7), one that lays out rows `OPENLAYOUTLIB_ROW_VERSION` (8), and one that uses web boxes `OPENLAYOUTLIB_WEB_VERSION` (9). The library's `OL_BoxStyleInit` fills only the `ol_box_style` that programs built for 3 and 4 have (`OL_BOX_STYLE_SIZE_0_3` bytes), so it never writes past theirs; a program that anchors a frame then sets `size` to `sizeof(ol_box_style)` and `anchor` (and `wrap` and `wrap_gap`, 0.8's fields and 0.9's). A box style of an older size has the fields after it 0, so a program built for 8 has no side borders, widths in thousandths or `valign` (`OL_BOX_STYLE_SIZE_0_8`).
+The resident build produces `build-amiga/lib/gfopenlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `gfopenlayout.library` 13.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those; version 5 places frames anchored to their pages (`box.anchor`, GFOpenLayout 0.4) with no new calls; version 6 adds `OL_DocumentReserve` (GFOpenLayout 0.5); version 7 wraps text round anchored frames (`box.wrap`, GFOpenLayout 0.6) and adds `OL_FramePlace` (where a frame went); revision 7.1 lays a block's lines out exactly its line height with `OL_BOX_EXACT_LINES` (GFOpenLayout 0.7), a flag 7.0 ignores; version 8 lays out rows and the box style's width, height, grow, gap and align (GFOpenLayout 0.8), with no new calls; version 9 lays out web boxes (GFOpenLayout 0.9): per-side borders, widths in thousandths with their least and most, auto side margins, inline-blocks, cells' vertical alignment and repeated table headers, again with no new calls; version 10 (GFOpenLayout 0.10) is one library for documents, web pages and programs' windows: it adds GFCSS's document calls, GFOpenLayout UI and its Intuition glue (84 calls, below); versions 11 and 12 extend the UI, and version 13 appends the shared drawing calls and display-list fields described above. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4), one that anchors frames `OPENLAYOUTLIB_ANCHOR_VERSION` (5), one that reserves the display list's room `OPENLAYOUTLIB_RESERVE_VERSION` (6), one that wraps text round frames `OPENLAYOUTLIB_WRAP_VERSION` (7), one that lays out rows `OPENLAYOUTLIB_ROW_VERSION` (8), one that uses web boxes `OPENLAYOUTLIB_WEB_VERSION` (9), and one that uses shared drawing `OPENLAYOUTLIB_DRAWING_VERSION` (13). The library's `OL_BoxStyleInit` fills only the `ol_box_style` that programs built for 3 and 4 have (`OL_BOX_STYLE_SIZE_0_3` bytes), so it never writes past theirs; a program that uses later fields sets `size` to `sizeof(ol_box_style)`. A box style of an older size has the fields after it 0, so a program built for 8 has no side borders, widths in thousandths or `valign` (`OL_BOX_STYLE_SIZE_0_8`).
 
 ### One library (10)
 

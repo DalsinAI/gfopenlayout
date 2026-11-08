@@ -179,6 +179,10 @@
 /* version 12: what a toolkit over the UI needs (GFOpenLayout UI 0.5) */
 #define OLUI_Repaint(ui,el,part) LP3NR(0x3de, OLUI_Repaint, olui *, (ui), a0, olui_el *, (el), a1, const olui_rect *, (part), a2, , OPENLAYOUT_BASE_NAME)
 #define OLUI_Popup(ui) LP1(0x3e4, olui_el *, OLUI_Popup, const olui *, (ui), a0, , OPENLAYOUT_BASE_NAME)
+/* version 13: document drawing, image crops and clipping */
+#define OL_ShapeStyleInit(style) LP1NR(0x3ea, OL_ShapeStyleInit, ol_shape_style *, (style), a0, , OPENLAYOUT_BASE_NAME)
+#define OL_NodeSetShape(node,style,count,points) LP4(0x3f0, int, OL_NodeSetShape, ol_node *, (node), a0, const ol_shape_style *, (style), a1, int, (count), d0, const ol_point *, (points), a2, , OPENLAYOUT_BASE_NAME)
+#define OL_NodeSetImageCrop(node,crop) LP2(0x3f6, int, OL_NodeSetImageCrop, ol_node *, (node), a0, const ol_image_crop *, (crop), a1, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif

@@ -50,6 +50,11 @@
                                                OLUI_Popup (the pop-up open over the window).
                                                Through libgfopenlayout_link.a a version 12 call
                                                on version 11 does nothing and returns 0. */
+#define OPENLAYOUTLIB_DRAWING_VERSION 13    /* document vector shapes, image crop metadata and
+                                               stateless box-local clipping: OL_ShapeStyleInit,
+                                               OL_NodeSetShape and OL_NodeSetImageCrop. Existing
+                                               display-op fields and all older vectors retain
+                                               their offsets. */
 
 struct OLNodeAppend {
     ol_document *document;

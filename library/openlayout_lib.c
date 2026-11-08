@@ -1,4 +1,4 @@
-/* gfopenlayout.library 9.0: version 3 adds pages, tables, frames and the
+/* gfopenlayout.library 13.0: version 3 adds pages, tables, frames and the
  * caret (GFOpenLayout 0.2) after version 2's calls, which are unchanged;
  * version 4 adds tab stops that align and their leaders (GFOpenLayout 0.3);
  * version 5 places frames anchored to their pages (GFOpenLayout 0.4, the
@@ -14,9 +14,11 @@
  * widths and valign, auto side margins, inline-blocks and repeated table
  * headers, GFOpenLayout 0.9), with no new calls; version 10 folds in
  * GFCSS's document calls, GFOpenLayout UI 0.3 and its Intuition glue
- * (GFOpenLayout 0.10), 81 calls made from the C API by
+ * (GFOpenLayout 0.10), calls made from the C API by
  * tools/gen-library.py (openlayout_lib_v10.h): one library for documents,
- * web pages and programs' windows.
+ * web pages and programs' windows. Version 13 adds node-owned vector
+ * drawings, image crop metadata and stateless content clipping, with its
+ * calls at the tail and its display/device fields appended after v12's.
  * Programs built for 2 to 8 keep working: a box style of an older size
  * has the fields after it 0, as ol_node_set_box copies only its size.
  * Copyright (c) 2026 AmiCradle Team. MIT.
@@ -37,7 +39,7 @@
 #include <proto/diskfont.h>
 
 #define REG(r, decl) register decl __asm(#r)
-#define LIB_VERSION 12
+#define LIB_VERSION 13
 #define LIB_REVISION 0
 
 struct OpenLayoutLibBase {
@@ -59,10 +61,10 @@ int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "gfopenlayout.library 12.0 (4.11.2026) GFOpenLayout 0.12, AmiCradle Team\r\n";
+    "gfopenlayout.library 13.0 (8.11.2026) GFOpenLayout 0.13, AmiCradle Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: gfopenlayout.library 12.0 (4.11.2026) GFOpenLayout 0.12, AmiCradle Team";
+    "$VER: gfopenlayout.library 13.0 (8.11.2026) GFOpenLayout 0.13, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),
@@ -151,7 +153,7 @@ static const APTR lib_vectors[] = {
     (APTR)OL_DocumentReserve, (APTR)OL_DocumentNewReserved,
     /* version 7 */
     (APTR)OL_FramePlace,
-    /* versions 10 and 11 (tools/gen-library.py) */
+    /* versions 10 through 13 (tools/gen-library.py) */
     OL_V10_VECTORS,
     (APTR)-1
 };

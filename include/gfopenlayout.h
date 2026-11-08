@@ -17,6 +17,9 @@ extern "C" {
 #define OL_HAS_WEB_BOXES 1
 /* 0.11 (gfopenlayout.library 11): frames as wide as their content (OL_BOX_FIT_CONTENT) */
 #define OL_HAS_FIT_CONTENT 1
+/* 0.13 (gfopenlayout.library 13): reusable vector drawing, image crops and
+ * box-local clipping in the document display list. */
+#define OL_HAS_DRAWING_OPS 1
 
 /*
  * GFOpenLayout logical units are exact across the three worlds we care about:
@@ -46,6 +49,65 @@ typedef struct {
     ol_unit width;
     ol_unit height;
 } ol_rect;
+
+/* Resizable Office/Web drawing geometry uses thousandths of its bounds.
+ * Keeping points normalised means page placement and zoom never rewrite or
+ * allocate a path. */
+typedef struct {
+    int32_t x, y;
+} ol_point;
+
+#define OL_SHAPE_COORDS 1000
+#define OL_MAX_SHAPE_POINTS 128
+
+typedef enum {
+    OL_SHAPE_NONE = 0,
+    OL_SHAPE_RECT,
+    OL_SHAPE_ROUND_RECT,
+    OL_SHAPE_ELLIPSE,
+    OL_SHAPE_LINE,
+    OL_SHAPE_POLYLINE,
+    OL_SHAPE_POLYGON
+} ol_shape_type;
+
+enum {
+    OL_SHAPE_ARROW_START = 1u << 0,
+    OL_SHAPE_ARROW_END   = 1u << 1
+};
+
+typedef enum {
+    OL_STROKE_SOLID = 0,
+    OL_STROKE_DASHED,
+    OL_STROKE_DOTTED,
+    OL_STROKE_DASH_DOT
+} ol_stroke_style;
+
+typedef struct {
+    uint32_t size;             /* sizeof(ol_shape_style) */
+    uint32_t type;             /* ol_shape_type */
+    uint32_t fill_argb;        /* alpha 0: no fill */
+    uint32_t stroke_argb;      /* alpha 0 or stroke_width 0: no stroke */
+    ol_unit stroke_width;
+    int32_t radius_permille;   /* round rectangle corner, 0..500 */
+    uint32_t flags;            /* OL_SHAPE_... */
+    uint32_t stroke_style;     /* ol_stroke_style */
+} ol_shape_style;
+
+/* Source-image crop insets in thousandths. The four insets are non-negative
+ * and opposite sides must add to less than OL_SHAPE_COORDS. */
+typedef struct {
+    int32_t left, top, right, bottom;
+} ol_image_crop;
+
+/* Immutable, node-owned data referenced by a display op. It remains valid
+ * until the document is freed or the node's graphic is changed and laid out
+ * again. Applications must not free it or its points. */
+typedef struct {
+    ol_shape_style shape;
+    int32_t point_count;
+    const ol_point *points;
+    ol_image_crop crop;
+} ol_graphic;
 
 typedef enum {
     OL_ROLE_DOCUMENT = 0,
@@ -151,7 +213,8 @@ typedef enum {
     OL_OP_TEXT = 1,
     OL_OP_FILL_RECT,
     OL_OP_IMAGE,
-    OL_OP_RULE
+    OL_OP_RULE,
+    OL_OP_SHAPE
 } ol_op_type;
 
 typedef struct {
@@ -194,6 +257,11 @@ typedef struct {
      * coordinates are the page's (its top left corner is 0,0, margins
      * included); after ol_layout every op is on page 0. */
     int32_t page;
+    /* Version 13 extension, deliberately after page: every field through
+     * page has the same offset as libraries 2..12. A positive clip is
+     * present; an internal negative height is an empty intersection. */
+    const ol_graphic *graphic;
+    ol_rect clip;
 } ol_display_op;
 
 ol_document *ol_document_new(void);
@@ -232,6 +300,15 @@ void ol_node_set_states(ol_node *node, uint32_t states);
 uint32_t ol_node_actions(const ol_node *node);
 uint32_t ol_node_states(const ol_node *node);
 void ol_node_set_image(ol_node *node, int image_id, ol_unit width, ol_unit height);
+void ol_shape_style_init(ol_shape_style *style);
+/* Copies style and points into the node. style NULL or OL_SHAPE_NONE clears
+ * the shape. A polygon needs at least three points; a line/polyline two. */
+int ol_node_set_shape(ol_node *node, const ol_shape_style *style,
+                      int count, const ol_point *points);
+/* Sets a source crop for image ops; NULL clears it. Returns 0 for invalid
+ * insets. Crop metadata is ignored by pre-13 renderers, which draw the full
+ * image as before. */
+int ol_node_set_image_crop(ol_node *node, const ol_image_crop *crop);
 
 const ol_node *ol_node_by_id(const ol_document *doc, ol_id id);
 const ol_node *ol_node_parent(const ol_node *node);
@@ -301,7 +378,11 @@ enum {
     /* 0.11: an OL_BOX_ABSOLUTE frame with no frame.width is as wide as its
      * content (its text on one line, its widest child; box.width when it
      * has one), as CSS's absolute boxes are; without it, one CSS pixel. */
-    OL_BOX_FIT_CONTENT       = 1u << 11
+    OL_BOX_FIT_CONTENT       = 1u << 11,
+    /* 0.13: descendants are clipped to this box's border box. The effective
+     * intersection is carried by every affected op, so drawing is stateless
+     * and partial redraw can begin at any op. */
+    OL_BOX_CLIP_CONTENT      = 1u << 12
 };
 
 /* 0.8: how a row's children stand across it (box.align) */
@@ -651,6 +732,9 @@ typedef struct {
     int32_t font_pixels;      /* text: the font's size at this scale */
     int32_t x1, y1, x2, y2;   /* rule */
     int32_t thickness;        /* rule: at least one pixel */
+    /* Version 13 extension. clip width/height 0 means none. For shapes,
+     * thickness is the scaled stroke width. */
+    ol_pixel_rect clip;
 } ol_device_op;
 
 typedef void (*ol_draw_fn)(void *userdata, const ol_device_op *op);

@@ -1,5 +1,5 @@
 #!/bin/sh
-# gfopenlayout.library 11: GFOpenLayout, GFCSS, GFOpenLayout UI and its
+# gfopenlayout.library 13: GFOpenLayout, GFCSS, GFOpenLayout UI and its
 # Intuition glue in one library, with the os32 stove; libgfopenlayout_link.a,
 # the C API through it; and the tests, the UI's linked through the library.
 #   OGT_ROOT=.../amicradle-guest/libraries/opengadtools ./build-library.sh
@@ -65,7 +65,7 @@ rm -f "$OUT/lib/libgfopenlayout_link.a"
 "$P/bin/m68k-amigaos-ar" rcs "$OUT/lib/libgfopenlayout_link.a" "$OUT/obj/gfopenlayout_link.o" "$OUT/obj/gfopenlayout_link_base.o"
 for t in test_ui:OLUITestLib test_ui_css:OLUICSSTestLib; do
   # shellcheck disable=SC2086
-  "$CC" $LINKF -s -o "$OUT/tests/${t#*:}" "$HERE/tests/${t%%:*}.c" -L"$OUT/lib" -lgfopenlayout_link
+  "$CC" $LINKF -DOLUI_LINK_LIBRARY -s -o "$OUT/tests/${t#*:}" "$HERE/tests/${t%%:*}.c" -L"$OUT/lib" -lgfopenlayout_link
 done
 # shellcheck disable=SC2086
 "$CC" $LINKF -s -o "$OUT/tests/OLUIDemoLib" "$HERE/examples/OLUIDemo.c" -L"$OUT/lib" -lgfopenlayout_link

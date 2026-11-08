@@ -682,8 +682,28 @@ static olui_el * OLUI_Popup(REG(a0, const olui * ui), REG(a6, struct OpenLayoutL
     return olui_popup(ui);
 }
 
+/* ---- document drawing, image crops and clipping ---- */
+
+static void OL_ShapeStyleInit(REG(a0, ol_shape_style * style), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_shape_style_init(style);
+}
+
+static int OL_NodeSetShape(REG(a0, ol_node * node), REG(a1, const ol_shape_style * style), REG(d0, int count), REG(a2, const ol_point * points), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_set_shape(node, style, count, points);
+}
+
+static int OL_NodeSetImageCrop(REG(a0, ol_node * node), REG(a1, const ol_image_crop * crop), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_set_image_crop(node, crop);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x3e4
+#define OL_V10_LAST_BIAS 0x3f6
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -722,4 +742,5 @@ static olui_el * OLUI_Popup(REG(a0, const olui * ui), REG(a6, struct OpenLayoutL
     (APTR)OLUI_VlistSet, (APTR)OLUI_VlistRows, (APTR)OLUI_VlistSelected, \
     (APTR)OLUI_VlistSelect, (APTR)OLUI_VlistCurrent, (APTR)OLUI_VlistSetCurrent, \
     (APTR)OLUI_MenuOpen, (APTR)OLUI_NewSharing, (APTR)OLUI_AmigaStrip, \
-    (APTR)OLUI_AmigaKeys, (APTR)OLUI_Repaint, (APTR)OLUI_Popup
+    (APTR)OLUI_AmigaKeys, (APTR)OLUI_Repaint, (APTR)OLUI_Popup, \
+    (APTR)OL_ShapeStyleInit, (APTR)OL_NodeSetShape, (APTR)OL_NodeSetImageCrop

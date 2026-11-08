@@ -404,6 +404,62 @@ int main(void)
         OL_DocumentFree(paged);
     }
 
+    if (OpenLayoutBase->lib_Version >= OPENLAYOUTLIB_DRAWING_VERSION) {
+        ol_node *graphic_node, *image_node;
+        ol_shape_style shape_style;
+        ol_point points[3] = {{500, 0}, {1000, 1000}, {0, 1000}};
+        ol_image_crop crop = {100, 50, 200, 150};
+        ol_box_style graphic_box;
+        struct OLNodeBox box_req;
+        struct OLNodeImage image_req;
+        ULONG k, shapes = 0, images = 0;
+
+        append.document = doc;
+        append.parent = root;
+        append.role = OL_ROLE_BLOCK;
+        append.text = NULL;
+        graphic_node = OL_NodeAppend(&append);
+        CHECK(graphic_node != NULL);
+        OL_BoxStyleInit(&graphic_box);
+        graphic_box.size = sizeof(graphic_box);
+        graphic_box.flags = OL_BOX_ABSOLUTE | OL_BOX_CLIP_CONTENT;
+        graphic_box.frame.width = OL_CSSPX(80);
+        graphic_box.frame.height = OL_CSSPX(40);
+        box_req.node = graphic_node;
+        box_req.box = &graphic_box;
+        OL_NodeSetBox(&box_req);
+        OL_ShapeStyleInit(&shape_style);
+        shape_style.type = OL_SHAPE_POLYGON;
+        shape_style.fill_argb = 0xff336699u;
+        CHECK(OL_NodeSetShape(graphic_node, &shape_style, 3, points));
+
+        append.parent = graphic_node;
+        append.role = OL_ROLE_IMAGE;
+        image_node = OL_NodeAppend(&append);
+        CHECK(image_node != NULL);
+        image_req.node = image_node;
+        image_req.image_id = 77;
+        image_req.width = OL_CSSPX(100);
+        image_req.height = OL_CSSPX(50);
+        OL_NodeSetImage(&image_req);
+        CHECK(OL_NodeSetImageCrop(image_node, &crop));
+        CHECK(OL_Layout(&layout_req));
+        for (k = 0; k < OL_DisplayCount(doc); ++k) {
+            const ol_display_op *op = OL_DisplayGet(doc, k);
+            if (op->type == OL_OP_SHAPE && op->u.fill_rect.node_id == OL_NodeID(graphic_node)) {
+                CHECK(op->graphic && op->graphic->point_count == 3);
+                CHECK(op->clip.width == OL_CSSPX(80));
+                ++shapes;
+            }
+            if (op->type == OL_OP_IMAGE && op->u.image.image_id == 77) {
+                CHECK(op->graphic && op->graphic->crop.left == 100);
+                CHECK(op->clip.height == OL_CSSPX(40));
+                ++images;
+            }
+        }
+        CHECK(shapes == 1 && images == 1);
+    }
+
     printf("LAYOUTLIB PASS version=%s height=%ld ops=%lu link=%lu\n",
            (const char *)OL_VersionString(),
            (long)(OL_DocumentContentHeight(doc) / OL_UNITS_PER_CSSPX),

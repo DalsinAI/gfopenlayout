@@ -1609,6 +1609,142 @@ static void test_exact_lines(void)
     ol_document_free(doc);
 }
 
+typedef struct {
+    ol_op_type type;
+    union {
+        ol_text_op text;
+        ol_fill_rect_op fill_rect;
+        ol_image_op image;
+        ol_rule_op rule;
+    } u;
+    int32_t page;
+} ol_display_op_v12;
+
+typedef struct {
+    int shapes;
+    ol_id hidden_id;
+    int hidden_drawn;
+    ol_device_op shape;
+} drawing_capture;
+
+static void capture_drawing(void *userdata, const ol_device_op *op)
+{
+    drawing_capture *c = (drawing_capture *)userdata;
+    if (op->op->type == OL_OP_SHAPE) {
+        c->shape = *op;
+        ++c->shapes;
+    }
+    if (op->op->type == OL_OP_FILL_RECT && op->op->u.fill_rect.node_id == c->hidden_id)
+        ++c->hidden_drawn;
+}
+
+static void test_drawing_v13(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_node *frame = block(doc, NULL, OL_ROLE_BLOCK, OL_ALIGN_START);
+    ol_node *inner = block(doc, frame, OL_ROLE_BLOCK, OL_ALIGN_START);
+    ol_node *image = ol_node_append(doc, inner, OL_ROLE_IMAGE, NULL);
+    ol_node *outside = block(doc, inner, OL_ROLE_BLOCK, OL_ALIGN_START);
+    ol_box_style box_style, inner_style, outside_style;
+    ol_style outside_paint;
+    ol_shape_style shape_style;
+    ol_point points[3] = {{500, 0}, {1000, 1000}, {0, 1000}};
+    ol_image_crop crop = {100, 50, 200, 150};
+    const ol_display_op *shape = NULL, *picture = NULL;
+    drawing_capture capture;
+    ol_scale scale;
+    ol_page page;
+    size_t i;
+
+    /* Version 13 only appends fields: every v12 field retains its offset. */
+    CHECK(offsetof(ol_display_op_v12, type) == offsetof(ol_display_op, type));
+    CHECK(offsetof(ol_display_op_v12, u) == offsetof(ol_display_op, u));
+    CHECK(offsetof(ol_display_op_v12, page) == offsetof(ol_display_op, page));
+    CHECK(sizeof(ol_display_op_v12) == offsetof(ol_display_op, graphic));
+
+    ol_box_style_init(&box_style);
+    box_style.flags = OL_BOX_ABSOLUTE | OL_BOX_CLIP_CONTENT;
+    box_style.frame.x = OL_CSSPX(10);
+    box_style.frame.y = OL_CSSPX(20);
+    box_style.frame.width = OL_CSSPX(100);
+    box_style.frame.height = OL_CSSPX(50);
+    ol_node_set_box(frame, &box_style);
+    ol_box_style_init(&inner_style);
+    inner_style.flags = OL_BOX_CLIP_CONTENT;
+    inner_style.width = OL_CSSPX(60);
+    inner_style.height = OL_CSSPX(30);
+    ol_node_set_box(inner, &inner_style);
+    ol_box_style_init(&outside_style);
+    outside_style.flags = OL_BOX_ABSOLUTE;
+    outside_style.frame.x = OL_CSSPX(100);
+    outside_style.frame.width = outside_style.frame.height = OL_CSSPX(10);
+    ol_node_set_box(outside, &outside_style);
+    outside_paint = *ol_node_style(outside);
+    outside_paint.background = 0xffff0000u;
+    ol_node_set_style(outside, &outside_paint);
+
+    ol_shape_style_init(&shape_style);
+    shape_style.type = OL_SHAPE_POLYGON;
+    shape_style.fill_argb = 0xff336699u;
+    shape_style.stroke_argb = 0xff102030u;
+    shape_style.stroke_width = OL_CSSPX(2);
+    shape_style.radius_permille = 200;
+    shape_style.flags = OL_SHAPE_ARROW_END;
+    shape_style.stroke_style = OL_STROKE_DASHED;
+    CHECK(ol_node_set_shape(frame, &shape_style, 3, points));
+    points[0].x = 7; /* the node owns a copy */
+
+    ol_node_set_image(image, 42, OL_CSSPX(120), OL_CSSPX(80));
+    CHECK(ol_node_set_image_crop(image, &crop));
+    crop.left = 999;
+    CHECK(!ol_node_set_image_crop(image, &crop));
+    CHECK(ol_layout(doc, OL_CSSPX(200), measure, NULL));
+
+    for (i = 0; i < ol_display_count(doc); ++i) {
+        const ol_display_op *op = ol_display_get(doc, i);
+        if (op->type == OL_OP_SHAPE) shape = op;
+        if (op->type == OL_OP_IMAGE && op->u.image.image_id == 42) picture = op;
+    }
+    CHECK(shape && shape->u.fill_rect.node_id == ol_node_id(frame));
+    CHECK(shape && shape->graphic && shape->graphic->point_count == 3);
+    CHECK(shape && shape->graphic && shape->graphic->points[0].x == 500);
+    CHECK(shape && shape->graphic && shape->graphic->shape.stroke_style == OL_STROKE_DASHED);
+    CHECK(shape && shape->clip.height != 0);
+    CHECK(shape && shape->clip.x == OL_CSSPX(10) && shape->clip.y == OL_CSSPX(20));
+    CHECK(shape && shape->clip.width == OL_CSSPX(100) && shape->clip.height == OL_CSSPX(50));
+    CHECK(picture && picture->graphic && picture->graphic->crop.left == 100);
+    CHECK(picture && picture->graphic->crop.bottom == 150);
+    CHECK(picture && picture->clip.height != 0);
+    CHECK(picture && picture->clip.width == OL_CSSPX(60));
+    CHECK(picture && picture->clip.height == OL_CSSPX(30));
+
+    memset(&capture, 0, sizeof(capture));
+    capture.hidden_id = ol_node_id(outside);
+    memset(&scale, 0, sizeof(scale));
+    ol_scale_set(&scale, 1, OL_UNITS_PER_CSSPX);
+    CHECK(ol_draw_page(doc, 0, &scale, NULL, capture_drawing, &capture) > 0);
+    CHECK(capture.shapes == 1);
+    CHECK(capture.hidden_drawn == 0);
+    CHECK(capture.shape.box.x == 10 && capture.shape.box.y == 20);
+    CHECK(capture.shape.box.width == 100 && capture.shape.box.height == 50);
+    CHECK(capture.shape.thickness == 2);
+    CHECK(capture.shape.clip.x == 10 && capture.shape.clip.y == 20);
+    CHECK(capture.shape.clip.width == 100 && capture.shape.clip.height == 50);
+
+    memset(&page, 0, sizeof(page));
+    page.width = page.height = OL_CSSPX(200);
+    page.margin_top = page.margin_right = page.margin_bottom = page.margin_left = OL_CSSPX(5);
+    CHECK(ol_layout_pages(doc, &page, measure, NULL));
+    shape = NULL;
+    for (i = 0; i < ol_display_count(doc); ++i)
+        if (ol_display_get(doc, i)->type == OL_OP_SHAPE) shape = ol_display_get(doc, i);
+    CHECK(shape && shape->page == 0);
+    CHECK(shape && shape->u.fill_rect.bounds.x == OL_CSSPX(15));
+    CHECK(shape && shape->u.fill_rect.bounds.y == OL_CSSPX(25));
+    CHECK(shape && shape->clip.x == OL_CSSPX(15) && shape->clip.y == OL_CSSPX(25));
+    ol_document_free(doc);
+}
+
 int main(void)
 {
     test_alignment();
@@ -1630,6 +1766,7 @@ int main(void)
     test_wrap_pages();
     test_wrap_random();
     test_exact_lines();
+    test_drawing_v13();
     if (failures) {
         printf("OPENLAYOUT DOCUMENT FAIL (%d)\n", failures);
         return 20;
