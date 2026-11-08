@@ -66,6 +66,18 @@ int main(void)
     ol_style s;
     ol_box_style old;
 
+    /* blocks in blocks, far deeper than the stack: left out past the limit */
+    {
+        ol_document *deep = ol_document_new();
+        ol_node *n;
+        int i;
+        CHECK(deep);
+        n = ol_document_root(deep);
+        for (i = 0; i < 200000; ++i) CHECK(n = ol_node_append(deep, n, OL_ROLE_BLOCK, NULL));
+        CHECK(ol_layout(deep, OL_CSSPX(400), measure, NULL));
+        ol_document_free(deep);
+    }
+
     CHECK(doc);
     root = ol_document_root(doc);
 

@@ -71,6 +71,11 @@ static const char ua_css[] =
     "vlist{height:120px;border:1px solid #808080;background:#ffffff;padding:1px}vlist:focus{border-color:#3366cc}"
     "row{padding:1px 4px}row:selected{background:#3366cc;color:#ffffff}";
 
+struct old_text {
+    struct old_text *next;
+    char *text;
+};
+
 typedef struct {
     char *id;
     int type;
@@ -97,6 +102,9 @@ struct olui {
     int nhandlers;
     olui_el *focus, *hover, *pressed;
     int busy;                   /* calling a handler: changes it makes wait for the next layout */
+    int hold;                   /* handling input or calling a handler: what is taken away waits (bury) */
+    olui_el *graves;            /* elements waiting to be freed */
+    struct old_text *old_texts; /* and text a handler replaced */
     unsigned style_gen;         /* moves on when the stylesheet changes: every element is styled again */
     /* 0.3 */
     olui_el *popup;             /* the select whose pop-up list is open */
@@ -243,6 +251,66 @@ static olui_el *list_of(olui_el *el)
     return NULL;
 }
 
+static void forget(olui *ui, olui_el *el);
+
+/* What is taken away while input is handled or a handler runs: the code that
+ * called the handler goes on using its elements, and the handlers after it read
+ * the event's strings. It is freed when that is over. */
+static void bury(olui *ui, olui_el *el)
+{
+    if (!el) return;
+    forget(ui, el);
+    if (!ui->hold) {
+        olui_el_free(el);
+        return;
+    }
+    el->grave = ui->graves;
+    ui->graves = el;
+}
+
+static void free_graves(olui *ui)
+{
+    while (ui->graves) {
+        olui_el *el = ui->graves;
+        ui->graves = el->grave;
+        forget(ui, el);     /* the code that was using it may have pointed at it again */
+        olui_el_free(el);
+    }
+    while (ui->old_texts) {
+        struct old_text *o = ui->old_texts;
+        ui->old_texts = o->next;
+        free(o->text);
+        free(o);
+    }
+}
+
+static void hold_on(olui *ui)
+{
+    if (!ui->hold) free_graves(ui);
+    ++ui->hold;
+}
+
+static void hold_off(olui *ui)
+{
+    if (!--ui->hold) free_graves(ui);
+}
+
+/* el's text is about to be replaced: a handler's event may be reading it. 0: no memory */
+static int drop_text(olui *ui, olui_el *el)
+{
+    if (ui->busy && el->text) {
+        struct old_text *o = (struct old_text *)malloc(sizeof(*o));
+        if (!o) return 0;
+        o->text = el->text;
+        o->next = ui->old_texts;
+        ui->old_texts = o;
+    } else {
+        free(el->text);
+    }
+    el->text = NULL;
+    return 1;
+}
+
 static void emit(olui *ui, int type, olui_el *el, olui_el *item, const char *value, int index, int checked)
 {
     olui_event ev;
@@ -260,12 +328,14 @@ static void emit(olui *ui, int type, olui_el *el, olui_el *item, const char *val
     ev.dx = ui->drag_dx;
     ev.dy = ui->drag_dy;
     ++ui->busy;
+    ++ui->hold;
     for (i = ui->nhandlers - 1; i >= 0; --i) {
         const handler *h = &ui->handlers[i];
         if (h->type && h->type != type) continue;
         if (h->id && strcmp(h->id, ev.id)) continue;
         h->fn(ui, &ev, h->userdata);
     }
+    --ui->hold;     /* freed when the call that sent it is over, or at the next draw */
     --ui->busy;
 }
 
@@ -292,6 +362,17 @@ void olui_free(olui *ui)
 {
     int i;
     if (!ui) return;
+    while (ui->graves) {
+        olui_el *el = ui->graves;
+        ui->graves = el->grave;
+        olui_el_free(el);
+    }
+    while (ui->old_texts) {
+        struct old_text *o = ui->old_texts;
+        ui->old_texts = o->next;
+        free(o->text);
+        free(o);
+    }
     olui_sheet_free(ui->sheet);
     olui_el_free(ui->root);
     olui_el_free(ui->popup_box);
@@ -335,6 +416,7 @@ static void mark_rows(olui_el *sel, int index);
 static int option_step(const olui_el *sel, int index, int dir);
 static int option_count(const olui_el *sel);
 static int listbox(const olui_el *sel);
+static int ta_push(olui_el *el, size_t at);
 
 /* The made parts: a tabs' strip of tab buttons, one for each of its tabs */
 static int make_parts(olui_el *el)
@@ -393,6 +475,11 @@ static int make_parts(olui_el *el)
             el->text = s[0] == ' ' ? (memmove(s, s + 1, strlen(s)), s) : s;
         }
     }
+    /* a textarea always has somewhere for its first line, though wrapping it may run out of memory */
+    if (el->kind == K_TEXTAREA) {
+        if (!ta_push(el, 0)) return 0;
+        el->nlines = 0;
+    }
     if (el->kind == K_INPUT) {
         if (!el->text && el->value) {
             el->text = el->value;
@@ -446,7 +533,7 @@ int olui_load(olui *ui, const char *markup, const char *css, char *err, size_t e
     }
     free(root->value);
     root->value = NULL;
-    olui_el_free(ui->root);
+    bury(ui, ui->root);
     ui->root = root;
     ui->focus = ui->hover = ui->pressed = NULL;
     ui->popup = ui->drag = ui->label_down = ui->tip_for = ui->spin = ui->vbar_el = NULL;
@@ -764,28 +851,47 @@ static void clear_nodes(olui_el *el)
     for (c = el->first; c; c = c->next) clear_nodes(c);
 }
 
+/* Out of memory part way through a layout: nothing is laid out, so nothing is drawn or
+ * hit, until one works */
+static int layout_failed(olui *ui)
+{
+    ol_document_free(ui->doc);
+    ui->doc = NULL;
+    clear_nodes(ui->root);
+    if (ui->map) memset(ui->map, 0, ui->map_count * sizeof(*ui->map));
+    free(ui->op_first);
+    free(ui->op_list);
+    ui->op_first = ui->op_list = NULL;
+    ui->tip_on = 0;
+    touch(ui);
+    return 0;
+}
+
 static int relayout(olui *ui)
 {
     ol_document *doc;
     ol_box_style box;
     if (!ui->root) return 1;
     doc = ol_document_new_reserved(ui->ops_reserved + 16);
-    if (!doc) return 0;
+    if (!doc) {
+        touch(ui);
+        return 0;
+    }
     ol_document_free(ui->doc);
     ui->doc = doc;
     if (ui->map) memset(ui->map, 0, ui->map_count * sizeof(*ui->map));
     clear_nodes(ui->root);
     ui->stale = 0;
-    if (!build(ui, ui->root, NULL, NULL, 1, 0)) return 0;
+    if (!build(ui, ui->root, NULL, NULL, 1, 0)) return layout_failed(ui);
     /* the window's height: what grows fills it */
     box = *ol_node_box(ui->root->node);
     box.height = ol_unscale_y(&ui->scale, ui->height);
     ol_node_set_box(ui->root->node, &box);
     if (!ol_layout(doc, ol_unscale_x(&ui->scale, ui->width > 0 ? ui->width : 1),
                    ui->measure, ui->measure_userdata))
-        return 0;
+        return layout_failed(ui);
     ui->ops_reserved = ol_display_count(doc);
-    if (!index_ops(ui)) return 0;
+    if (!index_ops(ui)) return layout_failed(ui);
     {
         /* lists, boxes that scroll, textareas and list boxes keep their scroll inside what they hold */
         size_t i;
@@ -1433,7 +1539,10 @@ static int text_replace(olui *ui, olui_el *el, size_t from, size_t to, const cha
     memcpy(s + from, add, m);
     memcpy(s + from + m, t + to, n - to + 1);
     free(add);
-    free(el->text);
+    if (!drop_text(ui, el)) {
+        free(s);
+        return 0;
+    }
     el->text = s;
     el->caret = el->anchor = from + m;
     el->want_x = -1;
@@ -2924,7 +3033,13 @@ int olui_mouse_qual(olui *ui, int x, int y, int what, unsigned qualifiers)
     ui->qual = qualifiers;
     ui->ptr_x = x;
     ui->ptr_y = y;
-    return mouse_in(ui, x, y, what);
+    {
+        int r;
+        hold_on(ui);
+        r = mouse_in(ui, x, y, what);
+        hold_off(ui);
+        return r;
+    }
 }
 
 static int mouse_in(olui *ui, int x, int y, int what)
@@ -3130,14 +3245,16 @@ static int mouse_in(olui *ui, int x, int y, int what)
     }
 }
 
-int olui_tick(olui *ui, unsigned ms)
+static int tick_in(olui *ui, unsigned ms)
 {
     int changed = 0;
     if (!ui || !ui->root) return 0;
+    if (ui->spin && (!enabled(ui->spin) || !visible(ui->spin))) ui->spin = NULL;
     if (ui->spin) {
         int n = 0;
         ui->spin_wait -= (int)(ms > 10000 ? 10000 : ms);
-        while (ui->spin_wait <= 0 && n++ < 10) {
+        /* a handler of each step may take it away or disable it */
+        while (ui->spin && enabled(ui->spin) && ui->spin_wait <= 0 && n++ < 10) {
             number_step(ui, ui->spin, ui->spin_dir);
             ui->spin_wait += 80;
             changed = 1;
@@ -3152,6 +3269,16 @@ int olui_tick(olui *ui, unsigned ms)
         }
     }
     return changed;
+}
+
+int olui_tick(olui *ui, unsigned ms)
+{
+    int r;
+    if (!ui) return 0;
+    hold_on(ui);
+    r = tick_in(ui, ms);
+    hold_off(ui);
+    return r;
 }
 
 static void collect_focusable(olui_el *el, olui_el **out, int *n, int max)
@@ -3202,7 +3329,7 @@ static int tab_order(olui *ui, olui_el **out, int max)
     return m;
 }
 
-int olui_key(olui *ui, unsigned code, unsigned qual)
+static int key_in(olui *ui, unsigned code, unsigned qual)
 {
     olui_el *f;
     if (!ui || !ui->root || !fresh(ui)) return 0;
@@ -3390,6 +3517,16 @@ int olui_key(olui *ui, unsigned code, unsigned qual)
     }
 }
 
+int olui_key(olui *ui, unsigned code, unsigned qual)
+{
+    int r;
+    if (!ui) return 0;
+    hold_on(ui);
+    r = key_in(ui, code, qual);
+    hold_off(ui);
+    return r;
+}
+
 /* ---- Editing: the clipboard's text, through the program ---------------------------- */
 
 int olui_get_selection(const olui_el *el, size_t *from, size_t *to)
@@ -3428,7 +3565,7 @@ int olui_insert_text(olui *ui, olui_el *el, const char *utf8)
     return text_replace(ui, el, a, b, utf8);
 }
 
-int olui_edit(olui *ui, int what)
+static int edit_in(olui *ui, int what)
 {
     olui_el *f;
     size_t a, b;
@@ -3459,6 +3596,16 @@ int olui_edit(olui *ui, int what)
     default:
         return 0;
     }
+}
+
+int olui_edit(olui *ui, int what)
+{
+    int r;
+    if (!ui) return 0;
+    hold_on(ui);
+    r = edit_in(ui, what);
+    hold_off(ui);
+    return r;
 }
 
 /* ---- Drawing --------------------------------------------------------------------- */
@@ -4288,6 +4435,7 @@ static void draw_ghost(drawer *d, int32_t dx, int32_t dy)
 void olui_draw(olui *ui, const olui_rect *area, olui_draw_fn fn, void *userdata)
 {
     drawer d;
+    if (ui && !ui->hold) free_graves(ui);
     if (!ui || !fn || !ui->root || !fresh(ui) || !ui->root->node) return;
     d.ui = ui;
     d.fn = fn;
@@ -4513,7 +4661,13 @@ void *olui_user(const olui_el *el) { return el ? el->user : NULL; }
 
 int olui_set_text(olui *ui, olui_el *el, const char *utf8)
 {
-    if (!ui || !el || !olui_set_str(&el->text, utf8 ? utf8 : "")) return 0;
+    char *s = NULL;
+    if (!ui || !el || !olui_set_str(&s, utf8 ? utf8 : "")) return 0;
+    if (!drop_text(ui, el)) {
+        free(s);
+        return 0;
+    }
+    el->text = s;
     if (el->kind == K_INPUT) el->caret = el->anchor = strlen(el->text);
     if (el->kind == K_TEXTAREA) {
         el->caret = el->anchor = 0;
@@ -4621,9 +4775,8 @@ void olui_list_clear(olui *ui, olui_el *list)
     for (c = list->first; c; c = next) {
         next = c->next;
         if (c->kind != K_ITEM) continue;
-        forget(ui, c);
         olui_el_unlink(c);
-        olui_el_free(c);
+        bury(ui, c);
     }
     list->scroll = 0;
     touch(ui);
@@ -4774,7 +4927,7 @@ void olui_select_clear(olui *ui, olui_el *select)
         next = c->next;
         if (c->kind != K_OPTION && c->kind != K_OPTGROUP) continue;
         olui_el_unlink(c);
-        olui_el_free(c);
+        bury(ui, c);
     }
     select->ivalue = -1;
     select->scroll = 0;
@@ -4873,9 +5026,8 @@ int olui_remove(olui *ui, olui_el *el)
         el->kind == K_TAB)
         return 0;
     if (ui->popup && under(ui->popup, el)) ui->popup = NULL;
-    forget(ui, el);
     olui_el_unlink(el);
-    olui_el_free(el);
+    bury(ui, el);
     touch(ui);
     return 1;
 }

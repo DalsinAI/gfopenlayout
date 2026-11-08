@@ -827,6 +827,9 @@ static void test_fuzz(void)
         memcpy(deep, "@supports ", 10);
         e = engine_with(deep);
         gfcss_free(e);
+        for (n = 0; n + 7 < sizeof(deep) - 1; n += 7) memcpy(deep + n, "@media{", 7);
+        e = engine_with(deep);
+        gfcss_free(e);
     }
     CHECK(1);
 }
