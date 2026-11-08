@@ -1333,6 +1333,20 @@ int main(int argc, char **argv)
         CHECK(!olui_box(sl, red, &b) || b.w == 0);
         olui_free(sl);
 
+        /* a progress bar in a card being dragged is drawn with the card too: all of it again */
+        sl = olui_new();
+        CHECK(sl && olui_load(sl, "<div id=card draggable style='width:120px;height:40px'><progress id=p value=1 max=10>"
+                                  "</progress></div>", NULL, err, sizeof(err)));
+        CHECK(olui_layout(sl, 300, 200));
+        CHECK(olui_box(sl, olui_find(sl, "card"), &b));
+        olui_mouse(sl, b.x + b.w / 2, b.y + b.h - 2, OLUI_MOUSE_DOWN);
+        olui_mouse(sl, b.x + b.w / 2 + 40, b.y + 60, OLUI_MOUSE_MOVE);
+        olui_mouse(sl, b.x + b.w / 2 + 60, b.y + 90, OLUI_MOUSE_MOVE);
+        olui_draw(sl, NULL, draw_nothing, NULL);
+        olui_set_progress(sl, olui_find(sl, "p"), 9);
+        CHECK(olui_damaged(sl, &r) && r.w == 300 && r.h == 200);
+        olui_free(sl);
+
         /* its knob reaches past its box at the ends: that is drawn again, where it was too */
         sl = olui_new();
         CHECK(sl && olui_load(sl, "<row><label>Red</label><slider id=red min=0 max=255 value=255 style='flex:1'>"

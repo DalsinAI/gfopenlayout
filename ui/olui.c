@@ -1196,7 +1196,8 @@ static void add_extent(olui *ui, olui_el *el, olui_rect *area);
 static void paint_value(olui *ui, olui_el *el, int v)
 {
     olui_rect area, win;
-    if (ui->stale || !el->node) {
+    /* while something is dragged it may be drawn a second time, moved with the pointer */
+    if (ui->stale || !el->node || ui->ndragged) {
         el->ivalue = v;
         ui->damaged = 1;
         return;
