@@ -459,9 +459,120 @@ static void test_glib(void)
     CHECK(ticks == 3);
 }
 
+/* ---- What a handler takes away (run under AddressSanitizer to see these fail) ---------------- */
+
+static GtkWidget *life_win;
+static int life_runs;
+
+static void destroy_life_win(GtkWidget *w, gpointer data)
+{
+    (void)w;
+    (void)data;
+    gtk_widget_destroy(life_win);
+}
+
+static gint nested_loop(gpointer data)
+{
+    (void)data;
+    if (++life_runs > 3) return FALSE;      /* run again from inside itself: this would count on */
+    gtk_main_iteration_do(FALSE);
+    return FALSE;
+}
+
+static gboolean key_destroys(GtkWidget *w, GdkEventKey *e, gpointer data)
+{
+    (void)e;
+    (void)data;
+    gtk_widget_destroy(w);
+    return TRUE;
+}
+
+static void toggled_destroys(GtkWidget *w, gpointer data)
+{
+    (void)data;
+    if (!gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(w))) gtk_widget_destroy(w);
+}
+
+static void test_lifetimes(void)
+{
+    GtkWidget *win, *box, *panel, *label, *b, *r1, *r2, *entry;
+
+    /* a child's "destroy" closes the window */
+    life_win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    box = gtk_table_new(1, 1, FALSE);
+    gtk_container_add(GTK_CONTAINER(life_win), box);
+    gtk_widget_show_all(life_win);
+    gtkc_flush();
+    gtk_signal_connect(GTK_OBJECT(box), "destroy", GTK_SIGNAL_FUNC(destroy_life_win), NULL);
+    gtk_widget_destroy(box);
+    gtkc_flush();
+    CHECK(1);
+
+    /* a loop run from a timeout doesn't run that timeout again */
+    life_runs = 0;
+    gtk_timeout_add(0, nested_loop, NULL);
+    gtk_main_iteration_do(FALSE);
+    CHECK(life_runs == 1);
+
+    /* a panel out and back: what it holds has no element from before */
+    win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    box = gtk_vbox_new(FALSE, 0);
+    gtk_container_add(GTK_CONTAINER(win), box);
+    panel = gtk_vbox_new(FALSE, 0);
+    label = gtk_label_new("x");
+    gtk_container_add(GTK_CONTAINER(panel), label);
+    gtk_box_pack_start_defaults(GTK_BOX(box), panel);
+    gtk_widget_show_all(win);
+    gtkc_flush();
+    gtk_widget_ref(panel);
+    gtk_container_remove(GTK_CONTAINER(box), panel);
+    gtkc_flush();
+    gtk_box_pack_start_defaults(GTK_BOX(box), panel);
+    gtk_widget_unref(panel);
+    gtk_label_set_text(GTK_LABEL(label), "new");
+    gtkc_flush();
+    {
+        gchar *now = NULL;
+        gtk_label_get(GTK_LABEL(label), &now);
+        CHECK(now && !strcmp(now, "new"));
+    }
+
+    /* the last reference to something with the grab */
+    b = gtk_button_new_with_label("b");
+    gtk_box_pack_start_defaults(GTK_BOX(box), b);
+    gtk_widget_show(b);
+    gtkc_flush();
+    gtk_grab_add(b);
+    gtk_container_remove(GTK_CONTAINER(box), b);
+    gtkc_key(win, 'x', 0);
+    CHECK(1);
+
+    /* a radio button destroyed as it is turned off */
+    r1 = gtk_radio_button_new_with_label(NULL, "one");
+    r2 = gtk_radio_button_new_with_label(gtk_radio_button_group(GTK_RADIO_BUTTON(r1)), "two");
+    gtk_box_pack_start_defaults(GTK_BOX(box), r1);
+    gtk_box_pack_start_defaults(GTK_BOX(box), r2);
+    gtk_widget_show_all(win);
+    gtkc_flush();
+    gtk_signal_connect(GTK_OBJECT(r1), "toggled", GTK_SIGNAL_FUNC(toggled_destroys), NULL);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(r2), TRUE);
+    CHECK(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(r2)));
+    gtkc_flush();
+
+    /* a key destroys the window part way through what is typed */
+    entry = gtk_entry_new();
+    gtk_box_pack_start_defaults(GTK_BOX(box), entry);
+    gtk_widget_show(entry);
+    gtkc_flush();
+    gtk_signal_connect(GTK_OBJECT(win), "key_press_event", GTK_SIGNAL_FUNC(key_destroys), NULL);
+    CHECK(gtkc_type(entry, "abc"));
+    gtkc_flush();
+}
+
 int main(int argc, char **argv)
 {
     gtk_init(&argc, &argv);
+    test_lifetimes();
     test_name_dialog();
     test_buttons();
     test_changes();
