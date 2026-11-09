@@ -564,6 +564,19 @@ typedef struct {
  * no memory. Existing box and document ABI fields do not move. */
 int ol_node_set_exclusions(ol_node *node, int count,
                            const ol_exclusion *exclusions);
+
+/* 0.17: flattens a node-owned closed shape into conservative horizontal
+ * exclusion bands. bounds are in the target text frame's coordinates and
+ * therefore need not be the shape node's layout bounds. The returned bands
+ * use OL_WRAP_SQUARE and copy gap (top, right, bottom, left); the normal
+ * exclusion fitter supplies the requested clearance around their union.
+ * Adjacent equal-width bands are coalesced. Returns their count, or 0 for
+ * an open/non-shape node, invalid input or insufficient output capacity. */
+#define OL_CONTOUR_BANDS_DEFAULT 16
+#define OL_CONTOUR_BANDS_MAX 64
+int ol_node_shape_exclusions(const ol_node *shape, const ol_rect *bounds,
+                             const ol_unit *gap, int bands,
+                             ol_exclusion *out, int capacity);
 /* The size of an ol_box_style before 0.6's wrap, as programs built for
  * gfopenlayout.library 5 and 6 have it */
 #define OL_BOX_STYLE_SIZE_0_5 offsetof(ol_box_style, wrap)

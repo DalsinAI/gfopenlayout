@@ -483,6 +483,20 @@ int main(void)
         CHECK(OL_NodeSetExclusions(root, 0, NULL));
     }
 
+    if (OpenLayoutBase->lib_Version >= OPENLAYOUTLIB_CONTOUR_VERSION) {
+        ol_shape_style shape_style;
+        ol_rect bounds = {0, 0, OL_CSSPX(100), OL_CSSPX(60)};
+        ol_unit gap[4] = {0, OL_CSSPX(2), 0, OL_CSSPX(2)};
+        ol_exclusion contour[8];
+        int count;
+        OL_ShapeStyleInit(&shape_style);
+        shape_style.type = OL_SHAPE_ELLIPSE;
+        CHECK(OL_NodeSetShape(root, &shape_style, 0, NULL));
+        count = OL_NodeShapeExclusions(root, &bounds, gap, 8, contour, 8);
+        CHECK(count > 4 && count <= 8);
+        CHECK(contour[0].bounds.width < contour[count / 2].bounds.width);
+    }
+
     printf("LAYOUTLIB PASS version=%s height=%ld ops=%lu link=%lu\n",
            (const char *)OL_VersionString(),
            (long)(OL_DocumentContentHeight(doc) / OL_UNITS_PER_CSSPX),

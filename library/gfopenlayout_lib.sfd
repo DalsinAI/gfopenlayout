@@ -1,4 +1,4 @@
-==id $Id: gfopenlayout_lib.sfd 16.0 (9.11.2026) $
+==id $Id: gfopenlayout_lib.sfd 17.0 (9.11.2026) $
 * "gfopenlayout.library"
 ==base _OpenLayoutBase
 ==basetype struct Library *
@@ -188,5 +188,7 @@ int OL_NodeSetImageCrop(ol_node *node, const ol_image_crop *crop)(a0,a1)
 int OL_ShapePath(const ol_graphic *graphic, const ol_rect *bounds, ol_point *points, int capacity, int *closed)(a0,a1,a2,d0,a3)
 * version 16: bounded text-flow exclusions
 int OL_NodeSetExclusions(ol_node *node, int count, const ol_exclusion *exclusions)(a0,d0,a1)
+* version 17: shape contour exclusion bands
+int OL_NodeShapeExclusions(const ol_node *shape, const ol_rect *bounds, const ol_unit *gap, int bands, ol_exclusion *out, int capacity)(a0,a1,a2,d0,a3,d1)
 * ---- end of version 10 ----
 ==end

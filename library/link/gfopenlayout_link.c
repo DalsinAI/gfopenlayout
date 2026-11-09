@@ -626,3 +626,9 @@ int ol_node_set_exclusions(ol_node *node, int count, const ol_exclusion *exclusi
     if (OpenLayoutBase->lib_Version < 16) return 0;
     return OL_NodeSetExclusions(node, count, exclusions);
 }
+
+int ol_node_shape_exclusions(const ol_node *shape, const ol_rect *bounds, const ol_unit *gap, int bands, ol_exclusion *out, int capacity)
+{
+    if (OpenLayoutBase->lib_Version < 17) return 0;
+    return OL_NodeShapeExclusions(shape, bounds, gap, bands, out, capacity);
+}

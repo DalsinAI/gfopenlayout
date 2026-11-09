@@ -65,6 +65,8 @@
                                                bounded frame can reuse the version-7 wrap fitter
                                                around Publisher/Writer objects without drawing or
                                                affecting sibling flows */
+#define OPENLAYOUTLIB_CONTOUR_VERSION 17    /* conservative horizontal exclusion bands derived
+                                               from node-owned closed shape geometry */
 
 struct OLNodeAppend {
     ol_document *document;

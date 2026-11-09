@@ -382,6 +382,47 @@ static void test_frame_exclusions(void)
     ol_document_free(doc);
 }
 
+/* 0.17: closed shape geometry becomes conservative, reusable tight-wrap
+ * bands without an application reimplementing primitive paths or rotation. */
+static void test_shape_exclusions(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_node *shape = ol_node_append(doc, NULL, OL_ROLE_BLOCK, NULL);
+    ol_shape_style style;
+    ol_rect bounds = {OL_CSSPX(20), OL_CSSPX(10), OL_CSSPX(160), OL_CSSPX(80)};
+    ol_unit gap[4] = {OL_CSSPX(2), OL_CSSPX(3), OL_CSSPX(4), OL_CSSPX(5)};
+    ol_exclusion bands[OL_CONTOUR_BANDS_DEFAULT];
+    ol_point line[2] = {{0, 0}, {OL_SHAPE_COORDS, OL_SHAPE_COORDS}};
+    int count, i;
+
+    ol_shape_style_init(&style);
+    style.type = OL_SHAPE_ELLIPSE;
+    CHECK(ol_node_set_shape(shape, &style, 0, NULL));
+    count = ol_node_shape_exclusions(shape, &bounds, gap,
+                                     OL_CONTOUR_BANDS_DEFAULT, bands,
+                                     OL_CONTOUR_BANDS_DEFAULT);
+    CHECK(count > 4 && count <= OL_CONTOUR_BANDS_DEFAULT);
+    CHECK(bands[0].bounds.width < bands[count / 2].bounds.width);
+    CHECK(bands[count - 1].bounds.width < bands[count / 2].bounds.width);
+    for (i = 0; i < count; ++i) {
+        CHECK(bands[i].wrap == OL_WRAP_SQUARE);
+        CHECK(bands[i].bounds.width > 0 && bands[i].bounds.height > 0);
+        CHECK(!memcmp(bands[i].gap, gap, sizeof gap));
+        if (i) CHECK(bands[i - 1].bounds.y + bands[i - 1].bounds.height ==
+                     bands[i].bounds.y);
+    }
+    CHECK(ol_node_set_exclusions(shape, count, bands));
+    CHECK(!ol_node_shape_exclusions(shape, &bounds, gap,
+                                    OL_CONTOUR_BANDS_DEFAULT, bands, 2));
+    gap[0] = -1;
+    CHECK(!ol_node_shape_exclusions(shape, &bounds, gap, 8, bands, 8));
+    gap[0] = OL_CSSPX(2);
+    style.type = OL_SHAPE_LINE;
+    CHECK(ol_node_set_shape(shape, &style, 2, line));
+    CHECK(!ol_node_shape_exclusions(shape, &bounds, gap, 8, bands, 8));
+    ol_document_free(doc);
+}
+
 /* A frame anchored to its page, at x, y from anchor's corners, w x h. */
 static ol_node *anchored(ol_document *doc, ol_node *parent, uint32_t anchor, ol_unit x, ol_unit y,
                          ol_unit w, ol_unit h)
@@ -1973,6 +2014,7 @@ int main(void)
     test_frames();
     test_frame_columns();
     test_frame_exclusions();
+    test_shape_exclusions();
     test_anchored_frames();
     test_pages();
     test_page_columns();

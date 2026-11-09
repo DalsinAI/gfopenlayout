@@ -856,6 +856,111 @@ int ol_node_set_exclusions(ol_node *node, int count,
     return 1;
 }
 
+static int contour_between(ol_unit y, ol_unit a, ol_unit b)
+{
+    return (y >= a && y <= b) || (y >= b && y <= a);
+}
+
+static ol_unit contour_edge_x(const ol_point *a, const ol_point *b, ol_unit y)
+{
+    int64_t dx = (int64_t)b->x - a->x;
+    int64_t dy = (int64_t)b->y - a->y;
+    return a->x + (ol_unit)(dx * ((int64_t)y - a->y) / dy);
+}
+
+int ol_node_shape_exclusions(const ol_node *shape, const ol_rect *bounds,
+                             const ol_unit *gap, int bands,
+                             ol_exclusion *out, int capacity)
+{
+    ol_point path[OL_MAX_SHAPE_POINTS];
+    ol_exclusion made[OL_CONTOUR_BANDS_MAX];
+    ol_unit min_y, max_y;
+    int closed = 0, points, count = 0, i, j, side;
+
+    if (!shape || !shape->graphic || !bounds || !gap || !out ||
+        bounds->width <= 0 || bounds->height <= 0 ||
+        (int64_t)bounds->x + bounds->width > INT32_MAX ||
+        (int64_t)bounds->y + bounds->height > INT32_MAX ||
+        bands <= 0 || bands > OL_CONTOUR_BANDS_MAX ||
+        capacity <= 0 || capacity > OL_MAX_EXCLUSIONS)
+        return 0;
+    for (side = 0; side < 4; ++side)
+        if (gap[side] < 0)
+            return 0;
+    points = ol_shape_path(shape->graphic, bounds, path,
+                           OL_MAX_SHAPE_POINTS, &closed);
+    if (points < 3 || !closed)
+        return 0;
+    min_y = max_y = path[0].y;
+    for (i = 1; i < points; ++i) {
+        if (path[i].y < min_y) min_y = path[i].y;
+        if (path[i].y > max_y) max_y = path[i].y;
+    }
+    if (max_y <= min_y || (int64_t)max_y - min_y > INT32_MAX)
+        return 0;
+
+    for (i = 0; i < bands; ++i) {
+        int64_t height = (int64_t)max_y - min_y;
+        ol_unit y0 = min_y + (ol_unit)((height * i) / bands);
+        ol_unit y1 = min_y + (ol_unit)((height * (i + 1)) / bands);
+        ol_unit x0 = INT32_MAX, x1 = INT32_MIN;
+        int found = 0;
+        if (y1 <= y0) continue;
+        for (j = 0; j < points; ++j) {
+            const ol_point *a = &path[j];
+            const ol_point *b = &path[(j + 1) % points];
+            if (a->y >= y0 && a->y <= y1) {
+                if (a->x < x0) x0 = a->x;
+                if (a->x > x1) x1 = a->x;
+                found = 1;
+            }
+            if (b->y >= y0 && b->y <= y1) {
+                if (b->x < x0) x0 = b->x;
+                if (b->x > x1) x1 = b->x;
+                found = 1;
+            }
+            if (a->y != b->y && contour_between(y0, a->y, b->y)) {
+                ol_unit x = contour_edge_x(a, b, y0);
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                found = 1;
+            }
+            if (a->y != b->y && contour_between(y1, a->y, b->y)) {
+                ol_unit x = contour_edge_x(a, b, y1);
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                found = 1;
+            }
+        }
+        if (!found) continue;
+        /* Cover integer interpolation truncation conservatively. */
+        if (x0 > INT32_MIN) --x0;
+        if (x1 < INT32_MAX) ++x1;
+        if (x1 <= x0 || (int64_t)x1 - x0 > INT32_MAX) continue;
+        if (count && made[count - 1].bounds.x == x0 &&
+            made[count - 1].bounds.width == x1 - x0 &&
+            made[count - 1].bounds.y + made[count - 1].bounds.height == y0) {
+            made[count - 1].bounds.height = y1 - made[count - 1].bounds.y;
+            continue;
+        }
+        if (count >= capacity)
+            return 0;
+        memset(&made[count], 0, sizeof(made[count]));
+        made[count].bounds.x = x0;
+        made[count].bounds.y = y0;
+        made[count].bounds.width = x1 - x0;
+        made[count].bounds.height = y1 - y0;
+        made[count].wrap = OL_WRAP_SQUARE;
+        for (side = 0; side < 4; ++side)
+            made[count].gap[side] = gap[side];
+        ++count;
+    }
+    if (!count)
+        return 0;
+    memcpy(out, made, (size_t)count * sizeof(*out));
+    return count;
+}
+
 int ol_node_set_columns(ol_node *node, int count, const ol_unit *widths)
 {
     ol_unit *copy = NULL;

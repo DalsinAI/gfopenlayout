@@ -718,8 +718,16 @@ static int OL_NodeSetExclusions(REG(a0, ol_node * node), REG(d0, int count), REG
     return ol_node_set_exclusions(node, count, exclusions);
 }
 
+/* ---- shape contour exclusion bands ---- */
+
+static int OL_NodeShapeExclusions(REG(a0, const ol_node * shape), REG(a1, const ol_rect * bounds), REG(a2, const ol_unit * gap), REG(d0, int bands), REG(a3, ol_exclusion * out), REG(d1, int capacity), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_shape_exclusions(shape, bounds, gap, bands, out, capacity);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x402
+#define OL_V10_LAST_BIAS 0x408
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -760,4 +768,4 @@ static int OL_NodeSetExclusions(REG(a0, ol_node * node), REG(d0, int count), REG
     (APTR)OLUI_MenuOpen, (APTR)OLUI_NewSharing, (APTR)OLUI_AmigaStrip, \
     (APTR)OLUI_AmigaKeys, (APTR)OLUI_Repaint, (APTR)OLUI_Popup, \
     (APTR)OL_ShapeStyleInit, (APTR)OL_NodeSetShape, (APTR)OL_NodeSetImageCrop, \
-    (APTR)OL_ShapePath, (APTR)OL_NodeSetExclusions
+    (APTR)OL_ShapePath, (APTR)OL_NodeSetExclusions, (APTR)OL_NodeShapeExclusions
