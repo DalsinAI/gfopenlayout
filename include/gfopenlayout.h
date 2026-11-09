@@ -483,6 +483,14 @@ typedef struct {
     int32_t width_permille;            /* of the containing block's content width; 0: none; an explicit width wins */
     int32_t max_width_permille;        /* 0: none */
     uint32_t valign;                   /* OL_VALIGN_... */
+    /* 0.15: newspaper columns inside a bounded absolute text frame. The
+     * frame's content flows from the top of one column to the next; 0 or 1
+     * is ordinary single-column flow. The gap is ignored for one column.
+     * A frame needs a positive frame.height, and 2..16 columns whose gaps
+     * leave at least one layout unit for each column. Content beyond the
+     * last column is not displayed. Older box sizes leave both fields 0. */
+    int32_t text_columns;
+    ol_unit text_column_gap;
 } ol_box_style;
 
 /* An anchored frame (box.anchor not 0) is laid out on its own and placed
@@ -545,6 +553,9 @@ enum {
 /* The size of an ol_box_style before 0.9's web boxes, as programs built for
  * gfopenlayout.library 8 have it */
 #define OL_BOX_STYLE_SIZE_0_8 offsetof(ol_box_style, border_widths)
+/* The size before 0.15's bounded text-frame columns. Programs using these
+ * fields through gfopenlayout.library open OPENLAYOUTLIB_COLUMNS_VERSION. */
+#define OL_BOX_STYLE_SIZE_0_14 offsetof(ol_box_style, text_columns)
 
 /* 0.6: where an anchored frame went after ol_layout_pages (or ol_layout,
  * in the galley): its page and its rectangle on it, the frame's width and

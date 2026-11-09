@@ -1,4 +1,4 @@
-/* gfopenlayout.library 14.0: version 3 adds pages, tables, frames and the
+/* gfopenlayout.library 15.0: version 3 adds pages, tables, frames and the
  * caret (GFOpenLayout 0.2) after version 2's calls, which are unchanged;
  * version 4 adds tab stops that align and their leaders (GFOpenLayout 0.3);
  * version 5 places frames anchored to their pages (GFOpenLayout 0.4, the
@@ -19,7 +19,8 @@
  * web pages and programs' windows. Version 13 adds node-owned vector
  * drawings, image crop metadata and stateless content clipping, with its
  * calls at the tail and its display/device fields appended after v12's.
- * Version 14 appends shared primitive flattening and rotation.
+ * Version 14 appends shared primitive flattening and rotation. Version 15
+ * appends bounded text-frame columns to the size-versioned box style.
  * Programs built for 2 to 8 keep working: a box style of an older size
  * has the fields after it 0, as ol_node_set_box copies only its size.
  * Copyright (c) 2026 AmiCradle Team. MIT.
@@ -40,7 +41,7 @@
 #include <proto/diskfont.h>
 
 #define REG(r, decl) register decl __asm(#r)
-#define LIB_VERSION 14
+#define LIB_VERSION 15
 #define LIB_REVISION 0
 
 struct OpenLayoutLibBase {
@@ -62,10 +63,10 @@ int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "gfopenlayout.library 14.0 (8.11.2026) GFOpenLayout 0.14, AmiCradle Team\r\n";
+    "gfopenlayout.library 15.0 (9.11.2026) GFOpenLayout 0.15, AmiCradle Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: gfopenlayout.library 14.0 (8.11.2026) GFOpenLayout 0.14, AmiCradle Team";
+    "$VER: gfopenlayout.library 15.0 (9.11.2026) GFOpenLayout 0.15, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),

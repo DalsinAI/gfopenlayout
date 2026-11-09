@@ -1,5 +1,5 @@
 #!/bin/sh
-# gfopenlayout.library 13: GFOpenLayout, GFCSS, GFOpenLayout UI and its
+# gfopenlayout.library 15: GFOpenLayout, GFCSS, GFOpenLayout UI and its
 # Intuition glue in one library, with the os32 stove; libgfopenlayout_link.a,
 # the C API through it; and the tests, the UI's linked through the library.
 #   OGT_ROOT=.../amicradle-guest/libraries/opengadtools ./build-library.sh

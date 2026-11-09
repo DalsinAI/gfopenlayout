@@ -1,4 +1,4 @@
-==id $Id: gfopenlayout_lib.sfd 14.0 (8.11.2026) $
+==id $Id: gfopenlayout_lib.sfd 15.0 (9.11.2026) $
 * "gfopenlayout.library"
 ==base _OpenLayoutBase
 ==basetype struct Library *

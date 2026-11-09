@@ -58,6 +58,9 @@
 #define OPENLAYOUTLIB_PATH_VERSION 14       /* allocation-free primitive flattening and shape
                                                rotation: OL_ShapePath. The shape style extension
                                                is appended after every version 13 field. */
+#define OPENLAYOUTLIB_COLUMNS_VERSION 15    /* bounded newspaper columns inside absolute text
+                                               frames: ol_box_style's text_columns and
+                                               text_column_gap, appended after every 0.14 field */
 
 struct OLNodeAppend {
     ol_document *document;

@@ -1978,6 +1978,126 @@ static int layout_frame(ol_document *doc, ol_node *node, ol_unit origin_x, ol_un
 static void move_op(ol_display_op *op, ol_unit dx, ol_unit dy);
 static const ol_anchor *anchor_at(const ol_document *doc, size_t i);
 
+/* 0.15: a bounded text frame is laid out as one narrow galley, then each
+ * frame-height stretch is put into the next column. This keeps the line and
+ * paragraph engine single-sourced with page columns while making the
+ * transformation local to the frame. Ops past the last column are omitted;
+ * every retained op is clipped to its own column. */
+static ol_unit op_top(const ol_display_op *op)
+{
+    switch (op->type) {
+    case OL_OP_TEXT: return op->u.text.bounds.y;
+    case OL_OP_IMAGE: return op->u.image.bounds.y;
+    case OL_OP_FILL_RECT: return op->u.fill_rect.bounds.y;
+    case OL_OP_SHAPE: return op->u.fill_rect.bounds.y;
+    case OL_OP_RULE: return op->u.rule.y1 < op->u.rule.y2 ? op->u.rule.y1 : op->u.rule.y2;
+    default: return 0;
+    }
+}
+
+static ol_unit op_bottom(const ol_display_op *op)
+{
+    switch (op->type) {
+    case OL_OP_TEXT: return op->u.text.bounds.y + op->u.text.bounds.height;
+    case OL_OP_IMAGE: return op->u.image.bounds.y + op->u.image.bounds.height;
+    case OL_OP_FILL_RECT: return op->u.fill_rect.bounds.y + op->u.fill_rect.bounds.height;
+    case OL_OP_SHAPE: return op->u.fill_rect.bounds.y + op->u.fill_rect.bounds.height;
+    case OL_OP_RULE:
+        return (op->u.rule.y1 > op->u.rule.y2 ? op->u.rule.y1 : op->u.rule.y2) +
+               op->u.rule.thickness;
+    default: return 0;
+    }
+}
+
+static int frame_column_holding(const ol_unit *starts, int columns, ol_unit y)
+{
+    int column = 0;
+    while (column + 1 < columns && starts[column + 1] <= y) ++column;
+    return column;
+}
+
+static void columnize_descendant_bounds(ol_node *node, ol_unit top, ol_unit height,
+                                        const ol_unit *starts, int columns, ol_unit step)
+{
+    ol_node *c;
+    for (c = node->first_child; c; c = c->next_sibling) {
+        if (!is_frame(c) && !rect_empty(c->bounds)) {
+            int first, last;
+            if (c->bounds.y >= starts[columns - 1] + height) {
+                memset(&c->bounds, 0, sizeof(c->bounds));
+                columnize_descendant_bounds(c, top, height, starts, columns, step);
+                continue;
+            }
+            first = frame_column_holding(starts, columns, c->bounds.y);
+            last = frame_column_holding(starts, columns,
+                                        c->bounds.y + c->bounds.height - 1);
+            if (first == last) {
+                c->bounds.x += first * step;
+                c->bounds.y += top - starts[first];
+            } else {
+                c->bounds.width += (last - first) * step;
+                c->bounds.x += first * step;
+                c->bounds.y = top;
+                c->bounds.height = height;
+            }
+        }
+        columnize_descendant_bounds(c, top, height, starts, columns, step);
+    }
+}
+
+static void columnize_frame(ol_document *doc, ol_node *frame, size_t first,
+                            ol_unit x, ol_unit top, ol_unit width, ol_unit height,
+                            int columns, ol_unit gap)
+{
+    size_t src, dst = first;
+    ol_unit step = width + gap;
+    ol_unit starts[16];
+    int c;
+
+    starts[0] = top;
+    for (c = 1; c < columns; ++c) {
+        ol_unit previous = starts[c - 1], limit = previous + height, end = limit;
+        ol_unit next;
+        size_t i;
+        /* The same rule as page cutting: do not cut a line, row or kept
+         * block at the nominal boundary. An explicit break inside the frame
+         * ends the current column too. */
+        for (i = 0; i < doc->break_count; ++i)
+            if (doc->breaks[i] > previous && doc->breaks[i] <= limit &&
+                doc->breaks[i] < end)
+                end = doc->breaks[i];
+        for (i = 0; i < doc->keep_count; ++i)
+            if (doc->keeps[i].top < end && doc->keeps[i].bottom > end &&
+                doc->keeps[i].top > previous)
+                end = doc->keeps[i].top;
+        next = 0;
+        for (i = 0; i < doc->keep_count; ++i)
+            if (doc->keeps[i].top >= end && (!next || doc->keeps[i].top < next))
+                next = doc->keeps[i].top;
+        if (!next) next = end;
+        if (next <= previous) next = limit;
+        starts[c] = next;
+    }
+    for (src = first; src < doc->op_count; ++src) {
+        ol_display_op op = doc->ops[src];
+        ol_unit y = op_top(&op);
+        int column = frame_column_holding(starts, columns, y);
+        ol_rect clip;
+        if (y >= starts[columns - 1] + height ||
+            (column == columns - 1 && op_bottom(&op) > starts[column] + height))
+            continue;
+        move_op(&op, column * step, top - starts[column]);
+        clip.x = x + column * step;
+        clip.y = top;
+        clip.width = width;
+        clip.height = height;
+        op.clip = op.clip.height ? rect_intersection(op.clip, clip) : clip;
+        doc->ops[dst++] = op;
+    }
+    doc->op_count = dst;
+    columnize_descendant_bounds(frame, top, height, starts, columns, step);
+}
+
 /* 0.9: a node's blocks below it moved down dy (their bounds; inline
  * nodes' come from their ops at the end) */
 static void move_bounds_below(ol_node *node, ol_unit dy)
@@ -2465,6 +2585,8 @@ static int layout_block_in(ol_document *doc, ol_node *node,
                            ol_unit *bottom_out)
 {
     ol_unit box_x, box_y, inner_x, inner_w, current_y, content_bottom, empty_top, fixed_h;
+    ol_unit column_gap = 0, column_height = 0;
+    int text_columns = 1;
     ol_unit ml = node ? node->style.margin_left : 0, mr = node ? node->style.margin_right : 0;
     ol_unit mt = node ? node->style.margin_top : 0, mb = node ? node->style.margin_bottom : 0;
     ol_node *child;
@@ -2487,6 +2609,16 @@ static int layout_block_in(ol_document *doc, ol_node *node,
     inner_x = box_x + inset_left(node);
     inner_w = width - ml - mr - inset_left(node) - inset_right(node);
     if (inner_w < OL_CSSPX(1)) inner_w = OL_CSSPX(1);
+
+    if (is_frame(node) && node->box.frame.height > inset_top(node) + inset_bottom(node) &&
+        node->box.text_columns >= 2 && node->box.text_columns <= 16 &&
+        node->box.text_column_gap >= 0 &&
+        inner_w > node->box.text_column_gap * (node->box.text_columns - 1)) {
+        text_columns = node->box.text_columns;
+        column_gap = node->box.text_column_gap;
+        column_height = node->box.frame.height - inset_top(node) - inset_bottom(node);
+        inner_w = (inner_w - column_gap * (text_columns - 1)) / text_columns;
+    }
 
     memset(&node->bounds, 0, sizeof(node->bounds));
 
@@ -2572,6 +2704,10 @@ static int layout_block_in(ol_document *doc, ol_node *node,
 
     if (!flush_flow(&flow, &content_bottom)) return 0;
     if (content_bottom < current_y) content_bottom = current_y;
+    if (text_columns > 1)
+        columnize_frame(doc, node, first_op + (background_index != (size_t)-1) +
+                        (shape_index != (size_t)-1), inner_x, empty_top, inner_w,
+                        column_height, text_columns, column_gap);
     if ((node->box.flags & OL_BOX_EMPTY_LINE) && content_bottom <= empty_top) {
         if (flow.wraps) {                   /* 0.6: the empty line goes below a frame too */
             flow.line_top = empty_top;

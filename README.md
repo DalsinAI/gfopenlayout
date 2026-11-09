@@ -221,6 +221,17 @@ The call is the resident library's final version-14 vector; all version-13
 field offsets and call biases are unchanged. A program using it opens
 `OPENLAYOUTLIB_PATH_VERSION` (14).
 
+GFOpenLayout 0.15 adds newspaper columns inside a bounded absolute text
+frame. Set `ol_box_style.text_columns` to 2..16 and
+`text_column_gap` to the room between them; the existing line, paragraph,
+inline-image and formatting engine lays out one narrow galley and places each
+frame-height stretch left to right. Each stretch has a stateless clip to its
+column and content after the final column is overset rather than painted
+outside the frame. A positive `frame.height` is required. The two fields are
+appended after every 0.14 box field, so old callers remain byte-for-byte
+compatible; a resident-library caller using them opens
+`OPENLAYOUTLIB_COLUMNS_VERSION` (15).
+
 ## GTK compatibility
 
 GFOpenGTK (`gtk/`, 0.1) is GTK 1.2's API, with 2.x's names beside it, over
@@ -278,7 +289,7 @@ Resident Amiga library and ABI test:
 ./build-library.sh
 ```
 
-The resident build produces `build-amiga/lib/gfopenlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `gfopenlayout.library` 14.0. Version 2 added the node inspection vectors required by shared renderers and automation; version 3 adds the document calls (pages, tables, frames, tab stops, the caret, the display scale and `OL_DrawPage`) after them, so programs built for version 2 keep working; version 4 adds `OL_NodeSetTabStops` after those; version 5 places frames anchored to their pages (`box.anchor`, GFOpenLayout 0.4) with no new calls; version 6 adds `OL_DocumentReserve` (GFOpenLayout 0.5); version 7 wraps text round anchored frames (`box.wrap`, GFOpenLayout 0.6) and adds `OL_FramePlace` (where a frame went); revision 7.1 lays a block's lines out exactly its line height with `OL_BOX_EXACT_LINES` (GFOpenLayout 0.7), a flag 7.0 ignores; version 8 lays out rows and the box style's width, height, grow, gap and align (GFOpenLayout 0.8), with no new calls; version 9 lays out web boxes (GFOpenLayout 0.9): per-side borders, widths in thousandths with their least and most, auto side margins, inline-blocks, cells' vertical alignment and repeated table headers, again with no new calls; version 10 (GFOpenLayout 0.10) is one library for documents, web pages and programs' windows: it adds GFCSS's document calls, GFOpenLayout UI and its Intuition glue (84 calls, below); versions 11 and 12 extend the UI, version 13 appends the shared drawing calls and display-list fields described above, and version 14 appends shared path flattening and rotation. A program that uses the document calls opens `OPENLAYOUTLIB_DOCUMENT_VERSION` (3), one that sets aligned tab stops `OPENLAYOUTLIB_TABSTOP_VERSION` (4), one that anchors frames `OPENLAYOUTLIB_ANCHOR_VERSION` (5), one that reserves the display list's room `OPENLAYOUTLIB_RESERVE_VERSION` (6), one that wraps text round frames `OPENLAYOUTLIB_WRAP_VERSION` (7), one that lays out rows `OPENLAYOUTLIB_ROW_VERSION` (8), one that uses web boxes `OPENLAYOUTLIB_WEB_VERSION` (9), one that uses shared drawing `OPENLAYOUTLIB_DRAWING_VERSION` (13), and one that asks for a transformed device path opens `OPENLAYOUTLIB_PATH_VERSION` (14). The library's `OL_BoxStyleInit` fills only the `ol_box_style` that programs built for 3 and 4 have (`OL_BOX_STYLE_SIZE_0_3` bytes), so it never writes past theirs; a program that uses later fields sets `size` to `sizeof(ol_box_style)`. A box style of an older size has the fields after it 0, so a program built for 8 has no side borders, widths in thousandths or `valign` (`OL_BOX_STYLE_SIZE_0_8`).
+The resident build produces `build-amiga/lib/gfopenlayout.library` plus the public `libraries/`, `proto/` and `inline/` headers. It uses a process-free Exec allocation runtime so documents owned by the resident library do not depend on a caller's libc startup. The current ABI is `gfopenlayout.library` 15.0. Version 2 added node inspection; version 3 documents; version 4 tab stops; version 5 anchored frames; version 6 display-list reserve; version 7 frame wrapping; revision 7.1 exact lines; version 8 rows and flex-like boxes; version 9 web boxes; version 10 combined documents, GFCSS, UI and Intuition glue; versions 11 and 12 extended the UI; version 13 added shared drawing; version 14 path flattening and rotation; and version 15 bounded text-frame columns. Version 15 adds no vector and moves no field: its two box fields follow every 0.14 field. Callers open the capability version they use: document 3, tab stops 4, anchors 5, reserve 6, wrap 7, rows 8, web boxes 9, drawing 13, paths 14, or columns 15. `OL_BoxStyleInit` through the library still fills only `OL_BOX_STYLE_SIZE_0_3` bytes, so it never writes past an older caller's structure; callers using later fields set `size` themselves. `OL_BOX_STYLE_SIZE_0_14` identifies the exact pre-column prefix.
 
 ### One library (10)
 

@@ -213,6 +213,92 @@ static void test_frames(void)
     ol_document_free(doc);
 }
 
+/* 0.15: a fixed text frame flows down equal bounded columns, clips each
+ * column locally and omits overset content after the last one. */
+static void test_frame_columns(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_node *frame = block(doc, NULL, OL_ROLE_BLOCK, OL_ALIGN_START);
+    ol_node *para, *story;
+    ol_box_style box;
+    const ol_display_op *ops[16];
+    ol_text_position pos;
+    ol_rect caret;
+    size_t n, i;
+    int page = -1, saw_second = 0;
+
+    ol_box_style_init(&box);
+    box.flags = OL_BOX_ABSOLUTE | OL_BOX_CLIP_CONTENT;
+    box.frame.x = OL_CSSPX(50);
+    box.frame.y = OL_CSSPX(60);
+    box.frame.width = OL_CSSPX(220);
+    box.frame.height = OL_CSSPX(60);
+    box.text_columns = 2;
+    box.text_column_gap = OL_CSSPX(20);
+    ol_node_set_box(frame, &box);
+    para = block(doc, frame, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+    story = text(doc, para,
+                 "aaaaaaaa bbbbbbbb cccccccc dddddddd eeeeeeee ffffffff gggggggg hhhhhhhh",
+                 OL_CSSPX(16), 0);
+
+    CHECK(OL_BOX_STYLE_SIZE_0_14 == offsetof(ol_box_style, text_columns));
+    CHECK(ol_layout(doc, OL_CSSPX(400), measure, NULL));
+    n = text_ops(doc, ol_node_id(story), ops, 16);
+    CHECK(n == 6);                         /* two columns, three 20 px lines each */
+    for (i = 0; i < n; ++i) {
+        CHECK(ops[i]->u.text.bounds.y >= OL_CSSPX(60));
+        CHECK(ops[i]->u.text.bounds.y + ops[i]->u.text.bounds.height <= OL_CSSPX(120));
+        CHECK(ops[i]->clip.height == OL_CSSPX(60));
+        if (ops[i]->u.text.bounds.x >= OL_CSSPX(170)) {
+            saw_second = 1;
+            CHECK(ops[i]->clip.x == OL_CSSPX(170));
+            CHECK(ops[i]->clip.width == OL_CSSPX(100));
+        } else {
+            CHECK(ops[i]->clip.x == OL_CSSPX(50));
+            CHECK(ops[i]->clip.width == OL_CSSPX(100));
+        }
+    }
+    CHECK(saw_second);
+    CHECK(ol_hit_test(doc, OL_CSSPX(172), OL_CSSPX(62)) == story);
+    CHECK(ol_hit_text(doc, 0, OL_CSSPX(172), OL_CSSPX(62), measure, NULL, &pos));
+    CHECK(pos.node_id == ol_node_id(story) && pos.offset >= 27);
+    CHECK(ol_caret_box(doc, &pos, measure, NULL, &page, &caret));
+    CHECK(page == 0 && caret.x >= OL_CSSPX(170) && caret.y == OL_CSSPX(60));
+
+    box.size = (uint32_t)OL_BOX_STYLE_SIZE_0_14;
+    ol_node_set_box(frame, &box);
+    CHECK(ol_node_box(frame)->text_columns == 0);
+    CHECK(ol_node_box(frame)->text_column_gap == 0);
+    ol_document_free(doc);
+
+    /* A 40 px line does not fit in the 20 px left at the first column's
+     * foot: it moves intact to the second column instead of being clipped. */
+    doc = ol_document_new();
+    frame = block(doc, NULL, OL_ROLE_BLOCK, OL_ALIGN_START);
+    ol_box_style_init(&box);
+    box.flags = OL_BOX_ABSOLUTE | OL_BOX_CLIP_CONTENT;
+    box.frame.x = OL_CSSPX(50);
+    box.frame.y = OL_CSSPX(60);
+    box.frame.width = OL_CSSPX(220);
+    box.frame.height = OL_CSSPX(60);
+    box.text_columns = 2;
+    box.text_column_gap = OL_CSSPX(20);
+    ol_node_set_box(frame, &box);
+    para = block(doc, frame, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+    story = text(doc, para, "aaaaaaaa bbbbbbbb cccccccc dddddddd", OL_CSSPX(16), 0);
+    {
+        ol_style tall = *ol_node_style(story);
+        tall.line_height = OL_CSSPX(40);
+        ol_node_set_style(story, &tall);
+    }
+    CHECK(ol_layout(doc, OL_CSSPX(400), measure, NULL));
+    n = text_ops(doc, ol_node_id(story), ops, 16);
+    CHECK(n == 2);
+    CHECK(ops[0]->u.text.bounds.x == OL_CSSPX(50) && ops[0]->u.text.bounds.y == OL_CSSPX(60));
+    CHECK(ops[1]->u.text.bounds.x == OL_CSSPX(170) && ops[1]->u.text.bounds.y == OL_CSSPX(60));
+    ol_document_free(doc);
+}
+
 /* A frame anchored to its page, at x, y from anchor's corners, w x h. */
 static ol_node *anchored(ol_document *doc, ol_node *parent, uint32_t anchor, ol_unit x, ol_unit y,
                          ol_unit w, ol_unit h)
@@ -1802,6 +1888,7 @@ int main(void)
     test_baseline_and_fonts();
     test_table();
     test_frames();
+    test_frame_columns();
     test_anchored_frames();
     test_pages();
     test_page_columns();
