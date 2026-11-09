@@ -620,3 +620,9 @@ int ol_shape_path(const ol_graphic *graphic, const ol_rect *bounds, ol_point *po
     if (OpenLayoutBase->lib_Version < 14) return 0;
     return OL_ShapePath(graphic, bounds, points, capacity, closed);
 }
+
+int ol_node_set_exclusions(ol_node *node, int count, const ol_exclusion *exclusions)
+{
+    if (OpenLayoutBase->lib_Version < 16) return 0;
+    return OL_NodeSetExclusions(node, count, exclusions);
+}

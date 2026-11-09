@@ -544,6 +544,26 @@ enum {
 };
 #define OL_WRAP_MIN OL_CSSPX(48)
 #define OL_WRAP_PASSES 4
+
+/* 0.16: fixed exclusion rectangles inside a block or bounded text frame.
+ * bounds are from the node's border-box corner; the node's own text and
+ * descendant blocks flow around them using the existing OL_WRAP_SQUARE or
+ * OL_WRAP_TOP_BOTTOM line fitter. They do not draw anything and do not
+ * affect sibling nodes, so an application can describe a picture or shape
+ * that overlaps a Publisher-style text frame without duplicating it in the
+ * display list. gaps are top, right, bottom and left. */
+typedef struct {
+    ol_rect bounds;
+    uint32_t wrap;
+    ol_unit gap[4];
+} ol_exclusion;
+
+#define OL_MAX_EXCLUSIONS 1024
+
+/* Copies the exclusions. count 0 clears them. Returns 0 for invalid input or
+ * no memory. Existing box and document ABI fields do not move. */
+int ol_node_set_exclusions(ol_node *node, int count,
+                           const ol_exclusion *exclusions);
 /* The size of an ol_box_style before 0.6's wrap, as programs built for
  * gfopenlayout.library 5 and 6 have it */
 #define OL_BOX_STYLE_SIZE_0_5 offsetof(ol_box_style, wrap)

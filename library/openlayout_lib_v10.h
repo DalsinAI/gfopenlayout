@@ -710,8 +710,16 @@ static int OL_ShapePath(REG(a0, const ol_graphic * graphic), REG(a1, const ol_re
     return ol_shape_path(graphic, bounds, points, capacity, closed);
 }
 
+/* ---- bounded text-flow exclusions ---- */
+
+static int OL_NodeSetExclusions(REG(a0, ol_node * node), REG(d0, int count), REG(a1, const ol_exclusion * exclusions), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_set_exclusions(node, count, exclusions);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x3fc
+#define OL_V10_LAST_BIAS 0x402
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -752,4 +760,4 @@ static int OL_ShapePath(REG(a0, const ol_graphic * graphic), REG(a1, const ol_re
     (APTR)OLUI_MenuOpen, (APTR)OLUI_NewSharing, (APTR)OLUI_AmigaStrip, \
     (APTR)OLUI_AmigaKeys, (APTR)OLUI_Repaint, (APTR)OLUI_Popup, \
     (APTR)OL_ShapeStyleInit, (APTR)OL_NodeSetShape, (APTR)OL_NodeSetImageCrop, \
-    (APTR)OL_ShapePath
+    (APTR)OL_ShapePath, (APTR)OL_NodeSetExclusions

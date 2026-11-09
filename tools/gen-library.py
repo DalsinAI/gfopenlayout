@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gfopenlayout.library's version 10 through 14 calls, made from the C API itself.
+"""gfopenlayout.library's version 10 through 16 calls, made from the C API itself.
 
 Version 10 folds GFCSS's document calls, GFOpenLayout UI and its Amiga glue
 into gfopenlayout.library. The calls are the C functions as the headers
@@ -28,6 +28,8 @@ OpenLayoutBase->lib_Version. Version 12 (GFOpenLayout UI 0.5) adds
 olui_repaint and olui_popup the same way. Version 13 adds document drawing,
 image crop and clipping calls after every version 12 vector. Version 14 adds
 shared primitive flattening and rotation after every version 13 vector.
+Version 16 adds copied local text-flow exclusions after every version 14
+vector (version 15 added box fields but no call).
 
 Run it after a header's calls change; --check says whether the files are
 as it would write them (the Makefile's test runs that).
@@ -75,21 +77,23 @@ AMIGA11 = """olui_amiga_strip olui_amiga_keys""".split()
 UI12 = """olui_repaint olui_popup""".split()
 CORE13 = """ol_shape_style_init ol_node_set_shape ol_node_set_image_crop""".split()
 CORE14 = """ol_shape_path""".split()
+CORE16 = """ol_node_set_exclusions""".split()
 CALLS = ([("core", n) for n in CORE] + [("ui", n) for n in UI] + [("amiga", n) for n in AMIGA] +
          [("ui11", n) for n in UI11] + [("amiga11", n) for n in AMIGA11] +
          [("ui12", n) for n in UI12] + [("core13", n) for n in CORE13] +
-         [("core14", n) for n in CORE14])
+         [("core14", n) for n in CORE14] + [("core16", n) for n in CORE16])
 # the library version each part's calls came in: a call of a later one is
 # not called through an older library (the link library's side says so)
 VERSION_OF = {"core": 10, "ui": 10, "amiga": 10, "ui11": 11, "amiga11": 11, "ui12": 12,
-              "core13": 13, "core14": 14}
+              "core13": 13, "core14": 14, "core16": 16}
 TITLES = {"core": "version 10: GFCSS in documents", "ui": "version 10: GFOpenLayout UI",
           "amiga": "version 10: GFOpenLayout UI's Amiga glue",
           "ui11": "version 11: what a desktop needs (GFOpenLayout UI 0.4)",
           "amiga11": "version 11: the Amiga glue in a strip of a window",
           "ui12": "version 12: what a toolkit over the UI needs (GFOpenLayout UI 0.5)",
           "core13": "version 13: document drawing, image crops and clipping",
-          "core14": "version 14: shared shape paths and rotation"}
+          "core14": "version 14: shared shape paths and rotation",
+          "core16": "version 16: bounded text-flow exclusions"}
 
 # the program's side, where a call's plain one won't do: olui_theme_css's
 # string is the program's to free(), so it is copied out of the library's
@@ -110,7 +114,8 @@ LINK_BODY = {
 HEADERS = {"core": "include/gfopenlayout.h", "ui": "include/gfopenlayout_ui.h",
            "amiga": "include/gfopenlayout_ui_amiga.h", "ui11": "include/gfopenlayout_ui.h",
            "amiga11": "include/gfopenlayout_ui_amiga.h", "ui12": "include/gfopenlayout_ui.h",
-           "core13": "include/gfopenlayout.h", "core14": "include/gfopenlayout.h"}
+           "core13": "include/gfopenlayout.h", "core14": "include/gfopenlayout.h",
+           "core16": "include/gfopenlayout.h"}
 
 
 def lib_name(c):

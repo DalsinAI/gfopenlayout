@@ -474,6 +474,15 @@ int main(void)
         CHECK(path[1].x == 35 && path[1].y == -5);
     }
 
+    if (OpenLayoutBase->lib_Version >= OPENLAYOUTLIB_EXCLUSIONS_VERSION) {
+        ol_exclusion exclusion = {{0, 0, OL_CSSPX(10), OL_CSSPX(10)},
+                                  OL_WRAP_SQUARE, {0, 0, 0, 0}};
+        CHECK(OL_NodeSetExclusions(root, 1, &exclusion));
+        exclusion.bounds.width = 0;
+        CHECK(!OL_NodeSetExclusions(root, 1, &exclusion));
+        CHECK(OL_NodeSetExclusions(root, 0, NULL));
+    }
+
     printf("LAYOUTLIB PASS version=%s height=%ld ops=%lu link=%lu\n",
            (const char *)OL_VersionString(),
            (long)(OL_DocumentContentHeight(doc) / OL_UNITS_PER_CSSPX),

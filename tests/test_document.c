@@ -299,6 +299,89 @@ static void test_frame_columns(void)
     ol_document_free(doc);
 }
 
+/* 0.16: a bounded frame's own text uses the established square/top-bottom
+ * wrap fitter against copied, box-local exclusion rectangles. A sibling at
+ * the same place is deliberately unaffected. */
+static void test_frame_exclusions(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_node *frame = block(doc, NULL, OL_ROLE_BLOCK, OL_ALIGN_START);
+    ol_node *para, *story, *plain, *plain_story;
+    ol_box_style box;
+    ol_exclusion exclusion;
+    const ol_display_op *wrapped[16], *normal[16];
+    size_t wn, nn, i;
+    int saw_left = 0, saw_right = 0, saw_normal_crossing = 0;
+
+    ol_box_style_init(&box);
+    box.flags = OL_BOX_ABSOLUTE | OL_BOX_CLIP_CONTENT;
+    box.frame.x = OL_CSSPX(50);
+    box.frame.y = OL_CSSPX(60);
+    box.frame.width = OL_CSSPX(220);
+    box.frame.height = OL_CSSPX(100);
+    ol_node_set_box(frame, &box);
+    memset(&exclusion, 0, sizeof exclusion);
+    exclusion.bounds.x = OL_CSSPX(80);
+    exclusion.bounds.width = OL_CSSPX(60);
+    exclusion.bounds.height = OL_CSSPX(40);
+    exclusion.wrap = OL_WRAP_SQUARE;
+    CHECK(ol_node_set_exclusions(frame, 1, &exclusion));
+    exclusion.bounds.x = 0;                 /* the node owns an independent copy */
+    para = block(doc, frame, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+    story = text(doc, para,
+                 "aaaaaaaa bbbbbbbb cccccccc dddddddd eeeeeeee ffffffff",
+                 OL_CSSPX(16), 0);
+
+    plain = block(doc, NULL, OL_ROLE_BLOCK, OL_ALIGN_START);
+    ol_node_set_box(plain, &box);            /* deliberately overlaps frame */
+    para = block(doc, plain, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+    plain_story = text(doc, para,
+                       "aaaaaaaa bbbbbbbb cccccccc dddddddd",
+                       OL_CSSPX(16), 0);
+
+    CHECK(ol_layout(doc, OL_CSSPX(400), measure, NULL));
+    wn = text_ops(doc, ol_node_id(story), wrapped, 16);
+    nn = text_ops(doc, ol_node_id(plain_story), normal, 16);
+    CHECK(wn >= 4 && nn >= 3);
+    for (i = 0; i < wn; ++i) {
+        ol_rect r = wrapped[i]->u.text.bounds;
+        if (r.y < OL_CSSPX(100)) {
+            CHECK(r.x + r.width <= OL_CSSPX(130) || r.x >= OL_CSSPX(190));
+            if (r.x < OL_CSSPX(130)) saw_left = 1;
+            if (r.x >= OL_CSSPX(190)) saw_right = 1;
+        }
+    }
+    for (i = 0; i < nn; ++i) {
+        ol_rect r = normal[i]->u.text.bounds;
+        if (r.y < OL_CSSPX(100) && r.x < OL_CSSPX(190) && r.x + r.width > OL_CSSPX(130))
+            saw_normal_crossing = 1;
+    }
+    CHECK(saw_left && saw_right && saw_normal_crossing);
+
+    {
+        ol_page page;
+        memset(&page, 0, sizeof page);
+        page.width = OL_CSSPX(400);
+        page.height = OL_CSSPX(300);
+        CHECK(ol_layout_pages(doc, &page, measure, NULL));
+        wn = text_ops(doc, ol_node_id(story), wrapped, 16);
+        CHECK(wn >= 4);
+        for (i = 0; i < wn; ++i) {
+            ol_rect r = wrapped[i]->u.text.bounds;
+            if (r.y < OL_CSSPX(100))
+                CHECK(r.x + r.width <= OL_CSSPX(130) || r.x >= OL_CSSPX(190));
+        }
+    }
+
+    exclusion.wrap = OL_WRAP_NONE;
+    CHECK(!ol_node_set_exclusions(frame, 1, &exclusion));
+    exclusion.wrap = OL_WRAP_TOP_BOTTOM;
+    exclusion.gap[0] = -1;
+    CHECK(!ol_node_set_exclusions(frame, 1, &exclusion));
+    CHECK(ol_node_set_exclusions(frame, 0, NULL));
+    ol_document_free(doc);
+}
+
 /* A frame anchored to its page, at x, y from anchor's corners, w x h. */
 static ol_node *anchored(ol_document *doc, ol_node *parent, uint32_t anchor, ol_unit x, ol_unit y,
                          ol_unit w, ol_unit h)
@@ -1889,6 +1972,7 @@ int main(void)
     test_table();
     test_frames();
     test_frame_columns();
+    test_frame_exclusions();
     test_anchored_frames();
     test_pages();
     test_page_columns();

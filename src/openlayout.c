@@ -1,6 +1,7 @@
 #include "gfopenlayout.h"
 #include "openlayout_css.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -35,6 +36,8 @@ struct ol_node {
     ol_unit *tabs;
     unsigned char *tab_info;  /* each stop's ol_tab_align | ol_tab_leader << 4 */
     int tab_count;
+    ol_exclusion *exclusions; /* 0.16: copied, box-local text-flow obstacles */
+    int exclusion_count;
     ol_unit force_height;     /* 0.8: the height its row or block gives it this pass; 0: none */
 };
 
@@ -63,6 +66,7 @@ typedef struct {
  * above page_bottom (its page's body) with no page break before them. */
 typedef struct {
     const ol_node *node;      /* the frame */
+    const ol_node *scope;     /* 0.16: only text inside this node; NULL: page/body zone */
     ol_unit x0, y0, x1, y1;
     ol_unit page_top, page_bottom;
     ol_unit h;                /* the frame's height, as laid out */
@@ -167,6 +171,7 @@ struct ol_document {
 
 typedef struct {
     ol_document *doc;
+    const ol_node *block;     /* the block whose line this is (for scoped exclusions) */
     ol_measure_text_fn measure;
     void *measure_userdata;
 
@@ -418,6 +423,7 @@ static void free_node(ol_node *node)
     free(node->columns);
     free(node->tabs);
     free(node->tab_info);
+    free(node->exclusions);
     if (node->graphic) {
         free((void *)node->graphic->points);
         free(node->graphic);
@@ -816,6 +822,38 @@ void ol_node_set_box(ol_node *node, const ol_box_style *box)
 const ol_box_style *ol_node_box(const ol_node *node)
 {
     return node ? &node->box : NULL;
+}
+
+int ol_node_set_exclusions(ol_node *node, int count,
+                           const ol_exclusion *exclusions)
+{
+    ol_exclusion *copy = NULL;
+    int i, side;
+    if (!node || count < 0 || count > OL_MAX_EXCLUSIONS ||
+        (count && !exclusions))
+        return 0;
+    for (i = 0; i < count; ++i) {
+        const ol_exclusion *e = &exclusions[i];
+        int64_t x1 = (int64_t)e->bounds.x + e->bounds.width;
+        int64_t y1 = (int64_t)e->bounds.y + e->bounds.height;
+        if ((e->wrap != OL_WRAP_SQUARE && e->wrap != OL_WRAP_TOP_BOTTOM) ||
+            e->bounds.width <= 0 || e->bounds.height <= 0 ||
+            x1 < INT32_MIN || x1 > INT32_MAX ||
+            y1 < INT32_MIN || y1 > INT32_MAX)
+            return 0;
+        for (side = 0; side < 4; ++side)
+            if (e->gap[side] < 0)
+                return 0;
+    }
+    if (count) {
+        copy = (ol_exclusion *)malloc((size_t)count * sizeof(*copy));
+        if (!copy) return 0;
+        memcpy(copy, exclusions, (size_t)count * sizeof(*copy));
+    }
+    free(node->exclusions);
+    node->exclusions = copy;
+    node->exclusion_count = count;
+    return 1;
 }
 
 int ol_node_set_columns(ol_node *node, int count, const ol_unit *widths)
@@ -1238,9 +1276,24 @@ static int live_page(ol_document *doc, ol_unit y, ol_unit h);
 
 /* 0.6: whether a line from top to bottom is on a zone's page (from its
  * top, inside its body, with no page break before it) and meets it. */
-static int zone_meets(const ol_document *doc, const ol_wrap_zone *z, ol_unit top, ol_unit bottom)
+static int node_in_scope(const ol_node *node, const ol_node *scope)
 {
+    while (node) {
+        if (node == scope) return 1;
+        node = node->parent;
+    }
+    return 0;
+}
+
+static int zone_meets(const ol_inline_flow *flow, const ol_wrap_zone *z,
+                      ol_unit top, ol_unit bottom)
+{
+    const ol_document *doc = flow->doc;
     size_t i;
+    if (z->scope) {
+        if (!node_in_scope(flow->block, z->scope)) return 0;
+        return z->y0 < bottom && z->y1 > top;
+    }
     if (z->y0 >= bottom || z->y1 <= top || top < z->page_top || bottom > z->page_bottom || (z->after && !z->live))
         return 0;
     for (i = doc->break_count; i > 0; --i) {   /* the breaks come in order, mostly */
@@ -1271,7 +1324,7 @@ static int free_stretch(const ol_inline_flow *flow, ol_unit from, ol_unit *left,
     *below = bottom;
     for (i = 0; i < doc->zone_count; ++i) {
         const ol_wrap_zone *z = &doc->zones[i];
-        if (z->wrap != OL_WRAP_SQUARE || z->x1 <= lo || z->x0 >= hi || !zone_meets(doc, z, top, bottom)) continue;
+        if (z->wrap != OL_WRAP_SQUARE || z->x1 <= lo || z->x0 >= hi || !zone_meets(flow, z, top, bottom)) continue;
         if (!crossed || z->y1 < *below) *below = z->y1;
         crossed = 1;
     }
@@ -1281,7 +1334,7 @@ static int free_stretch(const ol_inline_flow *flow, ol_unit from, ol_unit *left,
             moved = 0;
             for (i = 0; crossed && i < doc->zone_count; ++i) {
                 const ol_wrap_zone *z = &doc->zones[i];
-                if (z->wrap != OL_WRAP_SQUARE || !zone_meets(doc, z, top, bottom)) continue;
+                if (z->wrap != OL_WRAP_SQUARE || !zone_meets(flow, z, top, bottom)) continue;
                 if (z->x0 <= at && z->x1 > at) {
                     at = z->x1;
                     moved = 1;
@@ -1291,7 +1344,7 @@ static int free_stretch(const ol_inline_flow *flow, ol_unit from, ol_unit *left,
         if (at >= hi) return 0;
         for (i = 0; crossed && i < doc->zone_count; ++i) {
             const ol_wrap_zone *z = &doc->zones[i];
-            if (z->wrap == OL_WRAP_SQUARE && z->x0 > at && z->x0 < end && zone_meets(doc, z, top, bottom))
+            if (z->wrap == OL_WRAP_SQUARE && z->x0 > at && z->x0 < end && zone_meets(flow, z, top, bottom))
                 end = z->x0;
         }
         start = at > from ? at : from;
@@ -1337,7 +1390,7 @@ static int line_room_from(ol_inline_flow *flow, ol_unit from)
         for (i = 0; i < doc->zone_count; ++i) {
             const ol_wrap_zone *z = &doc->zones[i];
             if (z->wrap == OL_WRAP_TOP_BOTTOM && z->x1 > lo && z->x0 < flow->col_right &&
-                zone_meets(doc, z, top, bottom)) {
+                zone_meets(flow, z, top, bottom)) {
                 flow->line_top = z->y1;
                 pushed = 1;
             }
@@ -1467,6 +1520,7 @@ static void start_flow(ol_inline_flow *flow, ol_document *doc, const ol_node *bl
 {
     memset(flow, 0, sizeof(*flow));
     flow->doc = doc;
+    flow->block = block;
     flow->measure = measure;
     flow->measure_userdata = measure_userdata;
     flow->x0 = x0;
@@ -1936,12 +1990,15 @@ static int layout_frame(ol_document *doc, ol_node *node, ol_unit origin_x, ol_un
         if (w < OL_CSSPX(1)) w = OL_CSSPX(1);
     }
     ol_anchor *a;
-    int ok;
+    int ok, wraps_inside = node->exclusion_count > 0;
     if (!node->box.anchor || doc->anchor_depth) {
-        ++doc->wrap_off;                    /* a frame's own lines do not wrap round frames */
+        /* 0.16: a frame with explicit local exclusions deliberately uses
+         * the shared wrap fitter for its own lines. Ordinary frames retain
+         * the 0.6 rule and cannot accidentally see page/body zones. */
+        if (!wraps_inside) ++doc->wrap_off;
         ok = layout_block(doc, node, origin_x + node->box.frame.x, origin_y + node->box.frame.y,
                           w, measure, measure_userdata, &bottom);
-        --doc->wrap_off;
+        if (!wraps_inside) --doc->wrap_off;
         return ok;
     }
     if (doc->anchor_count == doc->anchor_capacity) {
@@ -1955,9 +2012,9 @@ static int layout_frame(ol_document *doc, ol_node *node, ol_unit origin_x, ol_un
     breaks = doc->break_count;
     first = doc->op_count;
     ++doc->anchor_depth;
-    ++doc->wrap_off;
+    if (!wraps_inside) ++doc->wrap_off;
     ok = layout_block(doc, node, 0, 0, w, measure, measure_userdata, &bottom);
-    --doc->wrap_off;
+    if (!wraps_inside) --doc->wrap_off;
     --doc->anchor_depth;
     doc->keep_count = keeps;
     doc->break_count = breaks;
@@ -2579,6 +2636,47 @@ static int layout_children(ol_document *doc, ol_node *node, ol_inline_flow *flow
     return 1;
 }
 
+static ol_unit saturated_unit(int64_t value)
+{
+    if (value < INT32_MIN) return INT32_MIN;
+    if (value > INT32_MAX) return INT32_MAX;
+    return (ol_unit)value;
+}
+
+/* 0.16: append this node's fixed, box-local exclusions for the duration of
+ * the layout pass. Their scope keeps them out of sibling flows; wrap_zones
+ * ignores them when it compares the page/body anchors between passes. */
+static int add_local_exclusions(ol_document *doc, const ol_node *node,
+                                ol_unit box_x, ol_unit box_y)
+{
+    int i;
+    for (i = 0; i < node->exclusion_count; ++i) {
+        const ol_exclusion *e = &node->exclusions[i];
+        ol_wrap_zone *z;
+        if (doc->zone_count == doc->zone_capacity) {
+            size_t cap = doc->zone_capacity ? doc->zone_capacity * 2 : 8;
+            ol_wrap_zone *q = (ol_wrap_zone *)realloc(doc->zones, cap * sizeof(*q));
+            if (!q) return 0;
+            doc->zones = q;
+            doc->zone_capacity = cap;
+        }
+        z = &doc->zones[doc->zone_count++];
+        memset(z, 0, sizeof(*z));
+        z->node = node;
+        z->scope = node;
+        z->x0 = saturated_unit((int64_t)box_x + e->bounds.x - e->gap[3]);
+        z->x1 = saturated_unit((int64_t)box_x + e->bounds.x + e->bounds.width + e->gap[1]);
+        z->y0 = saturated_unit((int64_t)box_y + e->bounds.y - e->gap[0]);
+        z->y1 = saturated_unit((int64_t)box_y + e->bounds.y + e->bounds.height + e->gap[2]);
+        z->page_top = INT32_MIN;
+        z->page_bottom = INT32_MAX;
+        z->h = e->bounds.height;
+        z->wrap = e->wrap;
+        z->live = 1;
+    }
+    return 1;
+}
+
 static int layout_block_in(ol_document *doc, ol_node *node,
                            ol_unit x, ol_unit y, ol_unit width,
                            ol_measure_text_fn measure, void *measure_userdata,
@@ -2639,6 +2737,8 @@ static int layout_block_in(ol_document *doc, ol_node *node,
     }
 
     current_y = empty_top = box_y + inset_top(node);
+    if (node->exclusion_count && !add_local_exclusions(doc, node, box_x, box_y))
+        return 0;
     zones_live(doc, node, inner_x, current_y);  /* 0.6: its frames, for its own lines too */
     start_flow(&flow, doc, node, measure, measure_userdata, inner_x, inner_x + inner_w,
                current_y, node->style.text_align, node->box.text_indent);
@@ -3385,7 +3485,7 @@ static void zones_follow_page(ol_document *doc, int page)
     for (i = 0; i < doc->zone_count; ++i) {
         ol_wrap_zone *z = &doc->zones[i];
         ol_unit dy;
-        if (z->page != page) continue;
+        if (z->scope || z->page != page) continue;
         dy = doc->live_starts[page] - z->page_top;
         z->y0 += dy;
         z->y1 += dy;
@@ -3916,7 +4016,8 @@ static int wrap_zones(ol_document *doc)
         ol_wrap_zone z;
         ol_unit start = 0;
         if (!a->node || a->node->box.wrap == OL_WRAP_NONE) continue;
-        for (i = 0; i < doc->zone_count && doc->zones[i].node != a->node; ++i) {}
+        for (i = 0; i < doc->zone_count &&
+                    (doc->zones[i].scope || doc->zones[i].node != a->node); ++i) {}
         if (doc->paging) {
             /* the page its first line is on, or the one it had, when that is earlier */
             int p = page_holding(doc, a->line_y);
@@ -3937,7 +4038,8 @@ static int wrap_zones(ol_document *doc)
         doc->next_zones[n++] = z;
         if (same && (i == doc->zone_count || !zone_same(&doc->zones[i], &z))) same = 0;
     }
-    live = doc->zone_count;
+    for (i = 0; i < doc->zone_count; ++i)
+        if (!doc->zones[i].scope) ++live;
     if (same && live == n) return 0;
     swap = doc->zones;
     doc->zones = doc->next_zones;

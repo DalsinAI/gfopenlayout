@@ -61,6 +61,10 @@
 #define OPENLAYOUTLIB_COLUMNS_VERSION 15    /* bounded newspaper columns inside absolute text
                                                frames: ol_box_style's text_columns and
                                                text_column_gap, appended after every 0.14 field */
+#define OPENLAYOUTLIB_EXCLUSIONS_VERSION 16 /* copied, box-local exclusion rectangles: text in a
+                                               bounded frame can reuse the version-7 wrap fitter
+                                               around Publisher/Writer objects without drawing or
+                                               affecting sibling flows */
 
 struct OLNodeAppend {
     ol_document *document;
