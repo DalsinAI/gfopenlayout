@@ -190,5 +190,8 @@ int OL_ShapePath(const ol_graphic *graphic, const ol_rect *bounds, ol_point *poi
 int OL_NodeSetExclusions(ol_node *node, int count, const ol_exclusion *exclusions)(a0,d0,a1)
 * version 17: shape contour exclusion bands
 int OL_NodeShapeExclusions(const ol_node *shape, const ol_rect *bounds, const ol_unit *gap, int bands, ol_exclusion *out, int capacity)(a0,a1,a2,d0,a3,d1)
+* version 18: input for the widgets a program draws itself
+int OLUI_AmigaOwnInput(olui_amiga *a, const olui_el *el, unsigned what)(a0,a1,d0)
+const olui_el * OLUI_AmigaOwner(const olui_amiga *a)(a0)
 * ---- end of version 10 ----
 ==end
