@@ -69,10 +69,13 @@ for t in test_ui:OLUITestLib test_ui_css:OLUICSSTestLib; do
 done
 # shellcheck disable=SC2086
 "$CC" $LINKF -s -o "$OUT/tests/OLUIDemoLib" "$HERE/examples/OLUIDemo.c" -L"$OUT/lib" -lgfopenlayout_link
-for f in "$OUT/lib/libgfopenlayout_link.a" "$OUT/tests/OLUITestLib" "$OUT/tests/OLUICSSTestLib" "$OUT/tests/OLUIDemoLib"; do
+# shellcheck disable=SC2086
+"$CC" $LINKF -s -o "$OUT/tests/OLUIOwnTest" "$HERE/examples/OLUIOwnTest.c" -L"$OUT/lib" -lgfopenlayout_link
+for f in "$OUT/lib/libgfopenlayout_link.a" "$OUT/tests/OLUITestLib" "$OUT/tests/OLUICSSTestLib" "$OUT/tests/OLUIDemoLib" \
+  "$OUT/tests/OLUIOwnTest"; do
   echo "$f ($(wc -c < "$f") bytes)"
 done
 echo "$OUT/tests/LayoutLibTest ($(wc -c < "$OUT/tests/LayoutLibTest") bytes)"
 echo "$OUT/tests/LayoutLibStress ($(wc -c < "$OUT/tests/LayoutLibStress") bytes)"
 sha256sum "$OUT/lib/gfopenlayout.library" "$OUT/tests/LayoutLibTest" "$OUT/tests/LayoutLibStress" \
-  "$OUT/tests/OLUITestLib" "$OUT/tests/OLUICSSTestLib" "$OUT/tests/OLUIDemoLib"
+  "$OUT/tests/OLUITestLib" "$OUT/tests/OLUICSSTestLib" "$OUT/tests/OLUIDemoLib" "$OUT/tests/OLUIOwnTest"

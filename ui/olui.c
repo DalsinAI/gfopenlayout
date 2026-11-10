@@ -26,6 +26,7 @@ static const char ua_css[] =
     "window{display:flex;flex-direction:column;padding:6px;gap:6px;background:#e8e8e8;color:#000000}"
     "row{display:flex;gap:6px}"
     "column{display:flex;flex-direction:column;gap:6px}"
+    "grid{gap:6px}"
     "h1{font-size:20px;font-weight:bold}h2{font-size:16px;font-weight:bold}h3{font-weight:bold}"
     "span,b,strong,i,em,u,code,a,img{display:inline}"
     "b,strong{font-weight:bold}i,em{font-style:italic}u,a{text-decoration:underline}"

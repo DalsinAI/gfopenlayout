@@ -67,6 +67,13 @@
                                                affecting sibling flows */
 #define OPENLAYOUTLIB_CONTOUR_VERSION 17    /* conservative horizontal exclusion bands derived
                                                from node-owned closed shape geometry */
+#define OPENLAYOUTLIB_GRID_VERSION 18       /* grids: OL_BOX_GRID and ol_box_style's grid_columns,
+                                               appended after every 0.17 field; GFOpenLayout
+                                               UI's <grid columns=n> and grid-columns (MUI's
+                                               column groups, GTK's tables); the same size for
+                                               a box's children: OL_BOX_SAME_WIDTH and
+                                               OL_BOX_SAME_HEIGHT, UI's same-size (MUI's
+                                               SameSize) */
 
 struct OLNodeAppend {
     ol_document *document;

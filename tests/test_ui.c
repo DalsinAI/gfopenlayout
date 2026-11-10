@@ -982,6 +982,64 @@ static int widgets(void)
     CHECK(olui_key(ui, OLUI_KEY_TAB, 0) && olui_focused(ui) == b1);     /* past cb2, tabindex -1 */
     SAME(1);
 
+    /* ---- 0.5 (library 18): grid columns=n, and grid-columns in CSS ---- */
+    {
+        olui *gu = olui_new();
+        olui_rect l1, l2, f1, f2, k[6], d1, d2, d3;
+        int j;
+        CHECK(gu);
+        olui_set_measure(gu, measure, NULL);
+        CHECK(olui_load(gu,
+            "<grid id=g columns=2 style='gap:4px'>"
+            "<label id=l1>Name:</label><input id=f1 style='flex:1'>"
+            "<label id=l2>E-mail:</label><input id=f2 style='flex:1'></grid>"
+            "<grid columns=3><button id=k0>7</button><button id=k1>8</button><button id=k2>9</button>"
+            "<button id=k3>4</button><button id=k4>5</button><button id=k5>Clear</button></grid>"
+            "<div style='grid-columns:2;gap:2px'><label id=d1>a</label><label id=d2>bbb</label>"
+            "<label id=d3>cc</label></div>", NULL, err, sizeof(err)));
+        CHECK(olui_layout(gu, 300, 200));
+        CHECK(olui_box(gu, olui_find(gu, "l1"), &l1) && olui_box(gu, olui_find(gu, "l2"), &l2));
+        CHECK(olui_box(gu, olui_find(gu, "f1"), &f1) && olui_box(gu, olui_find(gu, "f2"), &f2));
+        CHECK(l1.x == 6 && l2.x == 6 && l1.w == 7 * 7 && l2.w == 7 * 7);    /* the widest label's column */
+        CHECK(f1.x == 6 + 49 + 4 && f2.x == f1.x && f1.x + f1.w == 300 - 6);  /* the field's grows to the edge */
+        CHECK(l1.y == f1.y && l1.h == f1.h && l2.y == f2.y && l2.y == f1.y + f1.h + 4);
+        for (j = 0; j < 6; ++j) {
+            char id[3] = { 'k', (char)('0' + j), 0 };
+            CHECK(olui_box(gu, olui_find(gu, id), &k[j]));
+        }
+        CHECK(k[0].x == k[3].x && k[1].x == k[4].x && k[2].x == k[5].x);     /* columns line up */
+        CHECK(k[2].w == k[5].w && k[0].y == k[1].y && k[3].y > k[0].y);
+        CHECK(k[1].x - (k[0].x + k[0].w) == 6);                              /* the grid's own gap */
+        CHECK(olui_box(gu, olui_find(gu, "d1"), &d1) && olui_box(gu, olui_find(gu, "d2"), &d2) &&
+              olui_box(gu, olui_find(gu, "d3"), &d3));
+        CHECK(d2.x == d1.x + 14 + 2 && d3.x == d1.x && d3.y == d1.y + d1.h + 2);  /* a 14 px column: cc */
+        olui_free(gu);
+    }
+
+    /* ---- library 18: same-size (MUI's SameSize) ---- */
+    {
+        olui *su = olui_new();
+        olui_rect s0, s1, s2, h0, h1, n0, n1;
+        CHECK(su);
+        olui_set_measure(su, measure, NULL);
+        CHECK(olui_load(su,
+            "<row style='same-size:width;align-items:flex-start'><button id=s0>OK</button>"
+            "<button id=s1>Cancel</button><button id=s2>Use</button></row>"
+            "<column style='same-size:height'><label id=h0>one</label>"
+            "<label id=h1 style='height:40px'>two</label></column>"
+            "<row style='same-size:none;align-items:flex-start'><button id=n0>OK</button>"
+            "<button id=n1>Cancel</button></row>", NULL, err, sizeof(err)));
+        CHECK(olui_layout(su, 300, 200));
+        CHECK(olui_box(su, olui_find(su, "s0"), &s0) && olui_box(su, olui_find(su, "s1"), &s1) &&
+              olui_box(su, olui_find(su, "s2"), &s2));
+        CHECK(s0.w == s1.w && s1.w == s2.w && s0.h == s1.h);    /* each as wide as Cancel */
+        CHECK(olui_box(su, olui_find(su, "h0"), &h0) && olui_box(su, olui_find(su, "h1"), &h1));
+        CHECK(h0.h == h1.h && h1.h >= 40);                      /* each as tall as the tallest */
+        CHECK(olui_box(su, olui_find(su, "n0"), &n0) && olui_box(su, olui_find(su, "n1"), &n1));
+        CHECK(n0.w < n1.w);                                     /* none: their own widths */
+        olui_free(su);
+    }
+
     /* ---- a box with overflow: scrolled by the wheel and the program, cut to itself ---- */
     CHECK(olui_box(ui, sb, &r) && r.h == 40);
     olui_set_scroll(ui, sb, 0);

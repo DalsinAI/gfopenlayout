@@ -726,8 +726,22 @@ static int OL_NodeShapeExclusions(REG(a0, const ol_node * shape), REG(a1, const 
     return ol_node_shape_exclusions(shape, bounds, gap, bands, out, capacity);
 }
 
+/* ---- input for the widgets a program draws itself ---- */
+
+static int OLUI_AmigaOwnInput(REG(a0, olui_amiga * a), REG(a1, const olui_el * el), REG(d0, unsigned what), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_amiga_own_input(a, el, what);
+}
+
+static const olui_el * OLUI_AmigaOwner(REG(a0, const olui_amiga * a), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_amiga_owner(a);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x408
+#define OL_V10_LAST_BIAS 0x414
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -768,4 +782,5 @@ static int OL_NodeShapeExclusions(REG(a0, const ol_node * shape), REG(a1, const 
     (APTR)OLUI_MenuOpen, (APTR)OLUI_NewSharing, (APTR)OLUI_AmigaStrip, \
     (APTR)OLUI_AmigaKeys, (APTR)OLUI_Repaint, (APTR)OLUI_Popup, \
     (APTR)OL_ShapeStyleInit, (APTR)OL_NodeSetShape, (APTR)OL_NodeSetImageCrop, \
-    (APTR)OL_ShapePath, (APTR)OL_NodeSetExclusions, (APTR)OL_NodeShapeExclusions
+    (APTR)OL_ShapePath, (APTR)OL_NodeSetExclusions, (APTR)OL_NodeShapeExclusions, \
+    (APTR)OLUI_AmigaOwnInput, (APTR)OLUI_AmigaOwner
