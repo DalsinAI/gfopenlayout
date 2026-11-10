@@ -19,10 +19,11 @@
 #include <string.h>
 
 /* The UI's own properties, and what they are with no rule */
-enum { X_ACCENT = 0, X_MARK_BG, X_MARK_BORDER, X_MUTED, X_GRID, X_COUNT };
+enum { X_ACCENT = 0, X_MARK_BG, X_MARK_BORDER, X_MUTED, X_GRID, X_SAME, X_COUNT };
 
 static int own_colour(void *userdata, int slot, const char *value, size_t length, uint32_t *out);
 static int own_count(void *userdata, int slot, const char *value, size_t length, uint32_t *out);
+static int own_same(void *userdata, int slot, const char *value, size_t length, uint32_t *out);
 
 static const struct {
     const char *name;
@@ -35,7 +36,9 @@ static const struct {
     { "mark-border-color", 0xff808080u, GFCSS_INHERITED, own_colour },
     { "placeholder-color", 0xff909090u, GFCSS_INHERITED, own_colour },
     /* 0.5 (library 18): a grid of n columns (OL_BOX_GRID); 0 or none: not a grid */
-    { "grid-columns", 0, 0, own_count }
+    { "grid-columns", 0, 0, own_count },
+    /* library 18: its children the same size (MUI's SameSize): none, width, height or both */
+    { "same-size", 0, 0, own_same }
 };
 
 #define ST_SELECTED GFCSS_STATE_USER(0)
@@ -61,6 +64,21 @@ static int own_colour(void *userdata, int slot, const char *value, size_t length
     (void)userdata;
     (void)slot;
     return gfcss_parse_colour(value, length, out);
+}
+
+/* same-size: none 0, width 1, height 2, both 3 */
+static int own_same(void *userdata, int slot, const char *value, size_t length, uint32_t *out)
+{
+    static const char *const words[4] = { "none", "width", "height", "both" };
+    uint32_t i;
+    (void)userdata;
+    (void)slot;
+    for (i = 0; i < 4; ++i)
+        if (strlen(words[i]) == length && !memcmp(words[i], value, length)) {
+            *out = i;
+            return 1;
+        }
+    return 0;
 }
 
 /* a count: digits, 1 to 64 */
@@ -472,6 +490,9 @@ static void from_computed(olui_sheet *s, const gfcss_computed *c, const olui_cs 
         cs->box.gap = units_of(&c->row_gap);
         cs->column = 0;
     }
+    cs->box.flags &= ~(uint32_t)(OL_BOX_SAME_WIDTH | OL_BOX_SAME_HEIGHT);
+    if (c->ext[s->slot[X_SAME]] & 1) cs->box.flags |= OL_BOX_SAME_WIDTH;
+    if (c->ext[s->slot[X_SAME]] & 2) cs->box.flags |= OL_BOX_SAME_HEIGHT;
     switch (c->align_items) {
     case GFCSS_FLEX_CENTER: cs->box.align = OL_CROSS_CENTRE; break;
     case GFCSS_FLEX_START: cs->box.align = OL_CROSS_START; break;
@@ -682,6 +703,8 @@ static void to_computed(const olui_sheet *s, const olui_cs *cs, gfcss_computed *
     }
     c->ext[s->slot[X_ACCENT]] = cs->accent;
     c->ext[s->slot[X_GRID]] = (cs->box.flags & OL_BOX_GRID) ? (uint32_t)cs->box.grid_columns : 0;
+    c->ext[s->slot[X_SAME]] = ((cs->box.flags & OL_BOX_SAME_WIDTH) ? 1u : 0u) |
+                              ((cs->box.flags & OL_BOX_SAME_HEIGHT) ? 2u : 0u);
     c->ext[s->slot[X_MARK_BG]] = cs->mark_bg;
     c->ext[s->slot[X_MARK_BORDER]] = cs->mark_border;
     c->ext[s->slot[X_MUTED]] = cs->muted;

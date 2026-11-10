@@ -2525,7 +2525,7 @@ static ol_unit content_width(ol_document *doc, const ol_node *node,
 static ol_unit content_width_in(ol_document *doc, const ol_node *node, int frame_itself,
                                 ol_measure_text_fn measure, void *measure_userdata)
 {
-    ol_unit w = 0, run = 0, ml, mr;
+    ol_unit w = 0, run = 0, ml, mr, widest = 0;
     const ol_node *c;
     int n = 0;
     if (!node || node->style.display == OL_DISPLAY_NONE || (is_frame(node) && !frame_itself)) return 0;
@@ -2551,6 +2551,7 @@ static ol_unit content_width_in(ol_document *doc, const ol_node *node, int frame
         if (c->style.display == OL_DISPLAY_NONE || is_frame(c)) continue;
         cw = content_width(doc, c, measure, measure_userdata);
         if (node->box.flags & OL_BOX_ROW) {
+            if (cw > widest) widest = cw;
             w += cw + (n++ ? node->box.gap : 0);
         } else if (is_inline(c)) {
             run += cw;
@@ -2561,6 +2562,8 @@ static ol_unit content_width_in(ol_document *doc, const ol_node *node, int frame
         }
     }
     if (run > w) w = run;
+    if ((node->box.flags & (OL_BOX_ROW | OL_BOX_SAME_WIDTH)) == (OL_BOX_ROW | OL_BOX_SAME_WIDTH) && n)
+        w = widest * n + node->box.gap * (n - 1);      /* 0.18: each as wide as the widest */
     if (node->box.flags & OL_BOX_GRID) {            /* 0.18: its columns side by side */
         ol_unit colw[OL_MAX_COLUMNS];
         int32_t colgrow[OL_MAX_COLUMNS];
@@ -2597,6 +2600,8 @@ static int layout_row(ol_document *doc, ol_node *row, ol_unit x, ol_unit y, ol_u
     int32_t grow = 0;
     int n = 0, pass, again = 0;
     ol_mark mark;
+    /* 0.18: the same height: as tall as the row, whatever align says */
+    uint32_t align = (row->box.flags & OL_BOX_SAME_HEIGHT) ? OL_CROSS_STRETCH : row->box.align;
 
     for (c = row->first_child; c; c = c->next_sibling) {
         if (c->style.display == OL_DISPLAY_NONE || is_frame(c)) continue;
@@ -2614,6 +2619,19 @@ static int layout_row(ol_document *doc, ol_node *row, ol_unit x, ol_unit y, ol_u
     if (!n) {
         *bottom_out = y;
         return 1;
+    }
+    if (row->box.flags & OL_BOX_SAME_WIDTH) {
+        /* 0.18: each asks for the widest one's width */
+        ol_unit most = 0;
+        for (c = row->first_child; c; c = c->next_sibling)
+            if (c->style.display != OL_DISPLAY_NONE && !is_frame(c) && c->bounds.width > most) most = c->bounds.width;
+        used = flex = 0;
+        for (c = row->first_child; c; c = c->next_sibling) {
+            if (c->style.display == OL_DISPLAY_NONE || is_frame(c)) continue;
+            c->bounds.width = most;
+            used += most;
+            if (!has_width(c)) flex += most;
+        }
     }
     used += row->box.gap * (n - 1);
     left = width - used;
@@ -2665,7 +2683,7 @@ static int layout_row(ol_document *doc, ol_node *row, ol_unit x, ol_unit y, ol_u
                      : c->bounds.x;
             if (pass) {
                 h = c->bounds.height + c->style.margin_top + c->style.margin_bottom;
-                switch (row->box.align) {
+                switch (align) {
                 case OL_CROSS_START: break;
                 case OL_CROSS_CENTRE: top += (row_h - h) / 2; break;
                 case OL_CROSS_END: top += row_h - h; break;
@@ -2690,7 +2708,7 @@ static int layout_row(ol_document *doc, ol_node *row, ol_unit x, ol_unit y, ol_u
             ol_unit h;
             if (c->style.display == OL_DISPLAY_NONE || is_frame(c)) continue;
             h = c->bounds.height + c->style.margin_top + c->style.margin_bottom;
-            if (h != row_h && row->box.align != OL_CROSS_START) again = 1;
+            if (h != row_h && align != OL_CROSS_START) again = 1;
         }
         if (!again) {
             if (fixed_h <= 0 && tallest > row_h) row_h = tallest;
@@ -2751,6 +2769,11 @@ static int grid_asked(ol_document *doc, const ol_node *grid, ol_unit width, ol_u
         if (col + 1 > used) used = col + 1;
         col = (col + 1) % ncols;
     }
+    if (grid->box.flags & OL_BOX_SAME_WIDTH) {          /* every column as wide as the widest */
+        ol_unit most = 0;
+        for (i = 0; i < used; ++i) if (colw[i] > most) most = colw[i];
+        for (i = 0; i < used; ++i) colw[i] = most;
+    }
     return used;
 }
 
@@ -2761,6 +2784,8 @@ static int layout_grid(ol_document *doc, ol_node *grid, ol_unit x, ol_unit y, ol
     int32_t colgrow[OL_MAX_COLUMNS], grow = 0;
     ol_node *c, *row_first;
     int ncols = grid_asked(doc, grid, width, colw, colgrow, measure, measure_userdata), i;
+    ol_unit same_h = 0;
+    uint32_t align = (grid->box.flags & OL_BOX_SAME_HEIGHT) ? OL_CROSS_STRETCH : grid->box.align;
 
     if (!ncols) {
         *bottom_out = y;
@@ -2799,9 +2824,24 @@ static int layout_grid(ol_document *doc, ol_node *grid, ol_unit x, ol_unit y, ol
     }
     for (i = 0; i < ncols; ++i) col_x[i + 1] = col_x[i] + colw[i] + gap;
 
+    if (grid->box.flags & OL_BOX_SAME_HEIGHT) {
+        /* 0.18: every row as tall as the tallest: each cell laid out once to find it */
+        ol_mark probe;
+        int k = 0;
+        mark_take(doc, &probe);
+        for (c = grid->first_child; c; c = c->next_sibling) {
+            ol_unit bottom, h;
+            if (!grid_cell(c)) continue;
+            if (!layout_block_in(doc, c, col_x[k], y, colw[k], measure, measure_userdata, &bottom)) return 0;
+            h = c->bounds.height + c->style.margin_top + c->style.margin_bottom;
+            if (h > same_h) same_h = h;
+            k = (k + 1) % ncols;
+        }
+        mark_back(doc, &probe);
+    }
     for (row_first = grid->first_child; row_first;) {
         ol_node *next_row = NULL;
-        ol_unit row_h = 0;
+        ol_unit row_h = same_h;
         ol_mark mark;
         int pass, again = 0, k;
         mark_take(doc, &mark);
@@ -2811,7 +2851,7 @@ static int layout_grid(ol_document *doc, ol_node *grid, ol_unit x, ol_unit y, ol
                 if (!grid_cell(c)) continue;
                 if (pass) {
                     h = c->bounds.height + c->style.margin_top + c->style.margin_bottom;
-                    switch (grid->box.align) {
+                    switch (align) {
                     case OL_CROSS_START: break;
                     case OL_CROSS_CENTRE: top += (row_h - h) / 2; break;
                     case OL_CROSS_END: top += row_h - h; break;
@@ -2834,7 +2874,7 @@ static int layout_grid(ol_document *doc, ol_node *grid, ol_unit x, ol_unit y, ol
             for (c = row_first, k = 0; c && k < ncols && !again; c = c->next_sibling) {
                 if (!grid_cell(c)) continue;
                 if (c->bounds.height + c->style.margin_top + c->style.margin_bottom != row_h &&
-                    grid->box.align != OL_CROSS_START)
+                    align != OL_CROSS_START)
                     again = 1;
                 ++k;
             }
@@ -3062,6 +3102,30 @@ static int layout_block_in(ol_document *doc, ol_node *node,
             }
             for (child = node->first_child; child; child = child->next_sibling)
                 child->force_height = 0;
+        }
+        if (node->box.flags & OL_BOX_SAME_HEIGHT) {
+            /* 0.18: every child as tall as the tallest, laid out again at that height */
+            ol_unit tall = 0;
+            int shorter = 0;
+            for (child = node->first_child; child; child = child->next_sibling)
+                if (child->style.display != OL_DISPLAY_NONE && !is_frame(child) &&
+                    child->bounds.height > tall) tall = child->bounds.height;
+            for (child = node->first_child; child; child = child->next_sibling)
+                if (child->style.display != OL_DISPLAY_NONE && !is_frame(child) &&
+                    child->bounds.height < tall) shorter = 1;
+            if (shorter) {
+                for (child = node->first_child; child; child = child->next_sibling)
+                    if (child->style.display != OL_DISPLAY_NONE && !is_frame(child)) child->force_height = tall;
+                mark_back(doc, &mark);
+                current_y = start_y;
+                start_flow(&flow, doc, node, measure, measure_userdata, inner_x, inner_x + inner_w,
+                           current_y, node->style.text_align, node->box.text_indent);
+                if (!layout_children(doc, node, &flow, inner_x, inner_w, &current_y,
+                                     measure, measure_userdata))
+                    return 0;
+                for (child = node->first_child; child; child = child->next_sibling)
+                    child->force_height = 0;
+            }
         }
     }
     node->force_height = 0;

@@ -27,7 +27,7 @@ GTK_SRC = gtk/gtk.c gtk/glib.c gtk/gtkc_host.c
 GTK_HDR = gtk/include/glib.h gtk/include/gtk/gtk.h gtk/include/gtk/gtkc.h gtk/include/gdk/gdk.h \
           gtk/include/gdk/gdkkeysyms.h gtk/gtkc_internal.h
 
-all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_web $(BUILD)/test_ui \
+all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui \
      $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk
 
 $(BUILD):
@@ -54,6 +54,9 @@ $(BUILD)/test_rows: tests/test_rows.c $(BUILD)/libopenlayout.a
 $(BUILD)/test_grid: tests/test_grid.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_grid.c $(BUILD)/libopenlayout.a -o $@
 
+$(BUILD)/test_samesize: tests/test_samesize.c $(BUILD)/libopenlayout.a
+	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_samesize.c $(BUILD)/libopenlayout.a -o $@
+
 $(BUILD)/test_web: tests/test_web.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_web.c $(BUILD)/libopenlayout.a -o $@
 
@@ -74,12 +77,13 @@ $(BUILD)/test_gtk: tests/test_gtk.c $(GTK_SRC) $(GTK_HDR) $(UI_SRC) ui/olui_inte
 $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
-test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
+test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
       $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
 	./$(BUILD)/test_grid
+	./$(BUILD)/test_samesize
 	./$(BUILD)/test_web
 	./$(BUILD)/test_ui
 	./$(BUILD)/test_css

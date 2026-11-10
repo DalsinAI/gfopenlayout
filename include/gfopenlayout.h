@@ -394,7 +394,17 @@ enum {
      * groups, GTK's tables). A column is as wide as its widest cell asks;
      * what room is left goes to the columns whose cells grow; a row is as
      * tall as its tallest cell, its cells across it as box.align says. */
-    OL_BOX_GRID              = 1u << 13
+    OL_BOX_GRID              = 1u << 13,
+    /* 0.18: the same size for every child (MUI's SameSize, SameWidth and
+     * SameHeight). OL_BOX_SAME_WIDTH: in a row, every child asks for the
+     * widest one's width (what is left is still shared by those that
+     * grow); in a grid, every column is as wide as the widest. A block's
+     * children are its width already. OL_BOX_SAME_HEIGHT: in a block, its
+     * children are as tall as the tallest; in a grid, every row is as tall
+     * as the tallest; in a row, every child is as tall as the row, whatever
+     * box.align says. */
+    OL_BOX_SAME_WIDTH        = 1u << 14,
+    OL_BOX_SAME_HEIGHT       = 1u << 15
 };
 
 /* 0.8: how a row's children stand across it (box.align) */

@@ -117,6 +117,7 @@ don't.
 | `accent-color` | Ticks, radio dots, progress bars and a slider's filled track |
 | `mark-background`, `mark-border-color` | A checkbox's and radio button's box, a slider's track (ours, not CSS's) |
 | `grid-columns` | A number from 1 to 64: the box is a grid of that many columns, as `<grid columns=n>` is (ours, not CSS's; library 18) |
+| `same-size` | `none` (the default), `width`, `height` or `both`: its children the same size, as MUI's SameSize is. `width`: in a row each asks for the widest one's width, in a grid every column is the widest's; `height`: in a column each is as tall as the tallest, in a grid every row is, in a row each is the row's height whatever `align-items` says (ours, not CSS's; library 18) |
 | `placeholder-color` | A field's placeholder (ours) |
 | `overflow` (`overflow-y`) | `auto` or `scroll`: a box with a height scrolls what it holds, with a bar when that is taller; `hidden`: cut to the box, scrolled only by the program; `visible` |
 | `position`, `left`, `top` (0.4) | `absolute` or `fixed`: out of the flow at `left` and `top` from the parent's content corner; `relative`: in the flow, in a layer |
