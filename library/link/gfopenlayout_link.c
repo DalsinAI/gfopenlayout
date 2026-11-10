@@ -632,3 +632,15 @@ int ol_node_shape_exclusions(const ol_node *shape, const ol_rect *bounds, const 
     if (OpenLayoutBase->lib_Version < 17) return 0;
     return OL_NodeShapeExclusions(shape, bounds, gap, bands, out, capacity);
 }
+
+int olui_amiga_own_input(olui_amiga *a, const olui_el *el, unsigned what)
+{
+    if (OpenLayoutBase->lib_Version < 18) return 0;
+    return OLUI_AmigaOwnInput(a, el, what);
+}
+
+const olui_el * olui_amiga_owner(const olui_amiga *a)
+{
+    if (OpenLayoutBase->lib_Version < 18) return 0;
+    return OLUI_AmigaOwner(a);
+}

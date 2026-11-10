@@ -55,7 +55,7 @@ static struct Library *OluiKeymapBase;
 
 #define MAX_PENS 96
 #define MAX_FONTS 12
-#define MAX_OWN 4
+#define MAX_OWN 32                 /* library 18: 32 (4 before) */
 #define THEME_DIR "SYS:Prefs/Presets/Themes/"
 
 /* rawkeys */
@@ -112,8 +112,12 @@ struct olui_amiga {
         void *data;
         olui_rect box;
         int seen;
+        unsigned input;         /* OLUI_AMIGA_OWN_...: what it takes from olui (library 18) */
     } own[MAX_OWN];
     int nown;
+    const olui_el *grab;        /* the owned widget a button went down in and is still held */
+    const olui_el *keyed;       /* the owned widget that has the keys */
+    const olui_el *owner;       /* whose the last OLUI_AMIGA_NONE message was */
     char mono_name[64];
     olui_amiga_image_fn image_fn;   /* draws img's pictures (olui_amiga_images) */
     void *image_data;
@@ -795,15 +799,99 @@ int olui_amiga_own(olui_amiga *a, const olui_el *el, olui_amiga_own_fn fn, void 
     for (i = 0; i < a->nown && a->own[i].el != el; ++i) ;
     if (!fn) {
         if (i < a->nown) { memmove(&a->own[i], &a->own[i + 1], sizeof(a->own[0]) * (size_t)(a->nown - i - 1)); --a->nown; }
+        if (a->grab == el) a->grab = NULL;
+        if (a->keyed == el) a->keyed = NULL;
         return 1;
     }
     if (i == MAX_OWN) return 0;
-    if (i == a->nown) ++a->nown;
+    if (i == a->nown) { ++a->nown; a->own[i].input = 0; }
     a->own[i].el = el;
     a->own[i].fn = fn;
     a->own[i].data = userdata;
     a->own[i].seen = 0;
     return 1;
+}
+
+int olui_amiga_own_input(olui_amiga *a, const olui_el *el, unsigned what)
+{
+    int i;
+    if (!a || !el) return 0;
+    for (i = 0; i < a->nown && a->own[i].el != el; ++i) ;
+    if (i == a->nown) return 0;
+    a->own[i].input = what & (OLUI_AMIGA_OWN_MOUSE | OLUI_AMIGA_OWN_KEYS);
+    if (!(what & OLUI_AMIGA_OWN_MOUSE) && a->grab == el) a->grab = NULL;
+    if (!(what & OLUI_AMIGA_OWN_KEYS) && a->keyed == el) a->keyed = NULL;
+    return 1;
+}
+
+const olui_el *olui_amiga_owner(const olui_amiga *a)
+{
+    return a ? a->owner : NULL;
+}
+
+/* The owned widget that asked for some of what, drawn where x,y is; NULL: none */
+static const olui_el *owned_at(olui_amiga *a, int x, int y, unsigned what)
+{
+    int i;
+    for (i = a->nown - 1; i >= 0; --i) {
+        const olui_rect *b = &a->own[i].box;
+        if (a->own[i].seen && (a->own[i].input & what) && x >= b->x && y >= b->y && x < b->x + b->w &&
+            y < b->y + b->h)
+            return a->own[i].el;
+    }
+    return NULL;
+}
+
+/* Library 18: is m for an owned widget (olui_amiga_own_input)? Then a->owner is it */
+static int for_owned(olui_amiga *a, struct IntuiMessage *m, int x, int y)
+{
+    const olui_el *hit;
+    if (!a->nown || olui_popup(a->ui)) return 0;   /* a pop-up open: all of it olui's */
+    switch (m->Class) {
+    case IDCMP_MOUSEBUTTONS:
+        if (m->Code & IECODE_UP_PREFIX) {
+            /* the release goes where the press went */
+            if (!a->grab) return 0;
+            a->owner = a->grab;
+            if (m->Code == SELECTUP) a->grab = NULL;     /* the left button let go */
+            return 1;
+        }
+        hit = owned_at(a, x, y, OLUI_AMIGA_OWN_MOUSE | OLUI_AMIGA_OWN_KEYS);
+        /* a press: the keys go with it, to an owned widget that takes them or back to olui */
+        if (hit && owned_at(a, x, y, OLUI_AMIGA_OWN_KEYS) == hit) {
+            a->keyed = hit;
+            if (olui_focused(a->ui)) {
+                olui_focus(a->ui, NULL);
+                olui_amiga_draw(a);     /* olui's focus ring and cursor off */
+            }
+        } else {
+            a->keyed = NULL;
+        }
+        if (!hit || owned_at(a, x, y, OLUI_AMIGA_OWN_MOUSE) != hit) return 0;
+        if (m->Code == SELECTDOWN) a->grab = hit;
+        a->owner = hit;
+        return 1;
+    case IDCMP_MOUSEMOVE:
+        if (!a->grab) return 0;
+        a->owner = a->grab;
+        return 1;
+    case IDCMP_RAWKEY:
+        if (m->Code == RAW_WHEEL_UP || m->Code == RAW_WHEEL_DOWN) {
+            hit = owned_at(a, x, y, OLUI_AMIGA_OWN_MOUSE);
+            if (!hit) return 0;
+            a->owner = hit;
+            return 1;
+        }
+        if (!a->keyed || olui_focused(a->ui)) return 0;    /* a key */
+        a->owner = a->keyed;
+        return 1;
+    case IDCMP_VANILLAKEY:
+        if (!a->keyed || olui_focused(a->ui)) return 0;
+        a->owner = a->keyed;
+        return 1;
+    default:
+        return 0;
+    }
 }
 
 void olui_amiga_images(olui_amiga *a, olui_amiga_image_fn fn, void *userdata)
@@ -929,6 +1017,8 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
     shift = (m->Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT)) ? OLUI_QUAL_SHIFT : 0;
     command = (m->Qualifier & (IEQUALIFIER_LCOMMAND | IEQUALIFIER_RCOMMAND)) ? OLUI_QUAL_COMMAND : 0;
     alt = (m->Qualifier & (IEQUALIFIER_LALT | IEQUALIFIER_RALT)) != 0;
+    a->owner = NULL;
+    if (for_owned(a, m, x, y)) return OLUI_AMIGA_NONE;
     if (a->strip) {
         /* olui has a strip of the window: the rest is the program's to draw and refresh */
         int in = x >= 0 && y >= 0 && x < a->bw && y < a->bh;

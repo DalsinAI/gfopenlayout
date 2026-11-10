@@ -49,10 +49,33 @@ int olui_amiga_theme(olui_amiga *a, const char *path);
 /* A widget the program draws itself (a div with a background, so it has a
  * box): the buffer is copied to the window around it, and fn is called
  * with its box in the window's RastPort's pixels each time the window is
- * drawn where it is, to draw it there. fn NULL gives it back. Four at most; 1 when it
- * was taken. */
+ * drawn where it is, to draw it there. fn NULL gives it back. 32 at most
+ * (four before library 18); 1 when it was taken. */
 typedef void (*olui_amiga_own_fn)(void *userdata, const olui_el *el, int x, int y, int w, int h);
 int olui_amiga_own(olui_amiga *a, const olui_el *el, olui_amiga_own_fn fn, void *userdata);
+
+/* Library 18: input for a widget the program draws itself (MUI's
+ * MUIM_HandleInput and HandleEvent). After olui_amiga_own, what it asks
+ * for (OLUI_AMIGA_OWN_..., 0: none, the default) is not given to olui:
+ * olui_amiga_event returns OLUI_AMIGA_NONE for it, and olui_amiga_owner
+ * says whose it was, so the program hands the message on.
+ * OLUI_AMIGA_OWN_MOUSE: a press of either button in its box, every move
+ * and the release while the button is held (anywhere: it keeps the mouse
+ * from its press), and the wheel over it. OLUI_AMIGA_OWN_KEYS: once a
+ * press in its box has given it the keys, every key (VANILLAKEY and
+ * RAWKEY, Tab too) until a press anywhere else, which goes on to olui as
+ * usual; olui's focus is taken off while it has them. While a pop-up of
+ * olui's is open (olui_popup), everything is olui's, so the click that
+ * closes it gets there. 1 when the widget is owned. */
+enum {
+    OLUI_AMIGA_OWN_MOUSE = 1u << 0,
+    OLUI_AMIGA_OWN_KEYS = 1u << 1
+};
+int olui_amiga_own_input(olui_amiga *a, const olui_el *el, unsigned what);
+/* The owned widget the last message olui_amiga_event returned
+ * OLUI_AMIGA_NONE for was for; NULL: none, the message is the program's
+ * own as before. */
+const olui_el *olui_amiga_owner(const olui_amiga *a);
 
 /* The pictures of img elements (<img image=N width=.. height=..>, in a
  * button too, for a toolbox): fn draws picture N into rp, the buffer the

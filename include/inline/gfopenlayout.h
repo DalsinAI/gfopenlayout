@@ -189,6 +189,9 @@
 #define OL_NodeSetExclusions(node,count,exclusions) LP3(0x402, int, OL_NodeSetExclusions, ol_node *, (node), a0, int, (count), d0, const ol_exclusion *, (exclusions), a1, , OPENLAYOUT_BASE_NAME)
 /* version 17: shape contour exclusion bands */
 #define OL_NodeShapeExclusions(shape,bounds,gap,bands,out,capacity) LP6(0x408, int, OL_NodeShapeExclusions, const ol_node *, (shape), a0, const ol_rect *, (bounds), a1, const ol_unit *, (gap), a2, int, (bands), d0, ol_exclusion *, (out), a3, int, (capacity), d1, , OPENLAYOUT_BASE_NAME)
+/* version 18: input for the widgets a program draws itself */
+#define OLUI_AmigaOwnInput(a,el,what) LP3(0x40e, int, OLUI_AmigaOwnInput, olui_amiga *, (a), a0, const olui_el *, (el), a1, unsigned, (what), d0, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaOwner(a) LP1(0x414, const olui_el *, OLUI_AmigaOwner, const olui_amiga *, (a), a0, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif

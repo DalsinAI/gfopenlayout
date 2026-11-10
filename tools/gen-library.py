@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gfopenlayout.library's version 10 through 17 calls, made from the C API itself.
+"""gfopenlayout.library's version 10 through 18 calls, made from the C API itself.
 
 Version 10 folds GFCSS's document calls, GFOpenLayout UI and its Amiga glue
 into gfopenlayout.library. The calls are the C functions as the headers
@@ -80,15 +80,17 @@ CORE13 = """ol_shape_style_init ol_node_set_shape ol_node_set_image_crop""".spli
 CORE14 = """ol_shape_path""".split()
 CORE16 = """ol_node_set_exclusions""".split()
 CORE17 = """ol_node_shape_exclusions""".split()
+# Version 18: input for the widgets a program draws itself (GFOpenMUI's custom classes)
+AMIGA18 = """olui_amiga_own_input olui_amiga_owner""".split()
 CALLS = ([("core", n) for n in CORE] + [("ui", n) for n in UI] + [("amiga", n) for n in AMIGA] +
          [("ui11", n) for n in UI11] + [("amiga11", n) for n in AMIGA11] +
          [("ui12", n) for n in UI12] + [("core13", n) for n in CORE13] +
          [("core14", n) for n in CORE14] + [("core16", n) for n in CORE16] +
-         [("core17", n) for n in CORE17])
+         [("core17", n) for n in CORE17] + [("amiga18", n) for n in AMIGA18])
 # the library version each part's calls came in: a call of a later one is
 # not called through an older library (the link library's side says so)
 VERSION_OF = {"core": 10, "ui": 10, "amiga": 10, "ui11": 11, "amiga11": 11, "ui12": 12,
-              "core13": 13, "core14": 14, "core16": 16, "core17": 17}
+              "core13": 13, "core14": 14, "core16": 16, "core17": 17, "amiga18": 18}
 TITLES = {"core": "version 10: GFCSS in documents", "ui": "version 10: GFOpenLayout UI",
           "amiga": "version 10: GFOpenLayout UI's Amiga glue",
           "ui11": "version 11: what a desktop needs (GFOpenLayout UI 0.4)",
@@ -97,7 +99,8 @@ TITLES = {"core": "version 10: GFCSS in documents", "ui": "version 10: GFOpenLay
           "core13": "version 13: document drawing, image crops and clipping",
           "core14": "version 14: shared shape paths and rotation",
           "core16": "version 16: bounded text-flow exclusions",
-          "core17": "version 17: shape contour exclusion bands"}
+          "core17": "version 17: shape contour exclusion bands",
+          "amiga18": "version 18: input for the widgets a program draws itself"}
 
 # the program's side, where a call's plain one won't do: olui_theme_css's
 # string is the program's to free(), so it is copied out of the library's
@@ -119,7 +122,8 @@ HEADERS = {"core": "include/gfopenlayout.h", "ui": "include/gfopenlayout_ui.h",
            "amiga": "include/gfopenlayout_ui_amiga.h", "ui11": "include/gfopenlayout_ui.h",
            "amiga11": "include/gfopenlayout_ui_amiga.h", "ui12": "include/gfopenlayout_ui.h",
            "core13": "include/gfopenlayout.h", "core14": "include/gfopenlayout.h",
-           "core16": "include/gfopenlayout.h", "core17": "include/gfopenlayout.h"}
+           "core16": "include/gfopenlayout.h", "core17": "include/gfopenlayout.h",
+           "amiga18": "include/gfopenlayout_ui_amiga.h"}
 
 
 def lib_name(c):
