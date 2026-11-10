@@ -24,7 +24,10 @@
  * Version 16 adds copied, box-local text-flow exclusion rectangles.
  * Version 17 derives reusable contour exclusion bands from closed shapes.
  * Version 18 lays out grids (OL_BOX_GRID, the box style's grid_columns
- * appended after 0.17's fields; GFOpenLayout UI's grid and grid-columns).
+ * appended after 0.17's fields; GFOpenLayout UI's grid and grid-columns),
+ * same-size children (OL_BOX_SAME_WIDTH and _HEIGHT), and gives the widgets
+ * a program draws itself their input (OLUI_AmigaOwnInput, OLUI_AmigaOwner;
+ * 32 of them, 4 before).
  * Programs built for 2 to 8 keep working: a box style of an older size
  * has the fields after it 0, as ol_node_set_box copies only its size.
  * Copyright (c) 2026 AmiCradle Team. MIT.
