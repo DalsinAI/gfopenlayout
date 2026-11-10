@@ -58,6 +58,7 @@ fills it.
 | --- | --- | --- |
 | `row` | Its children side by side (`display:flex`) | |
 | `column` | Its children one under another, `gap` apart | |
+| `grid` | Its children in `columns` columns, row after row, `gap` apart both ways (6px): each column as wide as its widest cell, the columns whose cells grow (`flex:1`) sharing what is left, each row as tall as its tallest cell (library 18) | `columns` |
 | `div`, `section`, `p`, `h1`-`h3`, `hr`, `spacer` | Boxes and text; `spacer` grows (`flex:1`) | |
 | `label` | Text; a click on it works its control: the one `for` names, or the one inside it (a checkbox is ticked, a radio button chosen, a button pressed, anything else takes the keyboard) | `for` |
 | `span`, `b`, `strong`, `i`, `em`, `u`, `code`, `a`, `br` | Text in a line | |
@@ -115,6 +116,7 @@ don't.
 | `font-size`, `font-weight`, `font-style`, `font-family` (`monospace`), `font`, `text-decoration` (`underline`, `line-through`), `text-align`, `line-height` | |
 | `accent-color` | Ticks, radio dots, progress bars and a slider's filled track |
 | `mark-background`, `mark-border-color` | A checkbox's and radio button's box, a slider's track (ours, not CSS's) |
+| `grid-columns` | A number from 1 to 64: the box is a grid of that many columns, as `<grid columns=n>` is (ours, not CSS's; library 18) |
 | `placeholder-color` | A field's placeholder (ours) |
 | `overflow` (`overflow-y`) | `auto` or `scroll`: a box with a height scrolls what it holds, with a bar when that is taller; `hidden`: cut to the box, scrolled only by the program; `visible` |
 | `position`, `left`, `top` (0.4) | `absolute` or `fixed`: out of the flow at `left` and `top` from the parent's content corner; `relative`: in the flow, in a layer |

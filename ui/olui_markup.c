@@ -378,6 +378,20 @@ static int parse_content(parser *ps, olui_el *parent, int depth)
             }
             el->kind = kind_of(tag, type[0] ? type : NULL);
             if (!strcmp(tag, "menu")) el->flags |= F_MENU;
+            if (!strcmp(tag, "grid") && el->ncols > 0) {
+                /* 0.5 (library 18): <grid columns=n>, as its own grid-columns:n before its style's */
+                char decl[24], *st;
+                size_t dl, sl = el->style ? strlen(el->style) : 0;
+                snprintf(decl, sizeof(decl), "grid-columns:%d;", el->colw[0]);
+                dl = strlen(decl);
+                if (!(st = (char *)malloc(dl + sl + 1))) { olui_el_free(el); return fail(ps, "out of memory"); }
+                memcpy(st, decl, dl);
+                if (sl) memcpy(st + dl, el->style, sl);
+                st[dl + sl] = 0;
+                free(el->style);
+                el->style = st;
+                el->ncols = 0;
+            }
             if (el->kind == K_INPUT && !strcmp(type, "password")) el->flags |= F_PASSWORD;
             if (el->kind == K_INPUT && (!strcmp(type, "number") || !strcmp(tag, "spinner"))) el->flags |= F_NUMBER;
             if (el->kind == K_TEXTAREA && !self_closed) {

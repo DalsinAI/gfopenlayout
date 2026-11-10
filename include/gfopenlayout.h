@@ -388,7 +388,13 @@ enum {
     /* 0.13: descendants are clipped to this box's border box. The effective
      * intersection is carried by every affected op, so drawing is stateless
      * and partial redraw can begin at any op. */
-    OL_BOX_CLIP_CONTENT      = 1u << 12
+    OL_BOX_CLIP_CONTENT      = 1u << 12,
+    /* 0.18: the block's children in a grid of box.grid_columns columns,
+     * row after row in their order, box.gap apart both ways (MUI's column
+     * groups, GTK's tables). A column is as wide as its widest cell asks;
+     * what room is left goes to the columns whose cells grow; a row is as
+     * tall as its tallest cell, its cells across it as box.align says. */
+    OL_BOX_GRID              = 1u << 13
 };
 
 /* 0.8: how a row's children stand across it (box.align) */
@@ -491,6 +497,9 @@ typedef struct {
      * last column is not displayed. Older box sizes leave both fields 0. */
     int32_t text_columns;
     ol_unit text_column_gap;
+    /* 0.18: OL_BOX_GRID's count of columns (1 to OL_MAX_COLUMNS; 0: 1).
+     * Older box sizes leave it 0. */
+    int32_t grid_columns;
 } ol_box_style;
 
 /* An anchored frame (box.anchor not 0) is laid out on its own and placed
@@ -589,6 +598,9 @@ int ol_node_shape_exclusions(const ol_node *shape, const ol_rect *bounds,
 /* The size before 0.15's bounded text-frame columns. Programs using these
  * fields through gfopenlayout.library open OPENLAYOUTLIB_COLUMNS_VERSION. */
 #define OL_BOX_STYLE_SIZE_0_14 offsetof(ol_box_style, text_columns)
+/* The size before 0.18's grid. Programs using it through
+ * gfopenlayout.library open OPENLAYOUTLIB_GRID_VERSION. */
+#define OL_BOX_STYLE_SIZE_0_17 offsetof(ol_box_style, grid_columns)
 
 /* 0.6: where an anchored frame went after ol_layout_pages (or ol_layout,
  * in the galley): its page and its rectangle on it, the frame's width and

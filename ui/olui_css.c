@@ -19,11 +19,23 @@
 #include <string.h>
 
 /* The UI's own properties, and what they are with no rule */
-enum { X_ACCENT = 0, X_MARK_BG, X_MARK_BORDER, X_MUTED, X_COUNT };
+enum { X_ACCENT = 0, X_MARK_BG, X_MARK_BORDER, X_MUTED, X_GRID, X_COUNT };
 
-static const struct { const char *name; uint32_t initial; } own[X_COUNT] = {
-    { "accent-color", 0xff3366ccu }, { "mark-background", 0xffffffffu }, { "mark-border-color", 0xff808080u },
-    { "placeholder-color", 0xff909090u }
+static int own_colour(void *userdata, int slot, const char *value, size_t length, uint32_t *out);
+static int own_count(void *userdata, int slot, const char *value, size_t length, uint32_t *out);
+
+static const struct {
+    const char *name;
+    uint32_t initial;
+    unsigned flags;
+    gfcss_ext_fn parse;
+} own[X_COUNT] = {
+    { "accent-color", 0xff3366ccu, GFCSS_INHERITED, own_colour },
+    { "mark-background", 0xffffffffu, GFCSS_INHERITED, own_colour },
+    { "mark-border-color", 0xff808080u, GFCSS_INHERITED, own_colour },
+    { "placeholder-color", 0xff909090u, GFCSS_INHERITED, own_colour },
+    /* 0.5 (library 18): a grid of n columns (OL_BOX_GRID); 0 or none: not a grid */
+    { "grid-columns", 0, 0, own_count }
 };
 
 #define ST_SELECTED GFCSS_STATE_USER(0)
@@ -51,6 +63,23 @@ static int own_colour(void *userdata, int slot, const char *value, size_t length
     return gfcss_parse_colour(value, length, out);
 }
 
+/* a count: digits, 1 to 64 */
+static int own_count(void *userdata, int slot, const char *value, size_t length, uint32_t *out)
+{
+    uint32_t n = 0;
+    size_t i;
+    (void)userdata;
+    (void)slot;
+    if (!length || length > 3) return 0;
+    for (i = 0; i < length; ++i) {
+        if (value[i] < '0' || value[i] > '9') return 0;
+        n = n * 10 + (uint32_t)(value[i] - '0');
+    }
+    if (n < 1 || n > 64) return 0;
+    *out = n;
+    return 1;
+}
+
 /* an engine with the UI's pseudo-classes and properties */
 static gfcss_engine *new_engine(int slot[X_COUNT])
 {
@@ -63,7 +92,7 @@ static gfcss_engine *new_engine(int slot[X_COUNT])
         return NULL;
     }
     for (i = 0; i < X_COUNT; ++i)
-        if ((slot[i] = gfcss_add_property(e, own[i].name, GFCSS_INHERITED, own[i].initial, own_colour, NULL)) < 0) {
+        if ((slot[i] = gfcss_add_property(e, own[i].name, own[i].flags, own[i].initial, own[i].parse, NULL)) < 0) {
             gfcss_free(e);
             return NULL;
         }
@@ -436,6 +465,13 @@ static void from_computed(olui_sheet *s, const gfcss_computed *c, const olui_cs 
     }
     cs->box.grow = c->flex_grow / 1000;
     cs->box.gap = units_of((cs->box.flags & OL_BOX_ROW) ? &c->column_gap : &c->row_gap);
+    if (c->ext[s->slot[X_GRID]] > 0 && cs->ol.display != OL_DISPLAY_NONE) {
+        /* 0.5: a grid, gap apart both ways (row-gap's; gap sets both) */
+        cs->box.flags = (cs->box.flags & ~(uint32_t)OL_BOX_ROW) | OL_BOX_GRID;
+        cs->box.grid_columns = (int32_t)c->ext[s->slot[X_GRID]];
+        cs->box.gap = units_of(&c->row_gap);
+        cs->column = 0;
+    }
     switch (c->align_items) {
     case GFCSS_FLEX_CENTER: cs->box.align = OL_CROSS_CENTRE; break;
     case GFCSS_FLEX_START: cs->box.align = OL_CROSS_START; break;
@@ -645,6 +681,7 @@ static void to_computed(const olui_sheet *s, const olui_cs *cs, gfcss_computed *
         c->z_index = cs->z;
     }
     c->ext[s->slot[X_ACCENT]] = cs->accent;
+    c->ext[s->slot[X_GRID]] = (cs->box.flags & OL_BOX_GRID) ? (uint32_t)cs->box.grid_columns : 0;
     c->ext[s->slot[X_MARK_BG]] = cs->mark_bg;
     c->ext[s->slot[X_MARK_BORDER]] = cs->mark_border;
     c->ext[s->slot[X_MUTED]] = cs->muted;
