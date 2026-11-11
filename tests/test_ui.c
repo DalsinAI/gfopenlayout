@@ -1468,11 +1468,11 @@ int main(int argc, char **argv)
     }
 
     /* a new value draws the bar again, not the window */
-    olui_draw(ui, NULL, draw_nothing, NULL);
+    olui_draw(ui, NULL, ignore_op, NULL);
     CHECK(!olui_damaged(ui, NULL));
     olui_set_progress(ui, bar, 7);
     CHECK(olui_damaged(ui, &r) && r.h > 0 && r.h < 340);
-    olui_draw(ui, NULL, draw_nothing, NULL);
+    olui_draw(ui, NULL, ignore_op, NULL);
 
     /* a slider: dragged, keyed and set; olui_box says where it is */
     {
@@ -1517,7 +1517,7 @@ int main(int argc, char **argv)
         olui_mouse(sl, b.x + b.w / 2, b.y + b.h - 2, OLUI_MOUSE_DOWN);
         olui_mouse(sl, b.x + b.w / 2 + 40, b.y + 60, OLUI_MOUSE_MOVE);
         olui_mouse(sl, b.x + b.w / 2 + 60, b.y + 90, OLUI_MOUSE_MOVE);
-        olui_draw(sl, NULL, draw_nothing, NULL);
+        olui_draw(sl, NULL, ignore_op, NULL);
         olui_set_progress(sl, olui_find(sl, "p"), 9);
         CHECK(olui_damaged(sl, &r) && r.w == 300 && r.h == 200);
         olui_free(sl);
@@ -1529,7 +1529,7 @@ int main(int argc, char **argv)
         CHECK(olui_layout(sl, 300, 100));
         red = olui_find(sl, "red");
         CHECK(olui_box(sl, red, &b));
-        olui_draw(sl, NULL, draw_nothing, NULL);
+        olui_draw(sl, NULL, ignore_op, NULL);
         CHECK(!olui_damaged(sl, NULL));
         olui_set_slider(sl, red, 0);
         CHECK(olui_damaged(sl, &r) && r.h < 100 && r.x < b.x && r.x + r.w > b.x + b.w);
