@@ -98,10 +98,126 @@ typedef struct {
     int saw_text_ok;
 } sink;
 
-static void draw_nothing(void *userdata, const olui_draw_op *op)
+static void ignore_op(void *userdata, const olui_draw_op *op)
 {
     (void)userdata;
     (void)op;
+}
+
+static void take_away(olui *ui, const olui_event *ev, void *userdata)
+{
+    (void)userdata;
+    olui_remove(ui, ev->el);
+}
+
+static void clear_it(olui *ui, const olui_event *ev, void *userdata)
+{
+    (void)userdata;
+    olui_list_clear(ui, ev->el);
+}
+
+static void load_again(olui *ui, const olui_event *ev, void *userdata)
+{
+    (void)ev;
+    (void)userdata;
+    olui_load(ui, "<label>new</label>", NULL, NULL, 0);
+}
+
+static void retext(olui *ui, const olui_event *ev, void *userdata)
+{
+    (void)userdata;
+    olui_set_text(ui, ev->el, "x");
+}
+
+static void renumber(olui *ui, const olui_event *ev, void *userdata)
+{
+    (void)userdata;
+    olui_set_number(ui, ev->el, ev->index + 1);
+}
+
+static void read_value(olui *ui, const olui_event *ev, void *userdata)
+{
+    (void)ui;
+    *(size_t *)userdata = ev->value ? strlen(ev->value) : 0;
+}
+
+/* A handler takes away what it was called for: the code that called it, and the handlers
+ * after it, are still using that. Run it under AddressSanitizer to see them. */
+static int test_handlers_take_away(void)
+{
+    char err[120];
+    olui *ui = olui_new();
+    olui_rect b;
+    size_t got = 0;
+    CHECK(ui && olui_load(ui, "<input id=f value=abc>", NULL, err, sizeof(err)) && olui_layout(ui, 300, 100));
+    olui_on(ui, "f", OLUI_SUBMIT, take_away, NULL);
+    olui_focus(ui, olui_find(ui, "f"));
+    CHECK(olui_key(ui, OLUI_KEY_RETURN, 0));
+    CHECK(!olui_find(ui, "f") && !olui_focused(ui));
+    olui_draw(ui, NULL, ignore_op, NULL);
+    olui_free(ui);
+
+    ui = olui_new();
+    CHECK(ui && olui_load(ui, "<input id=f value=abc>", NULL, err, sizeof(err)) && olui_layout(ui, 300, 100));
+    olui_on(ui, "f", OLUI_SUBMIT, load_again, NULL);
+    olui_focus(ui, olui_find(ui, "f"));
+    CHECK(olui_key(ui, OLUI_KEY_RETURN, 0));
+    CHECK(!olui_find(ui, "f") && !olui_focused(ui));
+    olui_draw(ui, NULL, ignore_op, NULL);
+    olui_free(ui);
+
+    ui = olui_new();
+    CHECK(ui && olui_load(ui, "<list id=l><item>a</item><item>b</item></list>", NULL, err, sizeof(err)) &&
+          olui_layout(ui, 300, 100));
+    olui_on(ui, "l", OLUI_SELECT, clear_it, NULL);
+    olui_focus(ui, olui_find(ui, "l"));
+    olui_key(ui, OLUI_KEY_DOWN, 0);
+    olui_draw(ui, NULL, ignore_op, NULL);
+    olui_free(ui);
+
+    /* the handler after it reads the event's text */
+    ui = olui_new();
+    CHECK(ui && olui_load(ui, "<input id=f>", NULL, err, sizeof(err)) && olui_layout(ui, 300, 100));
+    olui_on(ui, "f", OLUI_CHANGE, read_value, &got);
+    olui_on(ui, "f", OLUI_CHANGE, retext, NULL);    /* the last added is called first */
+    olui_focus(ui, olui_find(ui, "f"));
+    CHECK(olui_key(ui, 'q', 0) && got == 1);
+    olui_free(ui);
+
+    /* and a number field's, made again by the handler before */
+    ui = olui_new();
+    got = 0;
+    CHECK(ui && olui_load(ui, "<input id=f type=number value=1 min=0 max=99>", NULL, err, sizeof(err)) &&
+          olui_layout(ui, 300, 100));
+    olui_on(ui, "f", OLUI_CHANGE, read_value, &got);
+    olui_on(ui, "f", OLUI_CHANGE, renumber, NULL);
+    olui_focus(ui, olui_find(ui, "f"));
+    CHECK(olui_key(ui, '5', 0) && got > 0);
+    olui_free(ui);
+
+    /* a spin button goes while its arrow is held */
+    ui = olui_new();
+    CHECK(ui && olui_load(ui, "<input id=n type=number value=1 min=0 max=99>", NULL, err, sizeof(err)) &&
+          olui_layout(ui, 300, 100));
+    CHECK(olui_box(ui, olui_find(ui, "n"), &b));
+    olui_on(ui, "n", OLUI_CHANGE, take_away, NULL);
+    olui_mouse(ui, b.x + b.w - 3, b.y + 3, OLUI_MOUSE_DOWN);
+    olui_tick(ui, 2000);
+    olui_free(ui);
+
+    /* as deep as markup may go */
+    {
+        static char deep[700];
+        char *d = deep;
+        int i;
+        ui = olui_new();
+        for (i = 0; i < 60; ++i) { memcpy(d, "<div>", 5); d += 5; }
+        for (i = 0; i < 60; ++i) { memcpy(d, "</div>", 6); d += 6; }
+        *d = 0;
+        CHECK(ui && olui_load(ui, deep, NULL, err, sizeof(err)) && olui_layout(ui, 300, 100));
+        olui_free(ui);
+    }
+    return 0;
 }
 
 static void draw(void *userdata, const olui_draw_op *op)
@@ -1212,6 +1328,7 @@ int main(int argc, char **argv)
     olui_rect r;
     const char *theme_path = getenv("OLUI_THEME_FILE");
 
+    if (test_handlers_take_away()) return 20;
     CHECK(ui);
     olui_set_measure(ui, measure, NULL);
     if (theme_path) {
@@ -1351,11 +1468,11 @@ int main(int argc, char **argv)
     }
 
     /* a new value draws the bar again, not the window */
-    olui_draw(ui, NULL, draw_nothing, NULL);
+    olui_draw(ui, NULL, ignore_op, NULL);
     CHECK(!olui_damaged(ui, NULL));
     olui_set_progress(ui, bar, 7);
     CHECK(olui_damaged(ui, &r) && r.h > 0 && r.h < 340);
-    olui_draw(ui, NULL, draw_nothing, NULL);
+    olui_draw(ui, NULL, ignore_op, NULL);
 
     /* a slider: dragged, keyed and set; olui_box says where it is */
     {
@@ -1400,7 +1517,7 @@ int main(int argc, char **argv)
         olui_mouse(sl, b.x + b.w / 2, b.y + b.h - 2, OLUI_MOUSE_DOWN);
         olui_mouse(sl, b.x + b.w / 2 + 40, b.y + 60, OLUI_MOUSE_MOVE);
         olui_mouse(sl, b.x + b.w / 2 + 60, b.y + 90, OLUI_MOUSE_MOVE);
-        olui_draw(sl, NULL, draw_nothing, NULL);
+        olui_draw(sl, NULL, ignore_op, NULL);
         olui_set_progress(sl, olui_find(sl, "p"), 9);
         CHECK(olui_damaged(sl, &r) && r.w == 300 && r.h == 200);
         olui_free(sl);
@@ -1412,7 +1529,7 @@ int main(int argc, char **argv)
         CHECK(olui_layout(sl, 300, 100));
         red = olui_find(sl, "red");
         CHECK(olui_box(sl, red, &b));
-        olui_draw(sl, NULL, draw_nothing, NULL);
+        olui_draw(sl, NULL, ignore_op, NULL);
         CHECK(!olui_damaged(sl, NULL));
         olui_set_slider(sl, red, 0);
         CHECK(olui_damaged(sl, &r) && r.h < 100 && r.x < b.x && r.x + r.w > b.x + b.w);

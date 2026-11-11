@@ -114,6 +114,7 @@ struct olui_el {
     int imin;                   /* a slider's least value */
     int img_w, img_h;
     olui_el *parent, *first, *last, *next;
+    olui_el *grave;             /* taken away, waiting to be freed (bury) */
     olui_cs cs;
     ol_node *node;              /* in this layout */
     int depth;                  /* an item's level in its tree, from 0 */
