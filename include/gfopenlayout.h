@@ -690,6 +690,22 @@ typedef struct {
 
 int ol_layout_pages(ol_document *doc, const ol_page *page,
                     ol_measure_text_fn measure, void *measure_userdata);
+/* 0.19: footnotes. ol_layout_pages, with room at the foot of each page for
+ * the notes anchored in its lines: a note's anchor is a node in the flow
+ * (its mark), its height the room its text takes, laid out by the caller.
+ * The notes of a page take the sum of their heights and separator (the
+ * space and rule above them) from its body; a page keeps at least one line.
+ * note_page[i] (count of them) answers the page note i's anchor is on, -1
+ * when it isn't laid out. The caller draws the notes, from the page's body
+ * foot (height - margin_bottom) up by their room. */
+typedef struct {
+    ol_id anchor;
+    ol_unit height;
+} ol_page_note;
+
+int ol_layout_pages_notes(ol_document *doc, const ol_page *page,
+                          const ol_page_note *notes, int note_count, ol_unit separator, int *note_page,
+                          ol_measure_text_fn measure, void *measure_userdata);
 /* Lay a continuous flow through equal newspaper columns, top-to-bottom and
  * then left-to-right on each physical page. count 1 is ol_layout_pages.
  * gap is between columns. Display ranges, hit testing and caret boxes use
