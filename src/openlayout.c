@@ -168,6 +168,12 @@ struct ol_document {
     ol_unit *region_start, *region_end, *region_shift;
     int *region_page;
     ol_unit *region_x, *region_y, *region_width;
+    /* 0.19: footnotes (ol_layout_pages_notes): each one's anchor and height,
+     * the room above them, and where each anchor is in the galley */
+    const ol_page_note *notes;
+    int note_count;
+    ol_unit note_separator;
+    ol_unit *note_y;
 };
 
 typedef struct {
@@ -3499,6 +3505,53 @@ static ol_unit header_for(const ol_document *doc, ol_unit start, ol_unit body_he
     return h;
 }
 
+/* 0.19: where a page from start with room down to limit ends: at a forced
+ * break, the galley's end, or before the line, row or frame that limit
+ * would cut (unless it is taller than a page). *b: the next break, moved
+ * past the one used. */
+static ol_unit page_end_at(const ol_document *doc, ol_unit start, ol_unit limit, ol_unit total, size_t *b)
+{
+    while (*b < doc->break_count && doc->breaks[*b] <= start) ++*b;
+    if (*b < doc->break_count && doc->breaks[*b] <= limit && doc->breaks[*b] < total)
+        return doc->breaks[(*b)++];
+    if (limit >= total) return total;
+    {
+        size_t i = span_after(doc, limit);
+        if (i < doc->keep_count && doc->keeps[i].top < limit && doc->keeps[i].top > start)
+            return doc->keeps[i].top;
+    }
+    return limit;
+}
+
+/* 0.19: the room the footnotes anchored between start and end take at the
+ * foot of the page: their heights and the separator above them; 0: none. */
+static ol_unit notes_room(const ol_document *doc, ol_unit start, ol_unit end)
+{
+    ol_unit room = 0;
+    int i;
+    for (i = 0; i < doc->note_count; ++i)
+        if (doc->note_y[i] >= start && doc->note_y[i] < end && doc->notes[i].height > 0)
+            room += doc->notes[i].height;
+    return room ? room + doc->note_separator : 0;
+}
+
+/* 0.19: each footnote's anchor's top in the galley: its first text, else
+ * its node's bounds; -1 when it isn't laid out (the note goes nowhere). */
+static void find_note_anchors(ol_document *doc)
+{
+    size_t k;
+    int i;
+    for (i = 0; i < doc->note_count; ++i) {
+        const ol_node *n = ol_node_by_id(doc, doc->notes[i].anchor);
+        doc->note_y[i] = n ? n->bounds.y : -1;
+        for (k = 0; n && k < doc->op_count; ++k)
+            if (doc->ops[k].type == OL_OP_TEXT && doc->ops[k].u.text.node_id == n->id) {
+                doc->note_y[i] = doc->ops[k].u.text.bounds.y;
+                break;
+            }
+    }
+}
+
 static int cut_pages(ol_document *doc, ol_unit body_height)
 {
     ol_unit total = doc->content_height, start = 0;
@@ -3510,22 +3563,28 @@ static int cut_pages(ol_document *doc, ol_unit body_height)
         int which = -1;
         /* 0.9: a page a table goes on to has its header first, and so less room */
         ol_unit shift = start > 0 && doc->repeat_count ? header_for(doc, start, body_height, &which) : 0;
-        ol_unit limit = start + body_height - shift, end = limit;
-        int forced = 0;
+        ol_unit limit = start + body_height - shift, end;
+        size_t b0 = b;
 
-        while (b < doc->break_count && doc->breaks[b] <= start) ++b;
-        if (b < doc->break_count && doc->breaks[b] <= limit && doc->breaks[b] < total) {
-            end = doc->breaks[b++];
-            forced = 1;
-        }
-        if (!forced) {
-            if (limit >= total) {
-                end = total;
-            } else {
-                size_t i = span_after(doc, limit);
-                /* not inside a line, a row or a frame, unless it is taller than a page */
-                if (i < doc->keep_count && doc->keeps[i].top < limit && doc->keeps[i].top > start)
-                    end = doc->keeps[i].top;
+        end = page_end_at(doc, start, limit, total, &b);
+        if (doc->note_count) {
+            /* 0.19: the footnotes of the lines on the page take room at its
+             * foot; with less room fewer lines and so fewer notes may be on
+             * it, but the room only grows, so the notes that stay fit. At
+             * least one line stays, so notes taller than the page go on
+             * below its foot. */
+            ol_unit room = 0, need;
+            int pass;
+            for (pass = 0; pass < 16 && (need = notes_room(doc, start, end)) > room; ++pass) {
+                ol_unit l = limit - need;
+                room = need;
+                b = b0;
+                if (l <= start) {
+                    size_t i = span_after(doc, start);
+                    l = i < doc->keep_count && doc->keeps[i].bottom > start ? doc->keeps[i].bottom : start + 1;
+                }
+                end = page_end_at(doc, start, l, total, &b);
+                if (end <= start) end = l;
             }
         }
         if (!add_page(doc, start, end)) return 0;
@@ -4478,6 +4537,7 @@ int ol_layout_pages(ol_document *doc, const ol_page *page,
         doc->viewport_width = body_w;
         if (!layout_galley(doc, body_w, measure, measure_userdata)) return 0;
         sort_keeps_and_breaks(doc);
+        if (doc->note_count) find_note_anchors(doc);
         if (!cut_pages(doc, body_h)) return 0;
         if ((changed = wrap_zones(doc)) < 0) return 0;
         if (!changed || pass == OL_WRAP_PASSES) break;
@@ -4492,6 +4552,29 @@ int ol_layout_pages(ol_document *doc, const ol_page *page,
     doc->paged = 1;
     ++doc->generation;
     return 1;
+}
+
+int ol_layout_pages_notes(ol_document *doc, const ol_page *page,
+                          const ol_page_note *notes, int note_count, ol_unit separator, int *note_page,
+                          ol_measure_text_fn measure, void *measure_userdata)
+{
+    int ok, i;
+    if (!doc || !page || note_count < 0 || (note_count && (!notes || !note_page))) return 0;
+    if (!note_count) return ol_layout_pages(doc, page, measure, measure_userdata);
+    doc->note_y = (ol_unit *)calloc((size_t)note_count, sizeof(*doc->note_y));
+    if (!doc->note_y) return 0;
+    doc->notes = notes;
+    doc->note_count = note_count;
+    doc->note_separator = separator > 0 ? separator : 0;
+    ok = ol_layout_pages(doc, page, measure, measure_userdata);
+    for (i = 0; i < note_count; ++i)
+        note_page[i] = ok && doc->note_y[i] >= 0 && doc->page_count > 0 ? page_holding(doc, doc->note_y[i]) : -1;
+    free(doc->note_y);
+    doc->note_y = NULL;
+    doc->notes = NULL;
+    doc->note_count = 0;
+    doc->note_separator = 0;
+    return ok;
 }
 
 static ol_id display_node_id(const ol_display_op *op)

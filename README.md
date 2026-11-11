@@ -252,6 +252,8 @@ tight wrapping without each application carrying its own geometry code. The
 call is the resident library's final version-17 vector; every earlier bias is
 unchanged, and callers open `OPENLAYOUTLIB_CONTOUR_VERSION` (17).
 
+GFOpenLayout 0.19 adds footnotes to pages. `ol_layout_pages_notes` lays out pages as `ol_layout_pages` does, given each note's anchor (its mark, a node in the flow) and the height its text takes: the notes anchored in a page's lines take that much room from the foot of its body, with a separator above them, so the lines a note belongs to and the note stay on one page. With less room a page may hold fewer lines and so fewer notes; the room only grows while it is worked out, so the notes that stay always fit. A page keeps at least one line, so a note taller than a page goes on below the foot. It answers each note's page; the caller lays out and draws the notes' text. It is a link-library call for now (GFOpenWrite links GFOpenLayout in), not yet in `gfopenlayout.library`.
+
 ## GTK compatibility
 
 GFOpenGTK (`gtk/`, 0.1) is GTK 1.2's API, with 2.x's names beside it, over

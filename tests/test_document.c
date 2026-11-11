@@ -671,6 +671,73 @@ static void test_pages(void)
     ol_document_free(doc);
 }
 
+/* 0.19: footnotes take room at the foot of the page their anchor is on */
+static void test_page_notes(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_page page;
+    ol_node *paras[30], *marks[4];
+    ol_page_note notes[4];
+    int note_page[4], plain_pages, p, k;
+    size_t i, first, count;
+    char line[64];
+
+    memset(&page, 0, sizeof(page));
+    page.width = OL_CSSPX(400);
+    page.height = OL_CSSPX(300);
+    page.margin_top = page.margin_bottom = OL_CSSPX(20);
+    page.margin_left = page.margin_right = OL_CSSPX(20);
+    for (i = 0; i < 30; ++i) {
+        ol_style s;
+        paras[i] = block(doc, NULL, OL_ROLE_PARAGRAPH, OL_ALIGN_START);
+        ol_style_init(&s);
+        s.margin_top = OL_CSSPX(10);
+        s.line_height = OL_CSSPX(20);
+        ol_node_set_style(paras[i], &s);
+        snprintf(line, sizeof line, "paragraph %02u words words words words words words", (unsigned)i);
+        text(doc, paras[i], line, OL_CSSPX(16), 0);
+    }
+    /* marks in paragraphs 1, 2, 5 and 20 */
+    marks[0] = text(doc, paras[1], "1", OL_CSSPX(16), 0);
+    marks[1] = text(doc, paras[2], "2", OL_CSSPX(16), 0);
+    marks[2] = text(doc, paras[5], "3", OL_CSSPX(16), 0);
+    marks[3] = text(doc, paras[20], "4", OL_CSSPX(16), 0);
+    CHECK(ol_layout_pages(doc, &page, measure, NULL));
+    plain_pages = ol_page_count(doc);
+
+    for (k = 0; k < 4; ++k) {
+        notes[k].anchor = ol_node_id(marks[k]);
+        notes[k].height = OL_CSSPX(40);
+    }
+    notes[2].height = OL_CSSPX(1000);       /* taller than a page */
+    CHECK(ol_layout_pages_notes(doc, &page, notes, 4, OL_CSSPX(10), note_page, measure, NULL));
+    CHECK(ol_page_count(doc) > plain_pages);
+    /* each note's page is its mark's */
+    for (k = 0; k < 4; ++k) {
+        const ol_display_op *ops[4];
+        CHECK(text_ops(doc, ol_node_id(marks[k]), ops, 4) >= 1);
+        CHECK(note_page[k] == ops[0]->page);
+    }
+    CHECK(note_page[0] == 0 && note_page[1] == 0);
+    /* page 0's lines stay above its two notes and their separator */
+    CHECK(ol_display_page_range(doc, 0, &first, &count));
+    for (i = first; i < first + count; ++i) {
+        const ol_display_op *op = ol_display_get(doc, i);
+        if (op->type == OL_OP_TEXT)
+            CHECK(op->u.text.bounds.y + op->u.text.bounds.height <= page.height - page.margin_bottom - OL_CSSPX(90));
+    }
+    /* the page with the tall note keeps a line: no page is empty */
+    for (p = 0; p < ol_page_count(doc); ++p) {
+        CHECK(ol_display_page_range(doc, p, &first, &count));
+        CHECK(count > 0);
+    }
+    /* no notes: as ol_layout_pages */
+    CHECK(ol_layout_pages_notes(doc, &page, NULL, 0, 0, NULL, measure, NULL));
+    CHECK(ol_page_count(doc) == plain_pages);
+    CHECK(!ol_layout_pages_notes(doc, &page, NULL, 2, 0, note_page, measure, NULL));
+    ol_document_free(doc);
+}
+
 /* Newspaper columns are virtual narrow pages grouped left-to-right on each
  * physical page.  Exercise the editor-facing coordinates as well as flow. */
 static void test_page_columns(void)
@@ -2019,6 +2086,7 @@ int main(void)
     test_pages();
     test_page_columns();
     test_page_sections();
+    test_page_notes();
     test_page_backgrounds_and_rows();
     test_editing();
     test_box_versions();
