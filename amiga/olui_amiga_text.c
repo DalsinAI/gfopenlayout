@@ -324,7 +324,13 @@ static aa_face *face_for(const char *family, int px, unsigned style)
     f->used = ++aa_clock;
     for (i = 0; i < AA_GLYPHS; ++i) f->glyphs[i].key = 0xffffffffUL;
     f->face = find_family(family, style);
-    if (!f->face) return NULL;
+    if (!f->face) {
+        struct Task *me = FindTask(NULL);
+        /* only a process can look: from a task (input.device drawing a
+           title) it isn't known yet, so it is asked again next time */
+        if (me->tc_Node.ln_Type != NT_PROCESS) f->px = 0;
+        return NULL;
+    }
     OF_SETSIZE(f->face, (ULONG)px);
     memset(&m, 0, sizeof(m));
     OF_GETFACEMETRICS(f->face, &m);
