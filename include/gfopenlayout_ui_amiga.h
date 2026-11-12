@@ -91,6 +91,45 @@ void olui_amiga_images(olui_amiga *a, olui_amiga_image_fn fn, void *userdata);
  * the screen's and topaz.font at first. NULL keeps one. */
 void olui_amiga_fonts(olui_amiga *a, const char *font, const char *mono);
 
+/* Library 19: text drawn from outlines, anti-aliased, on a true-colour
+ * screen, for what draws into a RastPort of its own (a screen's title bar,
+ * icon labels): the same text as olui's windows. utf8 (length bytes) is
+ * shaped and drawn from family (a font's name as diskfont.library takes
+ * it, "DejaVuSans.font", or a CSS one, "DejaVu Sans", "sans-serif"; NULL:
+ * sans-serif) at px pixels, its baseline at y, in argb's colour (0xRRGGBB,
+ * its top byte unused), each glyph's grey levels blended onto what is in
+ * rp: a window's, a layer's or an offscreen BitMap's (AllocBitMap with the
+ * screen's as its friend). On a screen with a palette (16 to 256 pens:
+ * AGA's, an 8-bit RTG one) the grey levels are the screen's nearest pens to
+ * each blend, none taken; the pens are rp's window's screen's, else the
+ * default public screen's (an offscreen BitMap of the Workbench's). Its glyphs are hinted lightly at px (the
+ * x-height on a whole pixel, whole-pixel advances) and kept for the next
+ * time. OLUI_AMIGA_TEXT_SHADOW puts a one-pixel shadow down and right of
+ * it in shadow's colour, OLUI_AMIGA_TEXT_OUTLINE a one-pixel outline, for
+ * text over a picture. 1 when it was drawn; 0 when it can't be: rp has
+ * fewer than 16 pens, gfopenfont.library 1.3 isn't there or family isn't
+ * an outline font, so the program draws it with Text() as before. Called from a process (the font index is read there
+ * the first time a family is used). */
+enum {
+    OLUI_AMIGA_TEXT_BOLD = 1u << 0,
+    OLUI_AMIGA_TEXT_ITALIC = 1u << 1,
+    OLUI_AMIGA_TEXT_UNDERLINE = 1u << 2,
+    OLUI_AMIGA_TEXT_SHADOW = 1u << 3,
+    OLUI_AMIGA_TEXT_OUTLINE = 1u << 4
+};
+typedef struct {
+    int width;                  /* the pen's advance, whole pixels */
+    int ascent;                 /* above the baseline */
+    int descent;                /* below it */
+} olui_amiga_text_size;
+int olui_amiga_text(struct RastPort *rp, int x, int y, const char *utf8, size_t length, const char *family, int px,
+                    unsigned long argb, unsigned flags, unsigned long shadow);
+/* How big olui_amiga_text draws it (the shadow or outline not counted),
+ * for centring and sizing. 1 with *size filled in; 0 where olui_amiga_text
+ * would draw nothing (rp NULL leaves the screen out of it). */
+int olui_amiga_text_width(struct RastPort *rp, const char *utf8, size_t length, const char *family, int px,
+                          unsigned flags, olui_amiga_text_size *size);
+
 /* olui in a strip of the window (a toolbar, a tab strip), x,y from the
  * window's inside, w or h 0 to its edge, so it follows the window's size;
  * y below 0 from the inside's bottom (-20, h 0: a status bar 20 pixels

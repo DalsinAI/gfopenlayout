@@ -1,4 +1,4 @@
-/* gfopenlayout.library 18.0: version 3 adds pages, tables, frames and the
+/* gfopenlayout.library 19.0: version 3 adds pages, tables, frames and the
  * caret (GFOpenLayout 0.2) after version 2's calls, which are unchanged;
  * version 4 adds tab stops that align and their leaders (GFOpenLayout 0.3);
  * version 5 places frames anchored to their pages (GFOpenLayout 0.4, the
@@ -27,7 +27,10 @@
  * appended after 0.17's fields; GFOpenLayout UI's grid and grid-columns),
  * same-size children (OL_BOX_SAME_WIDTH and _HEIGHT), and gives the widgets
  * a program draws itself their input (OLUI_AmigaOwnInput, OLUI_AmigaOwner;
- * 32 of them, 4 before).
+ * 32 of them, 4 before). Version 19 draws text on true-colour screens from
+ * outlines, anti-aliased and lightly hinted, through gfopenfont.library
+ * when it is there, and gives that text to what draws into a RastPort of
+ * its own (OLUI_AmigaText, OLUI_AmigaTextWidth).
  * Programs built for 2 to 8 keep working: a box style of an older size
  * has the fields after it 0, as ol_node_set_box copies only its size.
  * Copyright (c) 2026 AmiCradle Team. MIT.
@@ -48,7 +51,7 @@
 #include <proto/diskfont.h>
 
 #define REG(r, decl) register decl __asm(#r)
-#define LIB_VERSION 18
+#define LIB_VERSION 19
 #define LIB_REVISION 0
 
 struct OpenLayoutLibBase {
@@ -66,14 +69,19 @@ struct IntuitionBase *IntuitionBase;
 struct Library *LayersBase;
 struct Library *DiskfontBase;
 
+/* amiga/olui_amiga_text.c: the outline text's faces stay while the library
+   is loaded, and go with it */
+extern int olui_aa_keep;
+void olui_aa_cleanup(void);
+
 int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "gfopenlayout.library 18.0 (10.11.2026) GFOpenLayout 0.18, AmiCradle Team\r\n";
+    "gfopenlayout.library 19.0 (12.11.2026) GFOpenLayout 0.19, AmiCradle Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: gfopenlayout.library 18.0 (10.11.2026) GFOpenLayout 0.18, AmiCradle Team";
+    "$VER: gfopenlayout.library 19.0 (12.11.2026) GFOpenLayout 0.19, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),
@@ -217,6 +225,7 @@ static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
     }
     base->seglist = seglist;
     base->lib.lib_Revision = LIB_REVISION;
+    olui_aa_keep = 1;
     return &base->lib;
 }
 
@@ -244,6 +253,7 @@ static BPTR lib_expunge(REG(a6, struct OpenLayoutLibBase *base))
     }
     seglist = base->seglist;
     Remove(&base->lib.lib_Node);
+    olui_aa_cleanup();
     close_bases();
     FreeMem((UBYTE *)base - base->lib.lib_NegSize,
             base->lib.lib_NegSize + base->lib.lib_PosSize);

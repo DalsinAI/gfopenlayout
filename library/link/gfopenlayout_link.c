@@ -644,3 +644,15 @@ const olui_el * olui_amiga_owner(const olui_amiga *a)
     if (OpenLayoutBase->lib_Version < 18) return 0;
     return OLUI_AmigaOwner(a);
 }
+
+int olui_amiga_text(struct RastPort *rp, int x, int y, const char *utf8, size_t length, const char *family, int px, unsigned long argb, unsigned flags, unsigned long shadow)
+{
+    if (OpenLayoutBase->lib_Version < 19) return 0;
+    return OLUI_AmigaText(rp, x, y, utf8, length, family, px, argb, flags, shadow);
+}
+
+int olui_amiga_text_width(struct RastPort *rp, const char *utf8, size_t length, const char *family, int px, unsigned flags, olui_amiga_text_size *size)
+{
+    if (OpenLayoutBase->lib_Version < 19) return 0;
+    return OLUI_AmigaTextWidth(rp, utf8, length, family, px, flags, size);
+}
