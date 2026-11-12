@@ -260,11 +260,38 @@ static int is_generic(const char *s)
     return 0;
 }
 
+static int has(const char *s, const char *w)
+{
+    size_t n = strlen(w), i;
+    for (; *s; ++s) {
+        for (i = 0; i < n; ++i) {
+            char c = s[i];
+            if (!c) return 0;
+            if (c >= 'A' && c <= 'Z') c += 32;
+            if (c != w[i]) break;
+        }
+        if (i == n) return 1;
+    }
+    return 0;
+}
+
+/* the generic family nearest a named one */
+static const char *generic_of(const char *name)
+{
+    if (has(name, "mono") || has(name, "courier") || has(name, "topaz") || has(name, "fixed") || has(name, "gothic") ||
+        has(name, "console") || has(name, "code"))
+        return "monospace";
+    if (!has(name, "sans") && (has(name, "times") || has(name, "serif") || has(name, "roman") || has(name, "garamond")))
+        return "serif";
+    return "sans-serif";
+}
+
 /* a family by its name, as the theme (an Amiga font's file, "DejaVuSans.font")
  * or CSS ("DejaVu Sans", "sans-serif") gives it: the name, then with spaces
  * put back where a capital follows a small letter, in every combination
  * ("DejaVuSans" is "DejaVu Sans", not "Deja Vu Sans"; four places at most);
- * only the generic families take the nearest face */
+ * only the generic families take the nearest face; a name with no outline
+ * face here takes its generic family */
 static struct OFFace *find_family(const char *family, unsigned style)
 {
     struct TagItem tags[5];
@@ -310,7 +337,12 @@ static struct OFFace *find_family(const char *family, unsigned style)
                 if ((f = OF_FINDFACEA((CONST_STRPTR)split, tags)) != NULL) return f;
             }
     }
-    return NULL;
+    /* a bitmap-only screen font (CGTriumvirate, topaz, XEN) has no outline
+       here: its kind of generic family instead, so every screen font draws
+       anti-aliased */
+    if (!tags[2].ti_Data) return NULL;
+    tags[2].ti_Data = 0;
+    return OF_FINDFACEA((CONST_STRPTR)generic_of(name), tags);
 }
 
 /* with the lock: the face for family at px (whole pixels), found once;
