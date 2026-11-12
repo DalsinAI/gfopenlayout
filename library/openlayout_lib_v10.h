@@ -740,8 +740,22 @@ static const olui_el * OLUI_AmigaOwner(REG(a0, const olui_amiga * a), REG(a6, st
     return olui_amiga_owner(a);
 }
 
+/* ---- anti-aliased outline text in a RastPort ---- */
+
+static int OLUI_AmigaText(REG(a0, struct RastPort * rp), REG(d0, int x), REG(d1, int y), REG(a1, const char * utf8), REG(d2, size_t length), REG(a2, const char * family), REG(d3, int px), REG(d4, unsigned long argb), REG(d5, unsigned flags), REG(d6, unsigned long shadow), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_amiga_text(rp, x, y, utf8, length, family, px, argb, flags, shadow);
+}
+
+static int OLUI_AmigaTextWidth(REG(a0, struct RastPort * rp), REG(a1, const char * utf8), REG(d0, size_t length), REG(a2, const char * family), REG(d1, int px), REG(d2, unsigned flags), REG(a3, olui_amiga_text_size * size), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return olui_amiga_text_width(rp, utf8, length, family, px, flags, size);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x414
+#define OL_V10_LAST_BIAS 0x420
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -783,4 +797,5 @@ static const olui_el * OLUI_AmigaOwner(REG(a0, const olui_amiga * a), REG(a6, st
     (APTR)OLUI_AmigaKeys, (APTR)OLUI_Repaint, (APTR)OLUI_Popup, \
     (APTR)OL_ShapeStyleInit, (APTR)OL_NodeSetShape, (APTR)OL_NodeSetImageCrop, \
     (APTR)OL_ShapePath, (APTR)OL_NodeSetExclusions, (APTR)OL_NodeShapeExclusions, \
-    (APTR)OLUI_AmigaOwnInput, (APTR)OLUI_AmigaOwner
+    (APTR)OLUI_AmigaOwnInput, (APTR)OLUI_AmigaOwner, (APTR)OLUI_AmigaText, \
+    (APTR)OLUI_AmigaTextWidth

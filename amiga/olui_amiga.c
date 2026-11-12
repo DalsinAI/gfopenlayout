@@ -8,11 +8,15 @@
  * FillPixelArray in their exact colours, row by row for gradients and
  * rounded corners (as GFOpenGadTools' look does); on a screen with a palette,
  * pens from ObtainBestPen, a gradient in four bands (THEME_SPEC.md 6).
- * Text is the screen's font at each size, through diskfont.library, its
+ * Text on a true-colour screen is drawn from outlines, anti-aliased and
+ * lightly hinted, through gfopenfont.library (olui_amiga_text.c), when the
+ * font is an outline font there; otherwise, and on a screen with a palette,
+ * it is the screen's font at each size, through diskfont.library, its
  * UTF-8 turned into Latin-1 for the bitmap fonts. Integer maths only.
  *
  * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfopenlayout_ui_amiga.h"
+#include "olui_amiga_text.h"
 
 #include <exec/memory.h>
 #include <intuition/intuition.h>
@@ -25,6 +29,7 @@
 #include <graphics/layers.h>
 #include <devices/inputevent.h>
 #include <dos/dos.h>
+#include <dos/var.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <proto/graphics.h>
@@ -84,6 +89,7 @@ struct olui_amiga {
     struct Window *win;
     struct Screen *scr;
     int direct;                 /* a true-colour screen: FillPixelArray */
+    int aa;                     /* and gfopenfont.library there: outline text (library 19) */
     /* the buffer */
     struct BitMap *bm;
     struct Layer_Info *li;
@@ -411,12 +417,38 @@ static ol_unit unit_of(const olui_amiga *a, int px)
     return (ol_unit)((long long)px * OL_CSSPX(100) / a->zoom);
 }
 
+/* the outline text's family and flags for a text style */
+static const char *aa_family(const olui_amiga *a, unsigned style)
+{
+    const char *family = olui_family_name(OL_TEXT_FONT_OF(style));
+    if (family) return family;
+    return (style & OL_TEXT_MONO) ? a->mono_name : a->font_name;
+}
+
+static unsigned aa_flags(unsigned style)
+{
+    return ((style & OL_TEXT_BOLD) ? OLUI_AMIGA_TEXT_BOLD : 0) | ((style & OL_TEXT_ITALIC) ? OLUI_AMIGA_TEXT_ITALIC : 0) |
+           ((style & OL_TEXT_UNDERLINE) ? OLUI_AMIGA_TEXT_UNDERLINE : 0);
+}
+
 static int measure(void *userdata, const char *utf8, size_t length, const ol_style *style, ol_text_metrics *m)
 {
     olui_amiga *a = (olui_amiga *)userdata;
-    struct TextFont *tf = font_for(a, px_of(a, style->font_size), style->text_flags);
+    struct TextFont *tf;
     char buf[256];
     long width = 0;
+    int px = px_of(a, style->font_size);
+    if (a->aa) {
+        olui_amiga_text_size size;
+        if (px < 6) px = 6;
+        if (olui_aa_measure(aa_family(a, style->text_flags), px, aa_flags(style->text_flags), utf8, length, &size)) {
+            m->width = unit_of(a, size.width);
+            m->ascent = unit_of(a, size.ascent);
+            m->descent = unit_of(a, size.descent);
+            return 1;
+        }
+    }
+    tf = font_for(a, px, style->text_flags);
     if (!tf) return 0;
     use_font(a, &a->mrp, tf, style->text_flags);
     while (length) {
@@ -441,11 +473,15 @@ static int measure(void *userdata, const char *utf8, size_t length, const ol_sty
 
 static void draw_text(olui_amiga *a, const olui_draw_op *op)
 {
-    struct TextFont *tf = font_for(a, op->font_pixels, op->text_flags);
+    struct TextFont *tf;
     char buf[256];
     const char *s = op->text;
     size_t left = op->length;
     int x = op->box.x;
+    if (a->aa && olui_aa_draw(a->rp, x, op->baseline, s, left, aa_family(a, op->text_flags),
+                              op->font_pixels < 6 ? 6 : op->font_pixels, op->argb, aa_flags(op->text_flags), 0))
+        return;
+    tf = font_for(a, op->font_pixels, op->text_flags);
     if (!tf) return;
     use_font(a, a->rp, tf, op->text_flags);
     SetAPen(a->rp, (UBYTE)pen_for(a, op->argb));
@@ -732,6 +768,19 @@ static void draw_area(olui_amiga *a, const olui_rect *area)
 
 /* ---- The public calls ---------------------------------------------------------------- */
 
+/* windows open, for the outline text's faces; the library keeps them */
+static int aa_windows;
+int olui_aa_keep;
+
+/* ENV:GFOpenLayout/Text "bitmap": every window's text through diskfont.library */
+static int aa_wanted(void)
+{
+    char v[16];
+    if (!DOSBase) return 1;
+    if (GetVar((STRPTR)"GFOpenLayout/Text", (STRPTR)v, sizeof(v), GVF_GLOBAL_ONLY) <= 0) return 1;
+    return strncmp(v, "bitmap", 6) != 0;
+}
+
 ULONG olui_amiga_idcmp(void)
 {
     return IDCMP_CLOSEWINDOW | IDCMP_NEWSIZE | IDCMP_REFRESHWINDOW | IDCMP_MOUSEBUTTONS | IDCMP_MOUSEMOVE |
@@ -753,6 +802,8 @@ olui_amiga *olui_amiga_new(olui *ui, struct Window *win)
     InitRastPort(&a->mrp);
     strncpy(a->font_name, (const char *)a->scr->Font->ta_Name, sizeof(a->font_name) - 1);
     strcpy(a->mono_name, "topaz.font");
+    a->aa = aa_wanted() && olui_aa_target(win->RPort);
+    ++aa_windows;
     olui_set_measure(ui, measure, a);
     return a;
 }
@@ -768,7 +819,10 @@ void olui_amiga_free(olui_amiga *a)
     for (i = 0; i < a->npens; ++i)
         if (a->pens[i].owned) ReleasePen(a->scr->ViewPort.ColorMap, a->pens[i].pen);
     FreeVec(a);
-    /* cybergraphics.library stays open with the program: the next window may want it */
+    /* cybergraphics.library stays open with the program: the next window may want it; in a
+       program of its own (not the library, which keeps them until it goes) the outline
+       text's faces go with the last window */
+    if (--aa_windows == 0 && !olui_aa_keep) olui_aa_cleanup();
 }
 
 int olui_amiga_strip(olui_amiga *a, int x, int y, int w, int h)
@@ -1146,3 +1200,7 @@ int olui_amiga_event(olui_amiga *a, struct IntuiMessage *m)
     }
     return used ? OLUI_AMIGA_USED : OLUI_AMIGA_NONE;
 }
+
+/* the outline text (library 19): part of this file, so every build of the
+   Amiga glue has it */
+#include "olui_amiga_text.c"

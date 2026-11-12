@@ -1,5 +1,5 @@
 #!/bin/sh
-# gfopenlayout.library 15: GFOpenLayout, GFCSS, GFOpenLayout UI and its
+# gfopenlayout.library 19: GFOpenLayout, GFCSS, GFOpenLayout UI and its
 # Intuition glue in one library, with the os32 stove; libgfopenlayout_link.a,
 # the C API through it; and the tests, the UI's linked through the library.
 #   OGT_ROOT=.../amicradle-guest/libraries/opengadtools ./build-library.sh
@@ -71,8 +71,10 @@ done
 "$CC" $LINKF -s -o "$OUT/tests/OLUIDemoLib" "$HERE/examples/OLUIDemo.c" -L"$OUT/lib" -lgfopenlayout_link
 # shellcheck disable=SC2086
 "$CC" $LINKF -s -o "$OUT/tests/OLUIOwnTest" "$HERE/examples/OLUIOwnTest.c" -L"$OUT/lib" -lgfopenlayout_link
+# shellcheck disable=SC2086
+"$CC" $LINKF -s -o "$OUT/tests/OLUITextTest" "$HERE/examples/OLUITextTest.c" -L"$OUT/lib" -lgfopenlayout_link
 for f in "$OUT/lib/libgfopenlayout_link.a" "$OUT/tests/OLUITestLib" "$OUT/tests/OLUICSSTestLib" "$OUT/tests/OLUIDemoLib" \
-  "$OUT/tests/OLUIOwnTest"; do
+  "$OUT/tests/OLUIOwnTest" "$OUT/tests/OLUITextTest"; do
   echo "$f ($(wc -c < "$f") bytes)"
 done
 echo "$OUT/tests/LayoutLibTest ($(wc -c < "$OUT/tests/LayoutLibTest") bytes)"

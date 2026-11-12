@@ -192,6 +192,9 @@
 /* version 18: input for the widgets a program draws itself */
 #define OLUI_AmigaOwnInput(a,el,what) LP3(0x40e, int, OLUI_AmigaOwnInput, olui_amiga *, (a), a0, const olui_el *, (el), a1, unsigned, (what), d0, , OPENLAYOUT_BASE_NAME)
 #define OLUI_AmigaOwner(a) LP1(0x414, const olui_el *, OLUI_AmigaOwner, const olui_amiga *, (a), a0, , OPENLAYOUT_BASE_NAME)
+/* version 19: anti-aliased outline text in a RastPort */
+#define OLUI_AmigaText(rp,x,y,utf8,length,family,px,argb,flags,shadow) LP10(0x41a, int, OLUI_AmigaText, struct RastPort *, (rp), a0, int, (x), d0, int, (y), d1, const char *, (utf8), a1, size_t, (length), d2, const char *, (family), a2, int, (px), d3, unsigned long, (argb), d4, unsigned, (flags), d5, unsigned long, (shadow), d6, , OPENLAYOUT_BASE_NAME)
+#define OLUI_AmigaTextWidth(rp,utf8,length,family,px,flags,size) LP7(0x420, int, OLUI_AmigaTextWidth, struct RastPort *, (rp), a0, const char *, (utf8), a1, size_t, (length), d0, const char *, (family), a2, int, (px), d1, unsigned, (flags), d2, olui_amiga_text_size *, (size), a3, , OPENLAYOUT_BASE_NAME)
 /* ---- end of version 10 ---- */
 
 #endif

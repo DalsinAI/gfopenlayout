@@ -193,5 +193,8 @@ int OL_NodeShapeExclusions(const ol_node *shape, const ol_rect *bounds, const ol
 * version 18: input for the widgets a program draws itself
 int OLUI_AmigaOwnInput(olui_amiga *a, const olui_el *el, unsigned what)(a0,a1,d0)
 const olui_el * OLUI_AmigaOwner(const olui_amiga *a)(a0)
+* version 19: anti-aliased outline text in a RastPort
+int OLUI_AmigaText(struct RastPort *rp, int x, int y, const char *utf8, size_t length, const char *family, int px, unsigned long argb, unsigned flags, unsigned long shadow)(a0,d0,d1,a1,d2,a2,d3,d4,d5,d6)
+int OLUI_AmigaTextWidth(struct RastPort *rp, const char *utf8, size_t length, const char *family, int px, unsigned flags, olui_amiga_text_size *size)(a0,a1,d0,a2,d1,d2,a3)
 * ---- end of version 10 ----
 ==end
