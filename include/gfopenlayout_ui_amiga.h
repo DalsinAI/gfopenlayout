@@ -99,14 +99,16 @@ void olui_amiga_fonts(olui_amiga *a, const char *font, const char *mono);
  * sans-serif) at px pixels, its baseline at y, in argb's colour (0xRRGGBB,
  * its top byte unused), each glyph's grey levels blended onto what is in
  * rp: a window's, a layer's or an offscreen BitMap's (AllocBitMap with the
- * screen's as its friend). Its glyphs are hinted lightly at px (the
+ * screen's as its friend). On a screen with a palette (16 to 256 pens:
+ * AGA's, an 8-bit RTG one) the grey levels are the screen's nearest pens to
+ * each blend, none taken; the pens are rp's window's screen's, else the
+ * default public screen's (an offscreen BitMap of the Workbench's). Its glyphs are hinted lightly at px (the
  * x-height on a whole pixel, whole-pixel advances) and kept for the next
  * time. OLUI_AMIGA_TEXT_SHADOW puts a one-pixel shadow down and right of
  * it in shadow's colour, OLUI_AMIGA_TEXT_OUTLINE a one-pixel outline, for
- * text over a picture. 1 when it was drawn; 0 when it can't be: rp is on
- * a screen with a palette (8 to 256 pens), gfopenfont.library 1.3 isn't
- * there or family isn't an outline font, so the program draws it with
- * Text() as before. Called from a process (the font index is read there
+ * text over a picture. 1 when it was drawn; 0 when it can't be: rp has
+ * fewer than 16 pens, gfopenfont.library 1.3 isn't there or family isn't
+ * an outline font, so the program draws it with Text() as before. Called from a process (the font index is read there
  * the first time a family is used). */
 enum {
     OLUI_AMIGA_TEXT_BOLD = 1u << 0,

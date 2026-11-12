@@ -7,8 +7,11 @@
  * light: the glyphs are scaled up or down (vertically only) so the face's
  * x-height lands on a whole pixel, every advance is a whole pixel and the
  * baseline is a whole row, so the stems of "m", "n" and "a" come out even.
- * Planar screens (8 to 256 pens) are not drawn here: olui_amiga_text says
- * so (0) and the caller keeps its Text().
+ * On a screen with a palette (16 to 256 pens, AGA's or an 8-bit RTG one)
+ * the grey levels are made from the screen's own pens: what is under the
+ * text is read back (ReadPixelArray8), each edge pixel's blend of it and
+ * the text's colour is given the nearest pen (FindColor, no pen taken) and
+ * written again. Screens of 2 to 8 pens keep the caller's Text() (0).
  *
  * One cache of faces and glyphs for every window and program the library
  * serves, behind one semaphore. Integer maths only. It is part of
@@ -166,8 +169,8 @@ static int engine(void)
 {
     if (aa_tried) return OluiFontBase != NULL;
     aa_tried = 1;
+    /* without it (an AGA machine with no RTG): palette screens only */
     if (!OluiCgxBase) OluiCgxBase = OpenLibrary((STRPTR)"cybergraphics.library", 40);
-    if (!OluiCgxBase) return 0;
     OluiFontBase = OpenLibrary((STRPTR)"gfopenfont.library", 1);
     if (OluiFontBase && OluiFontBase->lib_Version == 1 && OluiFontBase->lib_Revision < 3) {
         CloseLibrary(OluiFontBase);
@@ -405,15 +408,98 @@ static const aa_run *shape(aa_face *f, const char *s, size_t n, aa_run **own)
     return r;
 }
 
+/* with the lock: 2 a true-colour bitmap, 1 one of 16 to 256 pens, 0 fewer */
+static int kind_of(struct BitMap *bm)
+{
+    if (OluiCgxBase && AA_MAPATTR(bm, CYBRMATTR_ISCYBERGFX))
+        return AA_MAPATTR(bm, CYBRMATTR_DEPTH) > 8 ? 2 : AA_MAPATTR(bm, CYBRMATTR_DEPTH) >= 4;
+    return GetBitMapAttr(bm, BMA_DEPTH) >= 4 && GetBitMapAttr(bm, BMA_DEPTH) <= 8;
+}
+
 int olui_aa_target(struct RastPort *rp)
 {
     struct BitMap *bm;
     int ok;
     if (!rp || !(bm = rp->BitMap)) return 0;
     aa_obtain();
-    ok = engine() && AA_MAPATTR(bm, CYBRMATTR_ISCYBERGFX) && AA_MAPATTR(bm, CYBRMATTR_DEPTH) > 8;
+    ok = engine() && kind_of(bm) > 0;
     aa_release();
     return ok;
+}
+
+/* the screen whose pens a RastPort's are: its window's, else the default
+ * public screen's (an offscreen friend BitMap of the Workbench's) */
+static struct ColorMap *colours_of(struct RastPort *rp, struct Screen **locked)
+{
+    struct Screen *scr;
+    *locked = NULL;
+    if (rp->Layer && rp->Layer->Window) return ((struct Window *)rp->Layer->Window)->WScreen->ViewPort.ColorMap;
+    if (!(scr = LockPubScreen(NULL))) return NULL;
+    *locked = scr;
+    return scr->ViewPort.ColorMap;
+}
+
+/* cov (and sh, the shadow's) blended onto the pens there: dx, dy, cw by ch of
+ * rp from sx, sy of the w-wide coverage. Five levels of each, the nearest pen
+ * of every blend kept for the call. 0: no memory, nothing drawn. */
+static int palette_blend(struct RastPort *rp, struct ColorMap *cm, int depth, const UBYTE *cov, const UBYTE *sh, int w,
+                         int sx, int sy, int dx, int dy, int cw, int ch, ULONG rgb, ULONG srgb)
+{
+    int aw = ((cw + 15) >> 4) << 4, row, col, maxpen = (1 << depth) - 1;
+    UBYTE *pix;
+    WORD *near;                 /* [pen][shadow level][text level]: the nearest pen, -1 not yet */
+    ULONG *pen_rgb;             /* the pens' colours, 0xff000000 not yet read */
+    struct RastPort trp;
+    struct BitMap *tbm;
+    ULONG size = (ULONG)aw * ch + 256UL * 25 * sizeof(WORD) + 256UL * sizeof(ULONG);
+    UBYTE *mem = (UBYTE *)AllocVec(size, MEMF_ANY);
+    if (!mem) return 0;
+    if (!(tbm = AllocBitMap((ULONG)aw, 1, (ULONG)depth, 0, NULL))) {
+        FreeVec(mem);
+        return 0;
+    }
+    pen_rgb = (ULONG *)mem;
+    near = (WORD *)(mem + 256UL * sizeof(ULONG));
+    pix = mem + 256UL * sizeof(ULONG) + 256UL * 25 * sizeof(WORD);
+    memset(pen_rgb, 0xff, 256UL * sizeof(ULONG));
+    memset(near, 0xff, 256UL * 25 * sizeof(WORD));
+    trp = *rp;
+    trp.Layer = NULL;
+    trp.BitMap = tbm;
+    ReadPixelArray8(rp, (UWORD)dx, (UWORD)dy, (UWORD)(dx + cw - 1), (UWORD)(dy + ch - 1), pix, &trp);
+    for (row = 0; row < ch; ++row) {
+        const UBYTE *c = cov + (ULONG)(sy + row) * w + sx, *s = sh ? sh + (ULONG)(sy + row) * w + sx : NULL;
+        UBYTE *p = pix + (ULONG)row * aw;
+        for (col = 0; col < cw; ++col) {
+            int tl = (c[col] * 4 + 127) / 255, sl = s ? (s[col] * 4 + 127) / 255 : 0, i;
+            WORD *n;
+            if (!tl && !sl) continue;
+            n = &near[(p[col] * 5 + sl) * 5 + tl];
+            if (*n < 0) {
+                ULONG bg = pen_rgb[p[col]], out = 0;
+                int shift;
+                if (bg == 0xffffffffUL) {
+                    ULONG t[3];
+                    GetRGB32(cm, p[col], 1, t);
+                    bg = pen_rgb[p[col]] = ((t[0] >> 24) << 16) | ((t[1] >> 24) << 8) | (t[2] >> 24);
+                }
+                for (shift = 0; shift <= 16; shift += 8) {
+                    int b = (int)((bg >> shift) & 255), sc = (int)((srgb >> shift) & 255), tc = (int)((rgb >> shift) & 255);
+                    b += (sc - b) * sl / 4;
+                    b += (tc - b) * tl / 4;
+                    out |= (ULONG)b << shift;
+                }
+                i = (int)FindColor(cm, ((out >> 16) & 255) * 0x01010101UL, ((out >> 8) & 255) * 0x01010101UL,
+                                   (out & 255) * 0x01010101UL, maxpen);
+                *n = (WORD)(i < 0 ? p[col] : i);
+            }
+            p[col] = (UBYTE)*n;
+        }
+    }
+    WritePixelArray8(rp, (UWORD)dx, (UWORD)dy, (UWORD)(dx + cw - 1), (UWORD)(dy + ch - 1), pix, &trp);
+    FreeBitMap(tbm);
+    FreeVec(mem);
+    return 1;
 }
 
 int olui_aa_measure(const char *family, int px, unsigned flags, const char *utf8, size_t length,
@@ -471,7 +557,7 @@ static void cover(aa_face *f, const aa_run *r, UBYTE *cov, int w, int h, int ox,
 static int max_i(int a, int b) { return a > b ? a : b; }
 
 int olui_aa_draw(struct RastPort *rp, int x, int y, const char *utf8, size_t length, const char *family, int px,
-                 unsigned long argb, unsigned flags, unsigned long shadow)
+                 unsigned long argb, unsigned flags, unsigned long shadow, struct ColorMap *pens)
 {
     aa_face *f;
     aa_run *own = NULL;
@@ -481,10 +567,10 @@ int olui_aa_draw(struct RastPort *rp, int x, int y, const char *utf8, size_t len
     ULONG *buf = NULL;
     UBYTE *cov, *sh = NULL;
     struct BitMap *bm;
+    int kind = 0;
     if (!rp || !(bm = rp->BitMap)) return 0;
     aa_obtain();
-    if (!engine() || !AA_MAPATTR(bm, CYBRMATTR_ISCYBERGFX) || AA_MAPATTR(bm, CYBRMATTR_DEPTH) <= 8 ||
-        !(f = face_for(family, px, flags))) {
+    if (!engine() || !(kind = kind_of(bm)) || !(f = face_for(family, px, flags))) {
         aa_release();
         return 0;
     }
@@ -511,14 +597,15 @@ int olui_aa_draw(struct RastPort *rp, int x, int y, const char *utf8, size_t len
     oy = top - pad;
     w = right - left + 2 * pad;
     h = bottom - top + 2 * pad;
+    /* the ARGB pixels (true colour only), the coverage, the shadow's */
     if (w > 0 && h > 0 && w <= 4096 && h <= 1024)
-        buf = (ULONG *)AllocVec((ULONG)w * h * (pad ? 6 : 5), MEMF_ANY | MEMF_CLEAR);
+        buf = (ULONG *)AllocVec((ULONG)w * h * ((kind == 2 ? 4 : 0) + (pad ? 2 : 1)), MEMF_ANY | MEMF_CLEAR);
     if (!buf) {
         if (own) FreeVec(own);
         aa_release();
         return w > 0 && h > 0 ? 0 : 1;
     }
-    cov = (UBYTE *)(buf + (ULONG)w * h);
+    cov = (UBYTE *)buf + (kind == 2 ? (ULONG)w * h * 4 : 0);
     cover(f, r, cov, w, h, ox, oy, 0, 0);
     if (flags & OLUI_AMIGA_TEXT_UNDERLINE)
         for (i = f->ul_pos; i < f->ul_pos + f->ul_thick; ++i)
@@ -538,7 +625,7 @@ int olui_aa_draw(struct RastPort *rp, int x, int y, const char *utf8, size_t len
     aa_release();
     /* coverage to ARGB: the text's colour, its coverage the alpha; over a
      * shadow, the text over the shadow's colour */
-    {
+    if (kind == 2) {
         ULONG rgb = argb & 0xffffffUL, srgb = shadow & 0xffffffUL;
         ULONG n = (ULONG)w * h, p;
         for (p = 0; p < n; ++p) {
@@ -567,9 +654,19 @@ int olui_aa_draw(struct RastPort *rp, int x, int y, const char *utf8, size_t len
             if (dx + cw > bw) cw = bw - dx;
             if (dy + ch > bh) ch = bh - dy;
         }
-        if (cw > 0 && ch > 0)
+        if (cw > 0 && ch > 0 && kind == 2)
             AA_WPA_ALPHA(buf, (UWORD)sx, (UWORD)sy, (UWORD)(w * 4), rp, (UWORD)dx, (UWORD)dy, (UWORD)cw, (UWORD)ch,
                           0xffffffffUL);
+        else if (cw > 0 && ch > 0) {
+            struct Screen *locked;
+            struct ColorMap *cm = pens;
+            locked = NULL;
+            if (!cm) cm = colours_of(rp, &locked);
+            int ok = cm && palette_blend(rp, cm, (int)GetBitMapAttr(bm, BMA_DEPTH), cov, sh, w, sx, sy, dx, dy, cw,
+                                         ch, argb & 0xffffffUL, shadow & 0xffffffUL);
+            if (locked) UnlockPubScreen(NULL, locked);
+            if (!ok) { FreeVec(buf); return 0; }
+        }
     }
     FreeVec(buf);
     return 1;
@@ -581,7 +678,7 @@ int olui_amiga_text(struct RastPort *rp, int x, int y, const char *utf8, size_t 
                     unsigned long argb, unsigned flags, unsigned long shadow)
 {
     if (!utf8) return 0;
-    return olui_aa_draw(rp, x, y, utf8, length, family, px, argb, flags, shadow);
+    return olui_aa_draw(rp, x, y, utf8, length, family, px, argb, flags, shadow, NULL);
 }
 
 int olui_amiga_text_width(struct RastPort *rp, const char *utf8, size_t length, const char *family, int px,

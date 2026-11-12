@@ -8,9 +8,10 @@
  * FillPixelArray in their exact colours, row by row for gradients and
  * rounded corners (as GFOpenGadTools' look does); on a screen with a palette,
  * pens from ObtainBestPen, a gradient in four bands (THEME_SPEC.md 6).
- * Text on a true-colour screen is drawn from outlines, anti-aliased and
- * lightly hinted, through gfopenfont.library (olui_amiga_text.c), when the
- * font is an outline font there; otherwise, and on a screen with a palette,
+ * Text is drawn from outlines, anti-aliased and lightly hinted, through
+ * gfopenfont.library (olui_amiga_text.c), when the font is an outline font
+ * there, on a true-colour screen and on one of 16 to 256 pens (the grey
+ * levels from its own pens); otherwise, and on a screen of fewer pens,
  * it is the screen's font at each size, through diskfont.library, its
  * UTF-8 turned into Latin-1 for the bitmap fonts. Integer maths only.
  *
@@ -479,7 +480,8 @@ static void draw_text(olui_amiga *a, const olui_draw_op *op)
     size_t left = op->length;
     int x = op->box.x;
     if (a->aa && olui_aa_draw(a->rp, x, op->baseline, s, left, aa_family(a, op->text_flags),
-                              op->font_pixels < 6 ? 6 : op->font_pixels, op->argb, aa_flags(op->text_flags), 0))
+                              op->font_pixels < 6 ? 6 : op->font_pixels, op->argb, aa_flags(op->text_flags), 0,
+                              a->scr->ViewPort.ColorMap))
         return;
     tf = font_for(a, op->font_pixels, op->text_flags);
     if (!tf) return;

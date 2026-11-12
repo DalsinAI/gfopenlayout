@@ -9,8 +9,10 @@
  *   does), plain, with OLUI_AMIGA_TEXT_SHADOW and with _OUTLINE, at 11 to
  *   24 pixels; TEXT CALL us and TEXT() us, one string drawn 200 times each
  *   way; WIDTH n ASCENT n DESCENT n from olui_amiga_text_width.
- * - TEXT PASS when the outline text was drawn on a true-colour screen, TEXT
- *   PLANAR when the screen has a palette and olui_amiga_text rightly said 0.
+ * - TEXT PASS when the outline text was drawn (a true-colour screen, or one
+ *   of 16 to 256 pens), TEXT FEWPENS when the screen has fewer than 16 pens
+ *   and olui_amiga_text rightly said 0. Run it on the Workbench and on an
+ *   AGA screen (as the public screen) for both paths.
  *
  * It stays open for the screenshots until a close gadget or Ctrl-C, or the
  * seconds given (OLUITextTest 30).
@@ -115,6 +117,15 @@ static void close_pane(pane *p)
 static void gradient(struct RastPort *rp, int w, int h)
 {
     int y;
+    if (!CyberGfxBase || GetBitMapAttr(rp->BitMap, BMA_DEPTH) <= 8) {
+        /* a screen with a palette: bands of its pens */
+        int pens = 1 << GetBitMapAttr(rp->BitMap, BMA_DEPTH);
+        for (y = 0; y < h; y += 8) {
+            SetAPen(rp, (UBYTE)((y / 8) % (pens > 8 ? 8 : pens)));
+            RectFill(rp, 0, y, w - 1, y + 7 < h ? y + 7 : h - 1);
+        }
+        return;
+    }
     for (y = 0; y < h; ++y) {
         ULONG t = (ULONG)y * 255 / (h > 1 ? h - 1 : 1);
         ULONG c = 0xff000000UL | ((0x30 + t * 0x50 / 255) << 16) | ((0x60 + t * 0x60 / 255) << 8) | (0xa0 + t * 0x50 / 255);
@@ -168,7 +179,7 @@ int main(int argc, char **argv)
         if (olui_amiga_text_width(rp, s, strlen(s), "DejaVuSans.font", 13, 0, &size))
             printf("WIDTH %d ASCENT %d DESCENT %d\n", size.width, size.ascent, size.descent);
         /* a friend BitMap over a gradient, as the bar draws its row: plain, shadow, outline */
-        if (CyberGfxBase) {
+        {
             int w = 440, h = 120;
             struct BitMap *fb = AllocBitMap((ULONG)w, (ULONG)h, GetBitMapAttr(rp->BitMap, BMA_DEPTH), BMF_MINPLANES,
                                             rp->BitMap);
@@ -205,7 +216,7 @@ int main(int argc, char **argv)
             printf("TEXT CALL %lu us TEXT() %lu us\n", (unsigned long)ta, (unsigned long)tt);
         }
         if (drawn == 8) printf("TEXT PASS\n");
-        else if (drawn == 0 && GetBitMapAttr(rp->BitMap, BMA_DEPTH) <= 8) printf("TEXT PLANAR\n");
+        else if (drawn == 0 && GetBitMapAttr(rp->BitMap, BMA_DEPTH) < 4) printf("TEXT FEWPENS\n");
         else printf("TEXT FAIL drawn %d of 8\n", drawn);
     }
 
