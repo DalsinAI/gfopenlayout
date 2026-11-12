@@ -781,7 +781,11 @@ static int build(olui *ui, olui_el *el, ol_node *parent, const olui_cs *pcs, int
     if (!el->node || !map_node(ui, el)) return 0;
     ol_node_set_style(el->node, &st);
     ol_node_set_box(el->node, &box);
-    if (el->kind == K_IMAGE) ol_node_set_image(el->node, el->ivalue, PX(el->img_w), PX(el->img_h));
+    if (el->kind == K_IMAGE)
+        /* a picture is as big as its CSS width and height when it has them (olui_set_style changes
+         * them while the window is open), else as its markup's */
+        ol_node_set_image(el->node, el->ivalue, cs->box.width > 0 ? cs->box.width : PX(el->img_w),
+                          cs->box.height > 0 ? cs->box.height : PX(el->img_h));
     {
         uint32_t states = 0, actions = 0;
         if (el->state & S_DISABLED) states |= OL_STATE_DISABLED;
