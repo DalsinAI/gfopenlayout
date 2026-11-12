@@ -1079,11 +1079,22 @@ void gfcss_to_ol(const gfcss_computed *cs, ol_unit cw, ol_style *st, ol_box_styl
     default: st->text_align = OL_ALIGN_START; break;
     }
     if (box->flags & OL_BOX_ROW) {
-        /* a row with room to spare puts its children at its text_align */
+        /* a row with room to spare puts its children at its text_align, or shares it out
+         * between them */
+        if (cs->justify_content == GFCSS_FLEX_SPACE_BETWEEN) box->flags |= OL_BOX_SPACE_BETWEEN;
+        else if (cs->justify_content == GFCSS_FLEX_SPACE_AROUND) box->flags |= OL_BOX_SPACE_AROUND;
+        else if (cs->justify_content == GFCSS_FLEX_SPACE_EVENLY) box->flags |= OL_BOX_SPACE_EVENLY;
         if (cs->justify_content == GFCSS_FLEX_CENTER) st->text_align = OL_ALIGN_CENTER;
         else if (cs->justify_content == GFCSS_FLEX_END || cs->justify_content == GFCSS_FLEX_RIGHT)
             st->text_align = OL_ALIGN_END;
         else if (cs->justify_content != GFCSS_FLEX_NORMAL) st->text_align = OL_ALIGN_START;
+    } else if (cs->display == GFCSS_DISPLAY_FLEX || cs->display == GFCSS_DISPLAY_INLINE_FLEX) {
+        /* 0.19: a column of a height with room to spare: its children down it at its justify-content */
+        if (cs->justify_content == GFCSS_FLEX_CENTER) box->flags |= OL_BOX_PACK_CENTRE;
+        else if (cs->justify_content == GFCSS_FLEX_END) box->flags |= OL_BOX_PACK_END;
+        else if (cs->justify_content == GFCSS_FLEX_SPACE_BETWEEN) box->flags |= OL_BOX_SPACE_BETWEEN;
+        else if (cs->justify_content == GFCSS_FLEX_SPACE_AROUND) box->flags |= OL_BOX_SPACE_AROUND;
+        else if (cs->justify_content == GFCSS_FLEX_SPACE_EVENLY) box->flags |= OL_BOX_SPACE_EVENLY;
     }
     st->margin_top = gfcss_resolve(&cs->margin[0], cw);
     st->margin_right = gfcss_resolve(&cs->margin[1], cw);

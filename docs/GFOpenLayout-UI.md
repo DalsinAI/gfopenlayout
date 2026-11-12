@@ -108,7 +108,7 @@ don't.
 | `flex`, `flex-grow` | A whole number: its share of the room left (across a row, or down a box with a height) |
 | `gap` | Between a row's or a column's children |
 | `align-items` | `stretch` (the default), `start`, `center`, `end` |
-| `justify-content` | `start`, `center`, `end`: where a row's children go when none grows |
+| `justify-content` | `start`, `center`, `end`: where a row's children go when none grows; `space-between`, `space-around`, `space-evenly` share the spare room out between them; in a `column` of a height with room to spare, all six place its children down it |
 | `width`, `height` | A length or `auto` |
 | `margin`, `padding` and their `-top`, `-right`, `-bottom`, `-left` | Lengths |
 | `color`, `background`, `background-color` | Colours; `background` also takes `linear-gradient()` down the box, with up to four stops |

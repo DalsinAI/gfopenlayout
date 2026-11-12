@@ -222,7 +222,8 @@ an `ol_box_style` from their init functions' values and `cs`.
 Percentages are of `containing_width`. `display` becomes block, inline or
 none (a flex container is a block with `OL_BOX_ROW` when its direction is
 a row, and its `justify-content` is put in `text_align`, where
-GFOpenLayout puts a row's children); bold is a weight of 600 or more;
+GFOpenLayout puts a row's children, or its space modes in
+`OL_BOX_SPACE_BETWEEN`, `OL_BOX_SPACE_AROUND` and `OL_BOX_SPACE_EVENLY`); bold is a weight of 600 or more;
 `OL_TEXT_MONO` is the monospace generic; `line-height: normal` is 1.2
 times the font size. Widths are border-box widths, as GFOpenLayout's
 `box.width` is: a content-box width has its padding and borders added.

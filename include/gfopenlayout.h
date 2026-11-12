@@ -404,7 +404,23 @@ enum {
      * as the tallest; in a row, every child is as tall as the row, whatever
      * box.align says. */
     OL_BOX_SAME_WIDTH        = 1u << 14,
-    OL_BOX_SAME_HEIGHT       = 1u << 15
+    OL_BOX_SAME_HEIGHT       = 1u << 15,
+    /* 0.19: a row with room to spare and nothing that grows shares the room
+     * out between its children (CSS's justify-content) in place of its
+     * text_align: OL_BOX_SPACE_BETWEEN between them, the first and last at
+     * the ends (one child: at the start); OL_BOX_SPACE_AROUND as much round
+     * each, so half as much at the ends; both (OL_BOX_SPACE_EVENLY) as much
+     * at the ends as between. */
+    OL_BOX_SPACE_BETWEEN     = 1u << 16,
+    OL_BOX_SPACE_AROUND      = 1u << 17,
+    OL_BOX_SPACE_EVENLY      = OL_BOX_SPACE_BETWEEN | OL_BOX_SPACE_AROUND,
+    /* 0.19: a block (a column) taller than its children, of a box.height or
+     * the height its row or block gives it, with no child that grows and
+     * only block children: the room left goes above them
+     * (OL_BOX_PACK_END), half above (OL_BOX_PACK_CENTRE), or between them
+     * as a row's OL_BOX_SPACE_... share it. */
+    OL_BOX_PACK_CENTRE       = 1u << 18,
+    OL_BOX_PACK_END          = 1u << 19
 };
 
 /* 0.8: how a row's children stand across it (box.align) */

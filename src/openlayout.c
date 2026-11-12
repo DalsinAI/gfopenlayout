@@ -39,6 +39,8 @@ struct ol_node {
     ol_exclusion *exclusions; /* 0.16: copied, box-local text-flow obstacles */
     int exclusion_count;
     ol_unit force_height;     /* 0.8: the height its row or block gives it this pass; 0: none */
+    ol_unit pack_lead;        /* 0.19: room above its first block child, this pass */
+    ol_unit pack_spread;      /* 0.19: room more than its gap between its block children, this pass */
 };
 
 /* A stretch of the galley a page may not end inside: a line, a table row,
@@ -2603,12 +2605,13 @@ static int layout_block_in(ol_document *doc, ol_node *node,
  * in proportion to box.grow, and with too little room those without a
  * width give it up in proportion to theirs. Laid out once to find the
  * row's height, and again only when a child must be as tall as the row or
- * stand lower in it. */
+ * stand lower in it. With room to spare and nothing that grows, the room
+ * goes at its text_align, or (0.19) between them (OL_BOX_SPACE_...). */
 static int layout_row(ol_document *doc, ol_node *row, ol_unit x, ol_unit y, ol_unit width,
                       ol_measure_text_fn measure, void *measure_userdata, ol_unit *bottom_out)
 {
     ol_node *c;
-    ol_unit used = 0, flex = 0, left, cx, row_h = 0, fixed_h;
+    ol_unit used = 0, flex = 0, left, cx, row_h = 0, fixed_h, spread = 0;
     int32_t grow = 0;
     int n = 0, pass, again = 0;
     ol_mark mark;
@@ -2649,7 +2652,17 @@ static int layout_row(ol_document *doc, ol_node *row, ol_unit x, ol_unit y, ol_u
     left = width - used;
     cx = x;
     if (left > 0 && !grow) {
-        if (row->style.text_align == OL_ALIGN_CENTER) cx += left / 2;
+        /* 0.19: the room shared out between them, or the row's text_align */
+        uint32_t space = row->box.flags & OL_BOX_SPACE_EVENLY;
+        if (space == OL_BOX_SPACE_EVENLY) {
+            spread = left / (n + 1);
+            cx += spread;
+        } else if (space == OL_BOX_SPACE_AROUND) {
+            spread = left / n;
+            cx += spread / 2;
+        } else if (space == OL_BOX_SPACE_BETWEEN) {
+            if (n > 1) spread = left / (n - 1);
+        } else if (row->style.text_align == OL_ALIGN_CENTER) cx += left / 2;
         else if (row->style.text_align == OL_ALIGN_END) cx += left;
     }
     {
@@ -2712,7 +2725,7 @@ static int layout_row(ol_document *doc, ol_node *row, ol_unit x, ol_unit y, ol_u
                 h = c->bounds.height + c->style.margin_top + c->style.margin_bottom;
                 if (fixed_h <= 0 && h > row_h) row_h = h;
             }
-            at += w + row->box.gap;
+            at += w + row->box.gap + spread;
         }
         if (pass) break;
         /* again when one is not as tall as the row, or must stand lower in it */
@@ -2924,7 +2937,7 @@ static int layout_children(ol_document *doc, ol_node *node, ol_inline_flow *flow
             ol_unit child_bottom, w, dx;
             size_t keeps_before;
             if (!flush_flow(flow, &current_y)) return 0;
-            if (blocks++) current_y += node->box.gap;
+            current_y += blocks++ ? node->box.gap + node->pack_spread : node->pack_lead;
             keeps_before = doc->keep_count;
             w = block_width(child, inner_w, &dx);      /* 0.9: its width asked for, and its auto margins */
             if (!layout_block_in(doc, child, inner_x + dx, current_y, w,
@@ -3114,6 +3127,36 @@ static int layout_block_at(ol_document *doc, ol_node *node,
             }
             for (child = node->first_child; child; child = child->next_sibling)
                 child->force_height = 0;
+        } else if (fixed_h > 0 && (node->box.flags & (OL_BOX_SPACE_EVENLY | OL_BOX_PACK_CENTRE | OL_BOX_PACK_END))) {
+            /* 0.19: a block taller than its children, none growing: the room left at its packing */
+            ol_unit end_y, left;
+            int n = 0, inline_child = 0;
+            if (!flush_flow(&flow, &end_y)) return 0;
+            if (end_y < current_y) end_y = current_y;
+            left = box_y + fixed_h - inset_bottom(node) - end_y;
+            for (child = node->first_child; child; child = child->next_sibling)
+                if (child->style.display != OL_DISPLAY_NONE && !is_frame(child)) {
+                    if (is_inline(child)) inline_child = 1;
+                    ++n;
+                }
+            if (left > 0 && n && !inline_child && !(node->text && node->text[0])) {
+                uint32_t space = node->box.flags & OL_BOX_SPACE_EVENLY;
+                if (space == OL_BOX_SPACE_EVENLY) node->pack_lead = node->pack_spread = left / (n + 1);
+                else if (space == OL_BOX_SPACE_AROUND) {
+                    node->pack_spread = left / n;
+                    node->pack_lead = node->pack_spread / 2;
+                } else if (space == OL_BOX_SPACE_BETWEEN) node->pack_spread = n > 1 ? left / (n - 1) : 0;
+                else if (node->box.flags & OL_BOX_PACK_CENTRE) node->pack_lead = left / 2;
+                else node->pack_lead = left;
+                mark_back(doc, &mark);
+                current_y = start_y;
+                start_flow(&flow, doc, node, measure, measure_userdata, inner_x, inner_x + inner_w,
+                           current_y, node->style.text_align, node->box.text_indent);
+                if (!layout_children(doc, node, &flow, inner_x, inner_w, &current_y,
+                                     measure, measure_userdata))
+                    return 0;
+                node->pack_lead = node->pack_spread = 0;
+            }
         }
         if (node->box.flags & OL_BOX_SAME_HEIGHT) {
             /* 0.18: every child as tall as the tallest, laid out again at that height */
