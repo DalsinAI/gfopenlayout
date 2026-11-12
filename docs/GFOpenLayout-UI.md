@@ -79,7 +79,7 @@ fills it.
 | `tab` | One page | `title` (its button), `value`, `selected` |
 | `progress` | A bar from 0 to `max` | `max` |
 | `slider` | A value from `min` to `max`, dragged or keyed: `OLUI_CHANGE` as it moves, the value in the event's `index` | `min`, `max`, `value` |
-| `img` | A picture's place in a line (in a button too): the program draws it | `image` (its number), `width`, `height` |
+| `img` | A picture's place in a line (in a button too): the program draws it | `image` (its number), `width`, `height`; CSS `width` and `height`, when given, size it instead (`olui_set_style` resizes it while the window is open) |
 
 Every tag takes `id` (how the program finds it and names its handlers),
 `class`, `style`, `disabled`, `hidden`, `title` (a tooltip, but for a

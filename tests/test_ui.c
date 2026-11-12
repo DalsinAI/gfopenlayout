@@ -143,6 +143,25 @@ static void read_value(olui *ui, const olui_event *ev, void *userdata)
 
 /* A handler takes away what it was called for: the code that called it, and the handlers
  * after it, are still using that. Run it under AddressSanitizer to see them. */
+/* an img is as big as its CSS width and height, which olui_set_style changes while it is open */
+static int test_img_css_size(void)
+{
+    char err[120];
+    olui *ui = olui_new();
+    olui_el *img;
+    olui_rect b;
+    CHECK(ui && olui_load(ui, "<div><img id=p image=1 width=20 height=10></div>", NULL, err, sizeof(err)) &&
+          olui_layout(ui, 300, 100));
+    img = olui_find(ui, "p");
+    CHECK(img && olui_box(ui, img, &b) && b.w == 20 && b.h == 10);
+    CHECK(olui_set_style(ui, img, "width:64px;height:48px"));
+    CHECK(olui_box(ui, img, &b) && b.w == 64 && b.h == 48);
+    CHECK(olui_set_style(ui, img, NULL));
+    CHECK(olui_box(ui, img, &b) && b.w == 20 && b.h == 10);
+    olui_free(ui);
+    return 0;
+}
+
 static int test_handlers_take_away(void)
 {
     char err[120];
@@ -1329,6 +1348,7 @@ int main(int argc, char **argv)
     const char *theme_path = getenv("OLUI_THEME_FILE");
 
     if (test_handlers_take_away()) return 20;
+    if (test_img_css_size()) return 20;
     CHECK(ui);
     olui_set_measure(ui, measure, NULL);
     if (theme_path) {
