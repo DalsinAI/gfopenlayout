@@ -192,9 +192,55 @@ static void test_speed(void)
     olui_free(ui);
 }
 
+/* justify-content's space modes share a row's spare room out between its children */
+static void test_row_space(void)
+{
+    static const char *const mode[4] = { "flex-start", "space-between", "space-around", "space-evenly" };
+    /* three boxes 40 px wide, no gap, in a window 300 px wide with 10 px of padding: 160 px to spare */
+    static const int at[4][3] = { { 10, 50, 90 }, { 10, 130, 250 }, { 37, 130, 223 }, { 50, 130, 210 } };
+    int k, i;
+    for (k = 0; k < 4; ++k) {
+        olui *ui = olui_new();
+        char err[128], m[400];
+        static const char *const id[3] = { "x", "y", "z" };
+        snprintf(m, sizeof m, "<row style='gap:0;justify-content:%s'><box id=x style='width:40px;height:10px'></box>"
+                 "<box id=y style='width:40px;height:10px'></box><box id=z style='width:40px;height:10px'></box></row>",
+                 mode[k]);
+        CHECK(ui && olui_load(ui, m, NULL, err, sizeof(err)));
+        olui_set_measure(ui, measure, NULL);
+        CHECK(olui_layout(ui, 300, 100));
+        for (i = 0; i < 3; ++i) {
+            olui_rect r;
+            CHECK(olui_box(ui, olui_find(ui, id[i]), &r) && r.x >= at[k][i] - 1 && r.x <= at[k][i] + 1 && r.w == 40);
+            if (r.x < at[k][i] - 1 || r.x > at[k][i] + 1) printf("  %s %s at %d\n", mode[k], id[i], (int)r.x);
+        }
+        olui_free(ui);
+    }
+    /* and down a column 200 px high: two boxes 20 px high, 160 px to spare, under 6 px of padding */
+    {
+        static const char *const cmode[6] = { "flex-start", "center", "flex-end", "space-between", "space-around",
+                                              "space-evenly" };
+        static const int cat[6][2] = { { 6, 26 }, { 86, 106 }, { 166, 186 }, { 6, 186 }, { 46, 146 }, { 59, 133 } };
+        for (k = 0; k < 6; ++k) {
+            olui *ui = olui_new();
+            char err[128], m[300];
+            olui_rect r1, r2;
+            snprintf(m, sizeof m, "<column style='height:200px;gap:0;justify-content:%s'>"
+                     "<box id=x style='height:20px'></box><box id=y style='height:20px'></box></column>", cmode[k]);
+            CHECK(ui && olui_load(ui, m, NULL, err, sizeof(err)));
+            olui_set_measure(ui, measure, NULL);
+            CHECK(olui_layout(ui, 300, 300));
+            CHECK(olui_box(ui, olui_find(ui, "x"), &r1) && olui_box(ui, olui_find(ui, "y"), &r2));
+            CHECK(r1.y >= cat[k][0] - 1 && r1.y <= cat[k][0] + 1 && r2.y >= cat[k][1] - 1 && r2.y <= cat[k][1] + 1);
+            olui_free(ui);
+        }
+    }
+}
+
 int main(void)
 {
     test_gains();
+    test_row_space();
     test_families();
     test_speed();
     printf("OLUI CSS %d checks, %d failed\n", checks, failed);

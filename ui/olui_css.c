@@ -499,8 +499,17 @@ static void from_computed(olui_sheet *s, const gfcss_computed *c, const olui_cs 
     case GFCSS_FLEX_END: cs->box.align = OL_CROSS_END; break;
     default: cs->box.align = OL_CROSS_STRETCH; break;
     }
-    /* a row's children with room to spare: GFOpenLayout puts them at the row's text_align */
+    /* a row's children with room to spare: GFOpenLayout puts them at the row's text_align, or
+     * shares the room out between them */
+    cs->box.flags &= ~(uint32_t)(OL_BOX_SPACE_EVENLY | OL_BOX_PACK_CENTRE | OL_BOX_PACK_END);
     if (gfcss_is_set(c, GFCSS_P_JUSTIFY_CONTENT)) {
+        /* a column's children down it, with room to spare */
+        if (cs->column && c->justify_content == GFCSS_FLEX_CENTER) cs->box.flags |= OL_BOX_PACK_CENTRE;
+        else if (cs->column && (c->justify_content == GFCSS_FLEX_END || c->justify_content == GFCSS_FLEX_RIGHT))
+            cs->box.flags |= OL_BOX_PACK_END;
+        if (c->justify_content == GFCSS_FLEX_SPACE_BETWEEN) cs->box.flags |= OL_BOX_SPACE_BETWEEN;
+        else if (c->justify_content == GFCSS_FLEX_SPACE_AROUND) cs->box.flags |= OL_BOX_SPACE_AROUND;
+        else if (c->justify_content == GFCSS_FLEX_SPACE_EVENLY) cs->box.flags |= OL_BOX_SPACE_EVENLY;
         if (c->justify_content == GFCSS_FLEX_CENTER) cs->ol.text_align = OL_ALIGN_CENTER;
         else if (c->justify_content == GFCSS_FLEX_END || c->justify_content == GFCSS_FLEX_RIGHT)
             cs->ol.text_align = OL_ALIGN_END;
