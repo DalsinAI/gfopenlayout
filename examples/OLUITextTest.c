@@ -156,6 +156,17 @@ int main(int argc, char **argv)
     TimerBase = tr.tr_node.io_Device;
     CyberGfxBase = OpenLibrary((STRPTR)"cybergraphics.library", 40);
 
+    {
+        /* the screen's font, which olui's windows are drawn in: an outline font here or not */
+        struct Screen *wb = LockPubScreen(NULL);
+        if (wb) {
+            olui_amiga_text_size size;
+            const char *name = (const char *)wb->Font->ta_Name;
+            int ok = olui_amiga_text_width(NULL, "x", 1, name, wb->Font->ta_YSize, 0, &size);
+            printf("SCREEN FONT %s %d OUTLINE %s\n", name, wb->Font->ta_YSize, ok ? "yes" : "no");
+            UnlockPubScreen(NULL, wb);
+        }
+    }
     if (!open_pane(&bm, "Bitmap text", 0, 1) || !open_pane(&aa, "Outline text", 430, 0)) goto out;
     /* the outline faces and glyphs are cached by now: both measured warm */
     time_pane(&bm, 1);
