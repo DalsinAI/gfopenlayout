@@ -84,6 +84,7 @@ static struct Library *OluiFontBase;
     const LONG *, (m), a1, of_bitmap *, (bm), a2, , OluiFontBase)
 #define OF_GETFACEMETRICS(f, m) LP2(0xae, LONG, OF_GetFaceMetrics, struct OFFace *, (f), a0, of_metrics *, (m), a1, , \
     OluiFontBase)
+#define OF_ADDFONTDIR(d) LP1(0x5a, LONG, OF_AddFontDir, CONST_STRPTR, (d), a0, , OluiFontBase)
 #define OF_GETFACEINFO(f, i) LP2(0x36, LONG, OF_GetFaceInfo, struct OFFace *, (f), a0, of_info *, (i), a1, , OluiFontBase)
 
 /* ---- cybergraphics.library ---- */
@@ -164,6 +165,24 @@ static void aa_release(void)
     ReleaseSemaphore(&aa_lock);
 }
 
+static int aa_dirs_added;
+
+/* with the lock: the folders of outline fonts in FONTS:, once */
+static void add_font_dirs(void)
+{
+    static const char *const dirs[] = { "FONTS:_ttf", "FONTS:_otf", "FONTS:_bullet_outlines", "FONTS:TrueType", NULL };
+    struct Task *me = FindTask(NULL);
+    int i;
+    if (aa_dirs_added || !OluiFontBase || me->tc_Node.ln_Type != NT_PROCESS) return;
+    aa_dirs_added = 1;
+    for (i = 0; dirs[i]; ++i) {
+        BPTR l = Lock((STRPTR)dirs[i], ACCESS_READ);
+        if (!l) continue;
+        UnLock(l);
+        OF_ADDFONTDIR((CONST_STRPTR)dirs[i]);
+    }
+}
+
 /* with the lock: gfopenfont.library 1.3 on and the cache, once */
 static int engine(void)
 {
@@ -188,6 +207,12 @@ static int engine(void)
         OluiFontBase = NULL;
         return 0;
     }
+    /* gfopenfont.library indexes FONTS: itself but not the folders in it,
+     * where an Amiga keeps its outline fonts (FONTS:_ttf/DejaVuSans.ttf,
+     * beside the .otag bullet.library reads): those too, for this library's
+     * life. From a process (the index is read there); else the first
+     * process to draw text adds them. */
+    add_font_dirs();
     return 1;
 }
 
@@ -221,6 +246,7 @@ void olui_aa_cleanup(void)
     if (OluiCgxBase) CloseLibrary(OluiCgxBase);
     OluiFontBase = OluiCgxBase = NULL;
     aa_tried = 0;
+    aa_dirs_added = 0;
     aa_release();
 }
 
@@ -246,6 +272,7 @@ static struct OFFace *find_family(const char *family, unsigned style)
     struct OFFace *f;
     struct Task *me = FindTask(NULL);
     if (me->tc_Node.ln_Type != NT_PROCESS) return NULL;    /* the font index is read from a process */
+    add_font_dirs();
     while (family[n] && n + 1 < sizeof(name)) { name[n] = family[n]; ++n; }
     name[n] = 0;
     if (n > 5 && !strcmp(name + n - 5, ".font")) name[n -= 5] = 0;
