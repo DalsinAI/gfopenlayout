@@ -261,14 +261,16 @@ static int is_generic(const char *s)
 }
 
 /* a family by its name, as the theme (an Amiga font's file, "DejaVuSans.font")
- * or CSS ("DejaVu Sans", "sans-serif") gives it: the name, then its words
- * split where a capital follows a small letter ("DejaVuSans" is "DejaVu
- * Sans"); only the generic families take the nearest face */
+ * or CSS ("DejaVu Sans", "sans-serif") gives it: the name, then with spaces
+ * put back where a capital follows a small letter, in every combination
+ * ("DejaVuSans" is "DejaVu Sans", not "Deja Vu Sans"; four places at most);
+ * only the generic families take the nearest face */
 static struct OFFace *find_family(const char *family, unsigned style)
 {
     struct TagItem tags[5];
     char name[48], split[64];
-    size_t n = 0, i, k = 0;
+    int at[4], nat = 0, combo;
+    size_t n = 0, i, k;
     struct OFFace *f;
     struct Task *me = FindTask(NULL);
     if (me->tc_Node.ln_Type != NT_PROCESS) return NULL;    /* the font index is read from a process */
@@ -287,12 +289,27 @@ static struct OFFace *find_family(const char *family, unsigned style)
     tags[3].ti_Data = 1;
     tags[4].ti_Tag = TAG_END;
     if ((f = OF_FINDFACEA((CONST_STRPTR)name, tags)) != NULL) return f;
-    for (i = 0; name[i] && k + 2 < sizeof(split); ++i) {
-        if (i && name[i] >= 'A' && name[i] <= 'Z' && name[i - 1] >= 'a' && name[i - 1] <= 'z') split[k++] = ' ';
-        split[k++] = name[i];
+    for (i = 1; name[i] && nat < 4; ++i)
+        if (name[i] >= 'A' && name[i] <= 'Z' && name[i - 1] >= 'a' && name[i - 1] <= 'z') at[nat++] = (int)i;
+    /* the fewest spaces first: "DejaVu Sans" before "Deja Vu Sans" */
+    {
+        int want;
+        for (want = 1; want <= nat; ++want)
+            for (combo = 1; combo < (1 << nat); ++combo) {
+                int bits = 0, b, j = 0;
+                for (b = 0; b < nat; ++b) bits += (combo >> b) & 1;
+                if (bits != want) continue;
+                for (i = 0, k = 0; name[i] && k + 2 < sizeof(split); ++i) {
+                    if (j < nat && (int)i == at[j]) {
+                        if ((combo >> j) & 1) split[k++] = ' ';
+                        ++j;
+                    }
+                    split[k++] = name[i];
+                }
+                split[k] = 0;
+                if ((f = OF_FINDFACEA((CONST_STRPTR)split, tags)) != NULL) return f;
+            }
     }
-    split[k] = 0;
-    if (k != n) return OF_FINDFACEA((CONST_STRPTR)split, tags);
     return NULL;
 }
 
