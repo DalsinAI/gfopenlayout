@@ -99,9 +99,10 @@ static struct Library *OluiCgxBase;
 #endif
 
 /* ---- the cache ---- */
-#define AA_FACES 8
-#define AA_GLYPHS 128           /* a face's glyphs, by hash */
-#define AA_RUNS 48              /* shaped runs, for measuring and drawing them again */
+#define AA_FACES 16
+#define AA_GLYPHS 256           /* a face's glyphs, by hash */
+#define AA_RUNS 128             /* shaped runs, for measuring and drawing them again */
+#define AA_WAYS 4               /* in sets of four, by the text's hash */
 #define AA_RUN_BYTES 64         /* longer runs are shaped each time */
 #define AA_RUN_GLYPHS 64
 
@@ -448,8 +449,9 @@ static const aa_run *shape(aa_face *f, const char *s, size_t n, aa_run **own)
     int x = 0;
     *own = NULL;
     if (n <= AA_RUN_BYTES) {
-        for (i = 0; i < AA_RUNS; ++i) {
-            aa_run *c = &aa_runs[i];
+        aa_run *set = &aa_runs[(h ^ ((ULONG)f >> 4)) % (AA_RUNS / AA_WAYS) * AA_WAYS];
+        for (i = 0; i < AA_WAYS; ++i) {
+            aa_run *c = &set[i];
             if (c->face == f && c->hash == h && c->bytes == n && !memcmp(c->text, s, n)) {
                 c->used = ++aa_clock;
                 return c;
