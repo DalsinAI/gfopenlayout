@@ -24,7 +24,7 @@ static int count(struct RastPort *rp, int x0, int y0, int w, int h, LONG pen)
 {
     int x, y, n = 0;
     for (y = y0; y < y0 + h; y++)
-        for (x = x0; x < x0 + w; x++) n += ReadPixel(rp, x, y) == pen;
+        for (x = x0; x < x0 + w; x++) n += (LONG)ReadPixel(rp, x, y) == pen;
     return n;
 }
 
@@ -57,7 +57,7 @@ int main(void)
         oldraw_fill(d, &r, OLDRAW_PEN(OLDRAW_PEN_SHINE));
         oldraw_free(d);
     }
-    fill = ReadPixel(&rp, 4, 2);
+    fill = (LONG)ReadPixel(&rp, 4, 2);
     CHECK(fill != BG);
     CHECK(count(&rp, 4, 2, 10, 5, fill) == 50);
     CHECK(count(&rp, 0, 0, W, H, BG) == W * H - 50);
