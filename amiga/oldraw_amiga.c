@@ -305,20 +305,19 @@ static int a_text(void *tp, int x, int y, const char *s, size_t n, const oldraw_
 
 static void a_flush(void *tp) { (void)tp; }
 
-/* any part of x,y w by h hidden with no backing store (a simple-refresh layer's obscured ClipRects): its pixels
- * can't be read */
+/* any part of x,y w by h hidden with no backing store: in a simple-refresh layer, under a layer in front of it
+ * (Layer's front list and bounds are public; its ClipRects' own fields are not) */
 static int hidden_in(struct Layer *l, int x, int y, int w, int h)
 {
-    struct ClipRect *cr;
+    struct Layer *f;
     LONG x0, y0, x1, y1;
     if (!l || !(l->Flags & LAYERSIMPLE)) return 0;
     x0 = l->bounds.MinX + x;
     y0 = l->bounds.MinY + y;
     x1 = x0 + w - 1;
     y1 = y0 + h - 1;
-    for (cr = l->ClipRect; cr; cr = cr->Next)
-        if (cr->lobs && cr->bounds.MinX <= x1 && cr->bounds.MaxX >= x0 && cr->bounds.MinY <= y1 && cr->bounds.MaxY >= y0)
-            return 1;
+    for (f = l->front; f; f = f->front)
+        if (f->bounds.MinX <= x1 && f->bounds.MaxX >= x0 && f->bounds.MinY <= y1 && f->bounds.MaxY >= y0) return 1;
     return 0;
 }
 
@@ -329,6 +328,8 @@ static int a_copy(void *tp, int sx, int sy, int dx, int dy, int w, int h)
     amiga_target *t = (amiga_target *)tp;
     struct Layer *l = t->rp->Layer;
     int hidden;
+    /* layers.library locks every layer an arrangement moves, so with ours locked its front list stays put while we
+     * look and copy (and the layer lock nests, as ClipBlit takes it too) */
     if (l) LockLayer(0, l);
     hidden = hidden_in(l, sx, sy, w, h);
     if (!hidden) ClipBlit(t->rp, sx, sy, t->rp, dx, dy, w, h, 0xC0);
