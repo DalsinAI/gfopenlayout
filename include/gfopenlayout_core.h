@@ -170,10 +170,58 @@ void olc_layer_look(olc_layer *l, uint32_t what, uint32_t value);
  * scene it does nothing and answers 0. */
 int olc_compose(olc_scene *sc, const olc_region *damage);
 
-/* Acceleration, attached once boards and RTG are up (never at boot); until then the CPU does it all. ops is the
- * GFOpenGPU or AC090 native back end's table (row N1), which stays the caller's. 0 when the core takes it. */
-typedef struct olc_accel olc_accel;
+/* Acceleration: a back end (row N1: GFOpenGPU, AC090 native) attached once boards and RTG are up, never at boot;
+ * until then, and whenever a call answers no, the CPU does it all.
+ *
+ * Ownership:
+ *   - The core owns surfaces and their CPU pixels, which stay the master copy. The back end only ever copies them
+ *     towards the GPU (bind, upload); nothing is read back.
+ *   - The back end owns what it makes from a surface (a texture, a slot), keyed by the slot bind gave. Before a
+ *     surface is freed the core calls forget(slot), and frees the CPU pixels only once fence_done says the last
+ *     fence that named it has passed.
+ *   - A batch is the back end's from begin until submit or abort.
+ * Calls: one compose is begin, then bind and upload for each surface it shows, clip with the damage, the fills,
+ * copies and composites back to front, then one submit giving one fence. All of it runs under the compositor's
+ * lock (number 5 of the lock order): a back end takes none of locks 1 to 5, and none of its calls waits (no fence
+ * wait, no DOS, no ramlib). Boxes are the screen's, both corners inside, already cut to the screen. */
+#define OLC_ACCEL_VERSION 1
+typedef struct olc_accel {
+    uint32_t version;           /* OLC_ACCEL_VERSION */
+    void *ctx;                  /* the back end's, given to every call */
+    /* A compose on screen (struct BitMap *), w by h: a batch, or NULL for the CPU to do this one. */
+    void *(*begin)(void *ctx, void *screen, int32_t w, int32_t h);
+    /* The surface's pixels (fmt, w by h, bytes_per_row) named in this batch; *slot gets its slot, the same one for
+     * the same surface until forget. 0, or -1: the CPU does this compose (the core calls abort). */
+    int (*bind)(void *ctx, void *batch, const void *pixels, int32_t bytes_per_row, int32_t w, int32_t h, uint32_t fmt,
+                uint32_t *slot);
+    /* What changed in the surface since it was last uploaded (the surface's own coordinates), CPU to GPU */
+    int (*upload)(void *ctx, void *batch, uint32_t slot, const olc_box *boxes, int32_t n);
+    /* What this compose may touch: the damage. Nothing outside it is drawn. */
+    int (*clip)(void *ctx, void *batch, const olc_box *boxes, int32_t n);
+    /* What no layer covers: c (0xFFrrggbb, or a pen of the screen) */
+    int (*fill)(void *ctx, void *batch, const olc_box *b, olc_colour c);
+    /* An opaque layer's part: slot's src at dx, dy on the screen */
+    int (*copy)(void *ctx, void *batch, uint32_t slot, const olc_box *src, int32_t dx, int32_t dy);
+    /* A see-through one: opacity 0 to 255, times the surface's own alpha when it is ARGB32 */
+    int (*composite)(void *ctx, void *batch, uint32_t slot, const olc_box *src, int32_t dx, int32_t dy,
+                     uint32_t opacity);
+    /* The batch handed over, without waiting: *fence gets its one fence. 0, or -1 (the batch is gone and the
+     * compose is done by the CPU). */
+    int (*submit)(void *ctx, void *batch, uint32_t *fence);
+    /* The batch dropped, nothing drawn */
+    void (*abort)(void *ctx, void *batch);
+    /* Whether a fence has passed: a look, never a wait */
+    int (*fence_done)(void *ctx, uint32_t fence);
+    /* A slot no longer used: the surface is going */
+    void (*forget)(void *ctx, uint32_t slot);
+    /* The back end is going (olc_accel_detach): everything of the core's it holds is let go */
+    void (*detach)(void *ctx);
+} olc_accel;
+/* ops stays the caller's until olc_accel_detach. 0 when the core takes it; -1 when one is attached already or the
+ * version is not one the core knows. Never called at boot: olc_init's ROM code calls neither. */
 int olc_accel_attach(const olc_accel *ops);
+/* Back to the CPU: waits for nothing, calls ops->detach. */
+void olc_accel_detach(void);
 
 /* ---- 5. text ---- */
 typedef struct olc_face olc_face;

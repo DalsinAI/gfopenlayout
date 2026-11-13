@@ -1,5 +1,5 @@
 /* gfopenlayout_core.h, the ROM core's API (wave 2 review rule 2): the header stands alone in C89, C99 and C++,
- * the openintuition hook table has exactly its 18 entries in openintuition's order, functions with
+ * the openintuition hook table has exactly its 18 entries in openintuition's order, the back end table its 12, functions with
  * openintuition's hook shapes go into it as they are, and pens never look like colours.
  * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfopenlayout_core.h"
@@ -88,6 +88,21 @@ int main(void)
         for (i = 0; i < OLC_OI_HOOKS; i++) CHECK(p[i] != 0);
     }
     CHECK(t.text_length(0, 0, 0, "abc", 3) == 24);
+
+    /* the back end's table: a version, its context, then twelve calls in this order (ABI) */
+    {
+        static const size_t ac[] = {
+            offsetof(olc_accel, begin), offsetof(olc_accel, bind), offsetof(olc_accel, upload),
+            offsetof(olc_accel, clip), offsetof(olc_accel, fill), offsetof(olc_accel, copy),
+            offsetof(olc_accel, composite), offsetof(olc_accel, submit), offsetof(olc_accel, abort),
+            offsetof(olc_accel, fence_done), offsetof(olc_accel, forget), offsetof(olc_accel, detach)
+        };
+        size_t first = offsetof(olc_accel, begin);
+        CHECK(offsetof(olc_accel, version) == 0 && offsetof(olc_accel, ctx) < first);
+        for (i = 0; i < 12; i++) CHECK(ac[i] == first + (size_t)i * sizeof(void (*)(void)));
+        CHECK(sizeof(olc_accel) == first + 12 * sizeof(void (*)(void)));
+        CHECK(OLC_ACCEL_VERSION == 1);
+    }
 
     /* pens and colours */
     CHECK(OLC_IS_PEN(OLC_PEN(0)) && OLC_IS_PEN(OLC_PEN(255)));
