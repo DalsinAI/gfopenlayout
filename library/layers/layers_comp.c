@@ -1269,9 +1269,10 @@ static int oc_prefs(struct OComp *c)
  * infolock is a leaf, and opening a library can go through ramlib and DOS,
  * whose requester needs the screen's Layer_Info, while begin() holds a
  * Layer_Info and its layers and takes infolock. So the libraries are opened
- * under no lock at all; only publishing olb->cb takes infolock, and a task
- * that finds another's there closes its own copy
- * (tests/host-comp/test_infolock.c). */
+ * under no lock at all, and the state is published under Forbid, which
+ * waits for nothing (AddTask doesn't): the task added, then olb->cb, so
+ * whoever sees olb->cb finds its task already an Exec task. A task that
+ * finds another's there closes its own copy (tests/host-comp/test_infolock.c). */
 static struct OCB *oc_cb(struct ol_base *olb)
 {
     struct OCB *cb, *have = 0;
@@ -1294,12 +1295,12 @@ static struct OCB *oc_cb(struct ol_base *olb)
         t->tc_SPReg = stack + OC_STACK;
         t->tc_UserData = cb;
         cb->task = t;
-        ObtainSemaphore(&olb->infolock);
+        Forbid();
         if (!(have = olb->cb)) {
+            AddTask(t, (APTR)oc_task, 0);   /* never waits; it runs at Permit */
             olb->cb = cb;
-            AddTask(t, (APTR)oc_task, 0);   /* never waits */
         }
-        ReleaseSemaphore(&olb->infolock);
+        Permit();
         if (!have) return cb;
         FreeMem(t, sizeof *t + OC_STACK);   /* another task's came first: ours goes */
     }

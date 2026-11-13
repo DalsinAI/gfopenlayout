@@ -22,7 +22,7 @@ sed 's/struct Library { char pad\[24\]; APTR lib_IdString; };/struct Library { c
   "$GFX/tests/abihost/shim.h" > "$tmp/shim.h"
 grep -q lib_Revision "$tmp/shim.h" || { echo "FAIL: abihost/shim.h's struct Library has changed" >&2; exit 1; }
 # shellcheck disable=SC2086
-$cc -O1 -g -w \
+$cc -O1 -g -w -Werror=implicit-function-declaration \
   -fsanitize=address,undefined -fno-sanitize-recover=all -DOL_COMPOSITE \
   -I"$here/inc" -I"$GFX/tests/abihost/inc" -I"$GFX/tests/host-ndk" -I"$GFX/tests/m68k/text-ndk" -I"$GFX/include" \
   -I"$GFX/library/layers" -I"$COMP" -include "$tmp/shim.h" -include "$here/comp_host.h" \

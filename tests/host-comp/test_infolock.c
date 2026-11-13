@@ -21,7 +21,9 @@
  *   2. race: task 2 starts the compositor itself, to the end; task 1 must
  *      then keep task 2's state, close the libraries it opened and free its
  *      task, and only one compositor task is ever added;
- *   3. cost: once the compositor is there, a ComposeLayerInfo takes infolock
+ *   3. publication: olb->cb is never seen before its compositor task has
+ *      been added (a switch at AddTask, or at Permit);
+ *   4. cost: once the compositor is there, a ComposeLayerInfo takes infolock
  *      only for its record (info_of), not again round oc_cb.
  * Copyright (c) 2026 AmiCradle Team. MIT. */
 #include <stdio.h>
@@ -78,9 +80,30 @@ APTR AllocMem(ULONG size, ULONG flags)
 }
 void FreeMem(APTR p, ULONG size) { (void)size; if (p) allocs--; free(p); }
 
+/* Forbid: no task switch until Permit. A switch point outside it lets an
+ * observer (task 2) look at olb->cb: whatever it finds there must already
+ * have its compositor task added, or a Signal to that task would go to a
+ * task exec doesn't know. */
 static struct Task *added;
-static int adds;
-APTR AddTask(struct Task *t, APTR pc, APTR end) { (void)pc; (void)end; added = t; adds++; return t; }
+static int adds, forbid, published_early, observing;
+static void observe(void)
+{
+    if (!observing || forbid) return;
+    if (olb.cb && !(added && added->tc_UserData == (APTR)olb.cb)) {
+        printf("  task 2 sees olb->cb before its task is added\n");
+        published_early++;
+    }
+}
+void Forbid(void) { forbid++; }
+void Permit(void) { if (--forbid < 0) { printf("FAIL: Permit without Forbid\n"); exit(20); } observe(); }
+APTR AddTask(struct Task *t, APTR pc, APTR end)
+{
+    (void)pc; (void)end;
+    observe();                          /* AddTask is a switch point unless under Forbid */
+    added = t;
+    adds++;
+    return t;
+}
 
 /* ---- libraries: OpenLibrary is ramlib, and what it lets run meanwhile -- */
 
@@ -116,8 +139,6 @@ void CloseLibrary(struct Library *l) { if (l) closed++; }
 ULONG ORTG_BitMapInfo(struct BitMap *bm, struct OpenRTGBitMapInfo *bi) { (void)bm; (void)bi; return 0; }
 
 static void never(const char *what) { printf("FAIL: %s called\n", what); exit(20); }
-void Forbid(void) {}
-void Permit(void) {}
 void CacheClearU(void) {}
 APTR SetFunction(struct Library *l, LONG lvo, APTR f) { (void)l; (void)lvo; (void)f; never("SetFunction"); return 0; }
 struct MsgPort *CreateMsgPort(void) { return 0; }
@@ -163,7 +184,7 @@ static void reset(void)
     memset(&li1, 0, sizeof li1);
     memset(&li2, 0, sizeof li2);
     for (i = 0; i < 3; i++) tasks[i].pr_Task.tc_Node.ln_Type = NT_PROCESS;
-    waits = under_infolock = opened = closed = adds = infolock_obtains = 0;
+    waits = under_infolock = opened = closed = adds = infolock_obtains = forbid = published_early = observing = 0;
     added = 0;
 }
 
@@ -212,6 +233,19 @@ static void test_race(void)
     CHECK(ol_ComposeLayerInfo(&olb, &li1, &bm, LAYERS_COMPOSE_ON) == FALSE && (APTR)olb.cb == mine && adds == 1);
 }
 
+/* publication: a task switch at AddTask (outside Forbid) or after it must
+ * never show olb->cb without its task added */
+static void test_publish(void)
+{
+    reset();
+    observing = 1;
+    ol_ComposeLayerInfo(&olb, &li1, &bm, LAYERS_COMPOSE_ON);
+    observing = 0;
+    CHECK(olb.cb != 0 && adds == 1);
+    CHECK(published_early == 0);
+    CHECK(forbid == 0);
+}
+
 static void test_cost(void)
 {
     reset();
@@ -225,6 +259,7 @@ int main(void)
 {
     test_deadlock();
     test_race();
+    test_publish();
     test_cost();
     if (fails) { printf("test_infolock: %d failed\n", fails); return 1; }
     printf("test_infolock: ok\n");

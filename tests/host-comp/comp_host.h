@@ -57,6 +57,9 @@ ULONG Wait(ULONG sigs);
 BPTR Open(CONST_STRPTR name, LONG mode);
 LONG Close(BPTR fh);
 LONG Read(BPTR fh, APTR buf, LONG len);
+APTR CreateIORequest(struct MsgPort *port, ULONG size);
+void DeleteIORequest(APTR io);
+void WaitTOF(void);
 
 /* GFOpenGPU */
 #define OPENGPU_NAME "gfopengpu.library"
