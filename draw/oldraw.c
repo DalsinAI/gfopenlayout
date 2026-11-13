@@ -473,7 +473,10 @@ size_t oldraw_text_box(oldraw *d, const oldraw_rect *r, const char *utf8, size_t
         while (a < b) {
             int mid = (a + b + 1) / 2;
             oldraw_text_size m;
-            if (oldraw_text_measure(d, utf8, starts[mid], font, style, &m) && m.width + e.width <= r->w) a = mid;
+            /* the search's probes go to the target uncached: each is measured once and would only push out
+             * entries that come round again */
+            memset(&m, 0, sizeof m);
+            if (d->ops->measure(d->target, utf8, starts[mid], font, &m) && m.width + e.width <= r->w) a = mid;
             else b = mid - 1;
         }
         lo = a >= 0 ? starts[a] : 0;
