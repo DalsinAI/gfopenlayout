@@ -28,7 +28,7 @@ GTK_HDR = gtk/include/glib.h gtk/include/gtk/gtk.h gtk/include/gtk/gtkc.h gtk/in
           gtk/include/gdk/gdkkeysyms.h gtk/gtkc_internal.h
 
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui \
-     $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk
+     $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_core_api
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -78,7 +78,7 @@ $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
 test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
-      $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk
+      $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_core_api
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
@@ -90,7 +90,15 @@ test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/te
 	./$(BUILD)/test_ui_css
 	./$(BUILD)/test_desktop
 	./$(BUILD)/test_gtk
+	./$(BUILD)/test_core_api
 	python3 tools/gen-library.py --check
+
+# The ROM core's API (gfopenlayout_core.h, wave 2 review rule 2): the header alone in C89 and C99, and in C++
+$(BUILD)/test_core_api: tests/test_core_api.c include/gfopenlayout_core.h | $(BUILD)
+	$(CC) -std=c89 -pedantic -Wall -Wextra -Werror -Iinclude -fsyntax-only tests/test_core_api.c
+	if command -v c++ >/dev/null; then printf '#include "gfopenlayout_core.h"\nint main(){return olc_oi()!=0;}\n' | \
+	  c++ -x c++ -Wall -Wextra -Werror -Iinclude -fsyntax-only -; fi
+	$(CC) $(CFLAGS) -std=c99 -pedantic -Wall -Wextra -Werror -Iinclude tests/test_core_api.c -o $@
 
 clean:
 	rm -rf $(BUILD)
