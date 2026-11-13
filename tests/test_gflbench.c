@@ -34,7 +34,7 @@ static int f_text(void *t, int x, int y, const char *s, size_t n, const oldraw_f
     return 1;
 }
 static void f_flush(void *t) { (void)t; ++flushes; }
-static const oldraw_ops fops = { f_fill, f_invert, f_image, f_text, f_measure, f_flush, NULL };
+static const oldraw_ops fops = { f_fill, f_invert, f_image, f_text, f_measure, f_flush, NULL, NULL };
 
 static uint64_t f_now(void *u) { (void)u; return clock_ticks; }
 static void f_sync(void *u) { (void)u; ++syncs; }

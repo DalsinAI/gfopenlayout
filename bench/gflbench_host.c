@@ -78,16 +78,16 @@ static int h_text(void *t, int x, int y, const char *s, size_t n, const oldraw_f
     (void)st;
     for (k = 0; k < n; ++k)
         for (j = y - 7; j < y + 2; ++j) {
-            if (j < clip->y || j >= clip->y + clip->h) continue;
+            if (clip && (j < clip->y || j >= clip->y + clip->h)) continue;
             for (i = x + (int)k * 6; i < x + (int)k * 6 + 5; ++i)
-                if (i >= clip->x && i < clip->x + clip->w) px[(size_t)j * GFLBENCH_CANVAS_W + i] = v;
+                if (!clip || (i >= clip->x && i < clip->x + clip->w)) px[(size_t)j * GFLBENCH_CANVAS_W + i] = v;
         }
     return 1;
 }
 
 static void h_flush(void *t) { (void)t; }
 
-static const oldraw_ops host_ops = { h_fill, h_invert, h_image, h_text, h_measure, h_flush, NULL };
+static const oldraw_ops host_ops = { h_fill, h_invert, h_image, h_text, h_measure, h_flush, NULL, NULL };
 
 static uint64_t h_now(void *u)
 {
