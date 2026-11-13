@@ -194,7 +194,7 @@ typedef struct olc_accel {
     /* A compose on screen (struct BitMap *), w by h: a batch, or NULL for the CPU to do this one. */
     void *(*begin)(void *ctx, void *screen, int32_t w, int32_t h);
     /* The surface's pixels (fmt, w by h, bytes_per_row) named in this batch; *slot gets its slot, the same one for
-     * the same surface until forget. 0, or -1: the CPU does this compose (the core calls abort). */
+     * the same surface until retire. 0, or -1: the CPU does this compose (the core calls abort). */
     int (*bind)(void *ctx, void *batch, const void *pixels, int32_t bytes_per_row, int32_t w, int32_t h, uint32_t fmt,
                 uint32_t *slot);
     /* What changed in the surface since it was last uploaded (the surface's own coordinates), CPU to GPU */
