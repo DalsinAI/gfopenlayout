@@ -1,6 +1,6 @@
 /* GFOpenLayout drawing's Amiga target: oldraw_ops on a RastPort. The only place wave 1's drawing reaches
  * graphics.library, layers.library, cybergraphics.library and icon.library. Wave 1 draws each call as it comes
- * (RectFill, FillPixelArray, WritePixelArray, Text, DrawIconStateA); the caches and the AC090 and GFOpenGPU hooks
+ * (RectFill, FillPixelArray, WritePixelArray, ClipBlit, Text, DrawIconStateA); the caches and the AC090 and GFOpenGPU hooks
  * come in behind these same calls in wave 2.
  * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "oldraw_internal.h"
@@ -289,9 +289,16 @@ static int a_text(void *tp, int x, int y, const char *s, size_t n, const oldraw_
 
 static void a_flush(void *tp) { (void)tp; }
 
+/* ClipBlit copies overlapping areas of one RastPort the right way round (BltBitMap's own order) */
+static void a_copy(void *tp, int sx, int sy, int dx, int dy, int w, int h)
+{
+    amiga_target *t = (amiga_target *)tp;
+    ClipBlit(t->rp, sx, sy, t->rp, dx, dy, w, h, 0xC0);
+}
+
 static void a_image_free(void *tp, oldraw_image *img) { (void)tp; (void)img; }
 
-static const oldraw_ops amiga_ops = { a_fill, a_invert, a_image, a_text, a_measure, a_flush, a_image_free };
+static const oldraw_ops amiga_ops = { a_fill, a_invert, a_image, a_text, a_measure, a_flush, a_image_free, a_copy };
 
 static void read_pens(amiga_target *t)
 {

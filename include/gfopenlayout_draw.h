@@ -110,6 +110,9 @@ typedef struct oldraw_ops {
     void (*flush)(void *target);
     /* free the target's side of an image (may be NULL) */
     void (*image_free)(void *target, oldraw_image *img);
+    /* the target's own pixels w by h at sx,sy copied to dx,dy, as memmove copies (the two may overlap); both are
+     * inside the target and the clip */
+    void (*copy)(void *target, int sx, int sy, int dx, int dy, int w, int h);
 } oldraw_ops;
 /* An oldraw on any target. pens: the colour of each OLDRAW_PEN role as 0xFFRRGGBB (NULL: grey 3.2.3 ones). */
 oldraw *oldraw_new(const oldraw_ops *ops, void *target, int width, int height, const oldraw_colour *pens);
@@ -135,6 +138,16 @@ int oldraw_redraw(oldraw *d, oldraw_redraw_fn fn, void *userdata);
 void oldraw_clip(oldraw *d, const oldraw_rect *r);
 /* What is drawn goes to the screen now (outside oldraw_redraw: after a selection box moves). */
 void oldraw_flush(oldraw *d);
+
+/* ---- copy and scroll ---- */
+/* The pixels of src copied to dx,dy on the same target, as memmove copies, so the two may overlap (a drawer's
+ * rows moved up). The source and the destination are cut together: what is copied is what both the source (cut to
+ * the target) and the destination (cut to the target and the clip) cover. Where the destination's source was off
+ * the target, nothing is copied and that part is damaged (oldraw_damage), for the next oldraw_redraw to draw. */
+void oldraw_copy(oldraw *d, const oldraw_rect *src, int dx, int dy);
+/* What is in area moved by ddx, ddy inside it (ddy below 0: up, as a list scrolled down a row); the strip it
+ * leaves is damaged. A move as big as the area or bigger damages it all and copies nothing. */
+void oldraw_scroll(oldraw *d, const oldraw_rect *area, int ddx, int ddy);
 
 /* ---- boxes ---- */
 void oldraw_fill(oldraw *d, const oldraw_rect *r, oldraw_colour c);

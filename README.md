@@ -386,6 +386,9 @@ through `include/gfopenlayout_draw.h`:
   takes it off;
 - **progress bar**: `oldraw_progress`, with a percentage that changes pen where the bar ends;
 - **pie segment**: `oldraw_pie`, in tenths of a degree from the top, clockwise;
+- **copy and scroll**: `oldraw_copy` (memmove-style, so the source and destination may overlap,
+  both cut together) and `oldraw_scroll`, which moves an area's contents and damages the strip it
+  leaves, so a scrolled drawer redraws only its new rows and a GPU target never reads pixels back;
 - `oldraw_fill` and `oldraw_frame` for plain boxes and bevels.
 
 `oldraw_ops` is what a target does: the Amiga one is `amiga/oldraw_amiga.c`, and the host test's is

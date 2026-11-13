@@ -84,7 +84,22 @@ static int t_text(void *t, int x, int y, const char *s, size_t n, const oldraw_f
 
 static void t_flush(void *t) { (void)t; ++flushes; }
 
-static const oldraw_ops ops = { t_fill, t_invert, t_image, t_text, t_measure, t_flush, NULL };
+static void t_copy(void *t, int sx, int sy, int dx, int dy, int w, int h)
+{
+    static uint32_t tmp[H][W];
+    int i, j;
+    (void)t;
+    for (j = 0; j < h; ++j)
+        for (i = 0; i < w; ++i) {
+            if (sx + i < 0 || sy + j < 0 || sx + i >= W || sy + j >= H || dx + i < 0 || dy + j < 0 || dx + i >= W ||
+                dy + j >= H) { ++fails; printf("FAIL copy outside the target\n"); return; }
+            tmp[j][i] = px[sy + j][sx + i];
+        }
+    for (j = 0; j < h; ++j)
+        for (i = 0; i < w; ++i) px[dy + j][dx + i] = tmp[j][i];
+}
+
+static const oldraw_ops ops = { t_fill, t_invert, t_image, t_text, t_measure, t_flush, NULL, t_copy };
 
 static void clear(uint32_t v)
 {
@@ -418,6 +433,88 @@ static void test_pie(oldraw *d)
     CHECK(count_not(0, 0, 30, H, BG) == 1 || count_not(0, 0, 30, H, BG) == 0);  /* left of centre: at most its column */
 }
 
+/* a picture whose every pixel says where it is */
+static void stamp(void)
+{
+    int i, j;
+    for (j = 0; j < H; ++j)
+        for (i = 0; i < W; ++i) px[j][i] = (uint32_t)(j << 8 | i);
+}
+
+static int is_from(int x, int y, int fx, int fy) { return px[y][x] == (uint32_t)(fy << 8 | fx); }
+
+static void test_copy_scroll(oldraw *d)
+{
+    oldraw_rect src = { 4, 4, 10, 6 }, got, c = { 0, 0, 20, 48 }, edge = { W - 4, 0, 8, 4 }, area = { 0, 10, 30, 20 };
+    int ok, i, j;
+    /* apart */
+    stamp();
+    oldraw_copy(d, &src, 30, 20);
+    CHECK(is_from(30, 20, 4, 4) && is_from(39, 25, 13, 9));
+    CHECK(is_from(29, 20, 29, 20) && is_from(40, 20, 40, 20) && is_from(30, 26, 30, 26));
+    CHECK(oldraw_damage_count(d) == 0);
+    /* overlapping, right and down by a little: as memmove, every pixel from where it was */
+    stamp();
+    oldraw_copy(d, &src, 7, 6);
+    ok = 1;
+    for (j = 0; j < 6; ++j)
+        for (i = 0; i < 10; ++i) if (!is_from(7 + i, 6 + j, 4 + i, 4 + j)) ok = 0;
+    CHECK(ok);
+    /* and left and up */
+    stamp();
+    oldraw_copy(d, &src, 1, 2);
+    ok = 1;
+    for (j = 0; j < 6; ++j)
+        for (i = 0; i < 10; ++i) if (!is_from(1 + i, 2 + j, 4 + i, 4 + j)) ok = 0;
+    CHECK(ok);
+    /* the destination cut by the clip: the source cut with it */
+    stamp();
+    oldraw_clip(d, &c);
+    oldraw_copy(d, &src, 15, 30);
+    oldraw_clip(d, NULL);
+    CHECK(is_from(15, 30, 4, 4) && is_from(19, 30, 8, 4) && is_from(20, 30, 20, 30));
+    CHECK(oldraw_damage_count(d) == 0);
+    /* a source half off the target: the half that has one copied, the other half damaged */
+    stamp();
+    oldraw_copy(d, &edge, 10, 30);
+    CHECK(is_from(10, 30, W - 4, 0) && is_from(13, 33, W - 1, 3));
+    CHECK(is_from(14, 30, 14, 30));                 /* not copied */
+    CHECK(oldraw_damage_count(d) == 1 && oldraw_damage_get(d, 0, &got) && got.x == 14 && got.y == 30 && got.w == 4 &&
+          got.h == 4);
+    oldraw_redraw(d, NULL, NULL);
+    /* scroll a list up two rows of 5: the rows move, the strip at the bottom is damaged, nothing outside moves */
+    stamp();
+    oldraw_scroll(d, &area, 0, -10);
+    CHECK(is_from(0, 10, 0, 20) && is_from(29, 19, 29, 29));
+    CHECK(is_from(30, 10, 30, 10) && is_from(0, 9, 0, 9) && is_from(0, 30, 0, 30));
+    CHECK(oldraw_damage_count(d) == 1 && oldraw_damage_get(d, 0, &got) && got.x == 0 && got.y == 20 && got.w == 30 &&
+          got.h == 10);
+    oldraw_redraw(d, NULL, NULL);
+    /* down and right */
+    stamp();
+    oldraw_scroll(d, &area, 3, 4);
+    CHECK(is_from(3, 14, 0, 10) && is_from(29, 29, 26, 25));
+    CHECK(oldraw_damage_count(d) == 1 || oldraw_damage_count(d) == 2);   /* the L the move leaves, joined or not */
+    {
+        int k, n = oldraw_damage_count(d), cov = 1;
+        for (j = 10; j < 30; ++j)
+            for (i = 0; i < 30; ++i) {
+                int left = i < 3 || j < 14, in = 0;
+                for (k = 0; k < n; ++k) {
+                    oldraw_damage_get(d, k, &got);
+                    if (i >= got.x && i < got.x + got.w && j >= got.y && j < got.y + got.h) in = 1;
+                }
+                if (left && !in) cov = 0;
+            }
+        CHECK(cov);
+    }
+    oldraw_redraw(d, NULL, NULL);
+    /* as big as the area: all of it damaged */
+    oldraw_scroll(d, &area, 0, 20);
+    CHECK(oldraw_damage_count(d) == 1 && oldraw_damage_get(d, 0, &got) && got.w == 30 && got.h == 20);
+    oldraw_redraw(d, NULL, NULL);
+}
+
 int main(void)
 {
     oldraw *d = oldraw_new(&ops, NULL, W, H, pens);
@@ -434,6 +531,7 @@ int main(void)
     test_select_box(d);
     test_progress(d);
     test_pie(d);
+    test_copy_scroll(d);
     oldraw_resize(d, 10, 10);
     clear(BG);
     {

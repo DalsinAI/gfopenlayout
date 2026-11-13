@@ -228,6 +228,88 @@ void oldraw_flush(oldraw *d)
     if (d && d->ops->flush) d->ops->flush(d->target);
 }
 
+/* ---- copy and scroll ---- */
+/* the parts of a not in b (at most four) damaged */
+static void damage_minus(oldraw *d, const oldraw_rect *a, const oldraw_rect *b)
+{
+    oldraw_rect in = *a, s;
+    if (a->w <= 0 || a->h <= 0) return;
+    if (!rect_cut(&in, b)) { oldraw_damage(d, a); return; }
+    s = *a;
+    s.h = in.y - a->y;                          /* above */
+    if (s.h > 0) oldraw_damage(d, &s);
+    s.y = in.y + in.h;                          /* below */
+    s.h = a->y + a->h - s.y;
+    if (s.h > 0) oldraw_damage(d, &s);
+    s.y = in.y;                                 /* left and right of it */
+    s.h = in.h;
+    s.x = a->x;
+    s.w = in.x - a->x;
+    if (s.w > 0) oldraw_damage(d, &s);
+    s.x = in.x + in.w;
+    s.w = a->x + a->w - s.x;
+    if (s.w > 0) oldraw_damage(d, &s);
+}
+
+void oldraw_copy(oldraw *d, const oldraw_rect *src, int dx, int dy)
+{
+    oldraw_rect all, clip, s, dst, want;
+    int32_t ox, oy;
+    if (!d || !src || src->w <= 0 || src->h <= 0 || !d->ops->copy) return;
+    if (!oldraw_clip_now(d, &clip)) return;
+    ox = dx - src->x;
+    oy = dy - src->y;
+    want.x = dx;
+    want.y = dy;
+    want.w = src->w;
+    want.h = src->h;
+    if (!rect_cut(&want, &clip)) return;        /* what the copy should give: inside the clip */
+    all.x = 0;
+    all.y = 0;
+    all.w = d->w;
+    all.h = d->h;
+    s = *src;
+    if (rect_cut(&s, &all)) {
+        dst = s;
+        dst.x += ox;
+        dst.y += oy;
+        if (rect_cut(&dst, &want)) {
+            d->ops->copy(d->target, (int)(dst.x - ox), (int)(dst.y - oy), (int)dst.x, (int)dst.y, (int)dst.w,
+                         (int)dst.h);
+            damage_minus(d, &want, &dst);
+            return;
+        }
+    }
+    oldraw_damage(d, &want);
+}
+
+void oldraw_scroll(oldraw *d, const oldraw_rect *area, int ddx, int ddy)
+{
+    oldraw_rect s;
+    if (!d || !area || area->w <= 0 || area->h <= 0) return;
+    if (ddx == 0 && ddy == 0) return;
+    if ((ddx < 0 ? -ddx : ddx) >= area->w || (ddy < 0 ? -ddy : ddy) >= area->h) {
+        oldraw_damage(d, area);
+        return;
+    }
+    /* the part that stays inside the area after the move */
+    s.x = area->x + (ddx < 0 ? -ddx : 0);
+    s.y = area->y + (ddy < 0 ? -ddy : 0);
+    s.w = area->w - (ddx < 0 ? -ddx : ddx);
+    s.h = area->h - (ddy < 0 ? -ddy : ddy);
+    {
+        int had = d->has_extra;
+        oldraw_rect saved = d->extra, moved;
+        push_box(d, area, &had, &saved);
+        oldraw_copy(d, &s, (int)s.x + ddx, (int)s.y + ddy);
+        pop_box(d, had, &saved);
+        moved = s;
+        moved.x += ddx;
+        moved.y += ddy;
+        damage_minus(d, area, &moved);          /* the strip it left */
+    }
+}
+
 /* ---- boxes ---- */
 static void fill(oldraw *d, int x, int y, int w, int h, oldraw_colour c)
 {
