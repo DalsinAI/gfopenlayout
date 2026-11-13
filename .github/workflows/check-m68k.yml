@@ -10,6 +10,7 @@ on:
       - .github/workflows/check-m68k.yml
       - library/layers/**
       - tests/m68k/**
+      - tests/host-comp/**
 
 permissions:
   contents: read
@@ -28,3 +29,5 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc-m68k-linux-gnu g++-m68k-linux-gnu qemu-user
       - name: GFOpenLayers composited marks
         run: GFX=gfopengfx QEMU_M68K=qemu-m68k sh tests/m68k/test_comp_marks.sh
+      - name: The compositor's first start against the lock order (host)
+        run: GFX=gfopengfx HOST_CC=gcc sh tests/host-comp/run.sh

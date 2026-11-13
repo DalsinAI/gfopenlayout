@@ -262,6 +262,7 @@ Moved from gfopengfx as they were on 13 November 2026 (Workbench review rule 4),
 | --- | --- |
 | `library/layers/layers_comp.c` | layers.library's composited mode: on a public RTG screen of 16 or 32 bits with GFOpenGPU, each layer draws into a surface of its own and the screen is composed from them in one GFOpenGPU batch, with opacity, shadows and a translucent drag; written-spans (D7(b)) for programs that write the screen by address. Included by gfopengfx's `layers_lib.c` when `OL_COMPOSITE` is defined. |
 | `library/layers/layers_mark.h`, `tests/m68k/test_comp_marks.sh` | What each drawing call into a composited layer marks for the compositor, from its registers; tested under qemu-m68k against GFOpenGfx's own Draw, PolyDraw, DrawEllipse, ClearEOL and ClearScreen (`GFX=` a gfopengfx checkout, else one is cloned). |
+| `tests/host-comp/run.sh` | The compositor's first start against the lock order, on the host (gfopengfx's layers_lib.c with this layers_comp.c, ASan and UBSan): no library is opened while `infolock` is held, a task holding a Layer_Info never waits for it, and two tasks starting the compositor at once keep one. |
 | `tests/CompTest.c` | The composited mode on the Workbench screen from the Shell: compose and drag timed, latency, WA_Opacity, and custom (game) and AGA screens staying classic. |
 
 ## GTK compatibility
