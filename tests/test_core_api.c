@@ -9,38 +9,38 @@
 static int fails, checks;
 #define CHECK(x) do { checks++; if (!(x)) { fails++; printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #x); } } while (0)
 
-/* functions shaped as openintuition's shell's (openintuition_lib.c), with its types as void * */
-static void *h_obtain_rp(void *e, void *g) { (void)e; return g; }
-static void h_release_rp(void *e, void *rp) { (void)e; (void)rp; }
-static void h_draw_image_state(void *e, void *rp, void *im, int32_t x, int32_t y, uint32_t st, void *dri)
+/* functions shaped as openintuition's shell's (openintuition_lib.c), with its own types (opaque structs) */
+static void *h_obtain_rp(struct oi_env *e, void *g) { (void)e; return g; }
+static void h_release_rp(struct oi_env *e, void *rp) { (void)e; (void)rp; }
+static void h_draw_image_state(struct oi_env *e, void *rp, void *im, olc_oi_s32 x, olc_oi_s32 y, olc_oi_u32 st, void *dri)
 { (void)e; (void)rp; (void)im; (void)x; (void)y; (void)st; (void)dri; }
-static void h_erase_rect(void *e, void *rp, int32_t a, int32_t b, int32_t c, int32_t d)
+static void h_erase_rect(struct oi_env *e, void *rp, olc_oi_s32 a, olc_oi_s32 b, olc_oi_s32 c, olc_oi_s32 d)
 { (void)e; (void)rp; (void)a; (void)b; (void)c; (void)d; }
-static void h_fill_rect(void *e, void *rp, uint32_t p, int32_t a, int32_t b, int32_t c, int32_t d)
+static void h_fill_rect(struct oi_env *e, void *rp, olc_oi_u32 p, olc_oi_s32 a, olc_oi_s32 b, olc_oi_s32 c, olc_oi_s32 d)
 { (void)e; (void)rp; (void)p; (void)a; (void)b; (void)c; (void)d; }
-static void h_text(void *e, void *rp, uint32_t f, uint32_t b, uint32_t m, void *font, int tf, int32_t x, int32_t y,
-                   const char *s, uint32_t n)
+static void h_text(struct oi_env *e, void *rp, olc_oi_u32 f, olc_oi_u32 b, olc_oi_u32 m, void *font, int tf, olc_oi_s32 x, olc_oi_s32 y,
+                   const char *s, olc_oi_u32 n)
 { (void)e; (void)rp; (void)f; (void)b; (void)m; (void)font; (void)tf; (void)x; (void)y; (void)s; (void)n; }
-static int32_t h_text_length(void *e, void *font, int tf, const char *s, uint32_t n)
-{ (void)e; (void)font; (void)tf; (void)s; return (int32_t)n * 8; }
-static int32_t h_font_height(void *e, void *font, int tf) { (void)e; (void)font; (void)tf; return 8; }
-static void h_polyline(void *e, void *rp, uint32_t f, uint32_t b, uint32_t m, int32_t x, int32_t y, const int16_t *xy,
-                       uint32_t n)
+static olc_oi_s32 h_text_length(struct oi_env *e, void *font, int tf, const char *s, olc_oi_u32 n)
+{ (void)e; (void)font; (void)tf; (void)s; return (olc_oi_s32)n * 8; }
+static olc_oi_s32 h_font_height(struct oi_env *e, void *font, int tf) { (void)e; (void)font; (void)tf; return 8; }
+static void h_polyline(struct oi_env *e, void *rp, olc_oi_u32 f, olc_oi_u32 b, olc_oi_u32 m, olc_oi_s32 x, olc_oi_s32 y, const short *xy,
+                       olc_oi_u32 n)
 { (void)e; (void)rp; (void)f; (void)b; (void)m; (void)x; (void)y; (void)xy; (void)n; }
-static void h_blit_image(void *e, void *rp, void *im, int32_t x, int32_t y) { (void)e; (void)rp; (void)im; (void)x; (void)y; }
-static void h_fill_pattern(void *e, void *rp, uint32_t f, uint32_t b, uint32_t m, const uint16_t *pat, int32_t ps,
-                           int32_t x0, int32_t y0, int32_t x1, int32_t y1)
+static void h_blit_image(struct oi_env *e, void *rp, void *im, olc_oi_s32 x, olc_oi_s32 y) { (void)e; (void)rp; (void)im; (void)x; (void)y; }
+static void h_fill_pattern(struct oi_env *e, void *rp, olc_oi_u32 f, olc_oi_u32 b, olc_oi_u32 m, const unsigned short *pat, olc_oi_s32 ps,
+                           olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1)
 { (void)e; (void)rp; (void)f; (void)b; (void)m; (void)pat; (void)ps; (void)x0; (void)y0; (void)x1; (void)y1; }
-static int h_deep(void *e, void *dri) { (void)e; (void)dri; return 1; }
-static void *h_limit_rect(void *e, void *rp, int32_t a, int32_t b, int32_t c, int32_t d, void **old)
+static int h_deep(struct oi_env *e, void *dri) { (void)e; (void)dri; return 1; }
+static void *h_limit_rect(struct oi_env *e, void *rp, olc_oi_s32 a, olc_oi_s32 b, olc_oi_s32 c, olc_oi_s32 d, void **old)
 { (void)e; (void)rp; (void)a; (void)b; (void)c; (void)d; *old = 0; return 0; }
-static void h_limit_end(void *e, void *rp, void *l, void *old) { (void)e; (void)rp; (void)l; (void)old; }
-static void h_set_font(void *w, void *rp, void *font) { (void)w; (void)rp; (void)font; }
-static void h_complement(void *w, void *rp, int32_t a, int32_t b, int32_t c, int32_t d)
+static void h_limit_end(struct oi_env *e, void *rp, void *l, void *old) { (void)e; (void)rp; (void)l; (void)old; }
+static void h_set_font(struct oi_wenv *w, struct oi_RastPort *rp, void *font) { (void)w; (void)rp; (void)font; }
+static void h_complement(struct oi_wenv *w, void *rp, olc_oi_s32 a, olc_oi_s32 b, olc_oi_s32 c, olc_oi_s32 d)
 { (void)w; (void)rp; (void)a; (void)b; (void)c; (void)d; }
-static void h_blit_bitmap(void *w, void *rp, void *bm, int32_t x, int32_t y, int32_t ww, int32_t hh)
+static void h_blit_bitmap(struct oi_wenv *w, void *rp, struct oi_BitMap *bm, olc_oi_s32 x, olc_oi_s32 y, olc_oi_s32 ww, olc_oi_s32 hh)
 { (void)w; (void)rp; (void)bm; (void)x; (void)y; (void)ww; (void)hh; }
-static void h_scroll_raster(void *w, void *rp, int32_t dx, int32_t dy, int32_t a, int32_t b, int32_t c, int32_t d)
+static void h_scroll_raster(struct oi_wenv *w, void *rp, olc_oi_s32 dx, olc_oi_s32 dy, olc_oi_s32 a, olc_oi_s32 b, olc_oi_s32 c, olc_oi_s32 d)
 { (void)w; (void)rp; (void)dx; (void)dy; (void)a; (void)b; (void)c; (void)d; }
 
 int main(void)

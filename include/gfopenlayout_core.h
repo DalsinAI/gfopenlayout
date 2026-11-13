@@ -58,37 +58,51 @@ int olc_init(void);
 
 /* ---- 1. openintuition's drawing hooks ----
  * The same names, arguments and meaning as openintuition's struct oi_env (boopsi_core.h) and struct oi_wenv
- * (window_core.h), in that order, with Intuition's own types as void * (rp: a struct RastPort *; image: a
- * struct Image *; bm: a struct BitMap *; font: a struct TextAttr *, or with textfont set a struct TextFont *).
+ * (window_core.h), in that order, with the same types: openintuition's own structs as opaque pointers and
+ * Intuition's as void * (rp: a struct RastPort *;
+ * image: a struct Image *; font: a struct TextAttr *, or with textfont set a struct TextFont *).
  * env is the caller's (openintuition's env or wenv) and the core never looks inside it. openintuition's shell
  * copies these into its env in place of its own graphics.library calls. Every hook works in direct mode and on
  * a composited screen alike: on one, what it draws marks the layer's damage for the next compose. */
+/* openintuition's own types, so olc_oi()'s entries go into its env tables as they are: its structs stay
+ * opaque here, and its ou_s32/ou_u32 (openutility/utility_core.h) are int with OU_NATIVE, long without. */
+struct oi_env;
+struct oi_wenv;
+struct oi_RastPort;
+struct oi_BitMap;
+#ifdef OU_NATIVE
+typedef signed int olc_oi_s32;
+typedef unsigned int olc_oi_u32;
+#else
+typedef signed long olc_oi_s32;
+typedef unsigned long olc_oi_u32;
+#endif
 typedef struct olc_oi_hooks {
     /* struct oi_env's */
-    void *(*obtain_rp)(void *env, void *ginfo);
-    void (*release_rp)(void *env, void *rp);
-    void (*draw_image_state)(void *env, void *rp, void *image, int32_t x, int32_t y, uint32_t state,
+    void *(*obtain_rp)(struct oi_env *env, void *ginfo);
+    void (*release_rp)(struct oi_env *env, void *rp);
+    void (*draw_image_state)(struct oi_env *env, void *rp, void *image, olc_oi_s32 x, olc_oi_s32 y, olc_oi_u32 state,
                              void *drawinfo);
-    void (*erase_rect)(void *env, void *rp, int32_t x0, int32_t y0, int32_t x1, int32_t y1);
-    void (*fill_rect)(void *env, void *rp, uint32_t pen, int32_t x0, int32_t y0, int32_t x1, int32_t y1);
-    void (*text)(void *env, void *rp, uint32_t fpen, uint32_t bpen, uint32_t mode, void *font, int textfont,
-                 int32_t x, int32_t y, const char *s, uint32_t len);
-    int32_t (*text_length)(void *env, void *font, int textfont, const char *s, uint32_t len);
-    int32_t (*font_height)(void *env, void *font, int textfont);
-    void (*polyline)(void *env, void *rp, uint32_t fpen, uint32_t bpen, uint32_t mode, int32_t x, int32_t y,
-                     const int16_t *xy, uint32_t count);
-    void (*blit_image)(void *env, void *rp, void *image, int32_t x, int32_t y);
-    void (*fill_pattern)(void *env, void *rp, uint32_t fpen, uint32_t bpen, uint32_t mode, const uint16_t *pattern,
-                         int32_t patsize, int32_t x0, int32_t y0, int32_t x1, int32_t y1);
-    int (*deep)(void *env, void *drawinfo);
-    void *(*limit_rect)(void *env, void *rp, int32_t x0, int32_t y0, int32_t x1, int32_t y1, void **old);
-    void (*limit_end)(void *env, void *rp, void *limit, void *old);
+    void (*erase_rect)(struct oi_env *env, void *rp, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1);
+    void (*fill_rect)(struct oi_env *env, void *rp, olc_oi_u32 pen, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1);
+    void (*text)(struct oi_env *env, void *rp, olc_oi_u32 fpen, olc_oi_u32 bpen, olc_oi_u32 mode, void *font, int textfont,
+                 olc_oi_s32 x, olc_oi_s32 y, const char *s, olc_oi_u32 len);
+    olc_oi_s32 (*text_length)(struct oi_env *env, void *font, int textfont, const char *s, olc_oi_u32 len);
+    olc_oi_s32 (*font_height)(struct oi_env *env, void *font, int textfont);
+    void (*polyline)(struct oi_env *env, void *rp, olc_oi_u32 fpen, olc_oi_u32 bpen, olc_oi_u32 mode, olc_oi_s32 x, olc_oi_s32 y,
+                     const short *xy, olc_oi_u32 count);
+    void (*blit_image)(struct oi_env *env, void *rp, void *image, olc_oi_s32 x, olc_oi_s32 y);
+    void (*fill_pattern)(struct oi_env *env, void *rp, olc_oi_u32 fpen, olc_oi_u32 bpen, olc_oi_u32 mode, const unsigned short *pattern,
+                         olc_oi_s32 patsize, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1);
+    int (*deep)(struct oi_env *env, void *drawinfo);
+    void *(*limit_rect)(struct oi_env *env, void *rp, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1, void **old);
+    void (*limit_end)(struct oi_env *env, void *rp, void *limit, void *old);
     /* struct oi_wenv's */
-    void (*set_font)(void *wenv, void *rp, void *font);
-    void (*complement)(void *wenv, void *rp, int32_t x0, int32_t y0, int32_t x1, int32_t y1);
-    void (*blit_bitmap)(void *wenv, void *rp, void *bm, int32_t x, int32_t y, int32_t w, int32_t h);
-    void (*scroll_raster)(void *wenv, void *rp, int32_t dx, int32_t dy, int32_t x0, int32_t y0, int32_t x1,
-                          int32_t y1);
+    void (*set_font)(struct oi_wenv *we, struct oi_RastPort *rp, void *font);
+    void (*complement)(struct oi_wenv *we, void *rp, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1);
+    void (*blit_bitmap)(struct oi_wenv *we, void *rp, struct oi_BitMap *bm, olc_oi_s32 x, olc_oi_s32 y, olc_oi_s32 w, olc_oi_s32 h);
+    void (*scroll_raster)(struct oi_wenv *we, void *rp, olc_oi_s32 dx, olc_oi_s32 dy, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1,
+                          olc_oi_s32 y1);
 } olc_oi_hooks;
 #define OLC_OI_HOOKS 18
 /* The core's own; the same table for the life of the system. */

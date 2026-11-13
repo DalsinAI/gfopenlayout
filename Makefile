@@ -4,7 +4,7 @@ CFLAGS ?= -O2
 WARN = -std=c99 -Wall -Wextra -Werror -pedantic
 BUILD = build
 
-.PHONY: all test clean
+.PHONY: all test clean probe_oi
 
 # GFOpenLayout UI: with OGT_ROOT (GFOpenGadTools), its theme reader is built in
 OGT_ROOT ?=
@@ -99,6 +99,15 @@ $(BUILD)/test_core_api: tests/test_core_api.c include/gfopenlayout_core.h | $(BU
 	if command -v c++ >/dev/null; then printf '#include "gfopenlayout_core.h"\nint main(){return olc_oi()!=0;}\n' | \
 	  c++ -x c++ -Wall -Wextra -Werror -Iinclude -fsyntax-only -; fi
 	$(CC) $(CFLAGS) -std=c99 -pedantic -Wall -Wextra -Werror -Iinclude tests/test_core_api.c -o $@
+
+# olc_oi()'s entries against openintuition's real env tables, with its m68k types (its NDK size checks need
+# 32-bit pointers): make probe_oi OI_DIR=<amigachrome-guest>/libraries/openintuition [OI_CC=m68k-linux-gnu-gcc]
+OI_CC ?= m68k-linux-gnu-gcc
+probe_oi:
+	@test -n "$(OI_DIR)" || { echo "probe_oi: set OI_DIR to openintuition's source"; exit 1; }
+	$(OI_CC) -std=c99 -Wall -Wextra -Werror -Iinclude -I$(OI_DIR) -fsyntax-only tests/probe_oi_types.c
+	$(OI_CC) -DOU_NATIVE -std=c99 -Wall -Wextra -Werror -Iinclude -I$(OI_DIR) -fsyntax-only tests/probe_oi_types.c
+	@echo "probe_oi: 18 hooks match openintuition's types"
 
 clean:
 	rm -rf $(BUILD)
