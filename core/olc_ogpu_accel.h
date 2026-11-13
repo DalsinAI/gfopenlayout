@@ -10,7 +10,9 @@
 
 typedef struct olc_ogpu_io {
     void *ctx;
-    /* An Amiga-visible address for CPU-master pixels; 0 when unreachable. */
+    /* An Amiga-visible address for CPU-master pixels only when they belong to
+     * an RTG bitmap whose hazard tracking settles earlier GPU readers before
+     * the CPU writes them again; 0 for Fast/host/untracked storage. */
     uint32_t (*address)(void *ctx, const void *pixels);
     /* GFOpenGPU's OGPU_Submit and OGPU_Wait. */
     int (*submit)(void *ctx, const void *stream, uint32_t words, uint32_t *fence);

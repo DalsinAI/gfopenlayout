@@ -87,11 +87,13 @@ static int reserve(og_out *o, uint32_t add)
 {
     unsigned char *p;
     uint32_t cap = o->cap ? o->cap : 128;
-    if (o->failed || add > 0xffffffffu - o->n) return -1;
-    if (o->n + add <= o->cap) return 0;
-    while (cap < o->n + add) {
-        if (cap > 0x7fffffffu) { o->failed = 1; return -1; }
-        cap *= 2;
+    uint32_t need;
+    if (o->failed || add > 0x3fffffffu - o->n) { o->failed = 1; return -1; }
+    need = o->n + add;
+    if (need <= o->cap) return 0;
+    while (cap < need) {
+        if (cap > 0x1fffffffu) cap = 0x3fffffffu;
+        else cap *= 2;
     }
     p = (unsigned char *)realloc(o->p, (size_t)cap * 4);
     if (!p) { o->failed = 1; return -1; }
@@ -202,10 +204,9 @@ static int a_upload(void *ctx, void *batch, uint32_t slot, const olc_box *boxes,
 {
     struct olc_ogpu *g = (struct olc_ogpu *)ctx;
     og_batch *b = (og_batch *)batch;
-    /* GFOpenGPU SURFACE names the Amiga-visible CPU-master storage itself;
-     * unlike a texture-cache back end there is no second copy to update.
-     * GFOpenRTG's bitmap hazard tracking settles a prior reader before CPU
-     * drawing changes these pixels. The damage still reaches clip(), below. */
+    /* address() admitted only RTG-bitmap storage covered by GFOpenRTG's
+     * reader/writer hazard tracking. GFOpenGPU SURFACE names those CPU-master
+     * pixels directly, so there is no second copy to update here. */
     (void)boxes;
     return g && b && b->g == g && surface_by_slot(g, slot) && n >= 0 && (!n || boxes) ? 0 : -1;
 }
@@ -287,6 +288,7 @@ static int a_submit(void *ctx, void *batch, uint32_t *fence)
     emit_surface(&out, 0, b->screen.address, b->screen.bpr, b->screen.w, b->screen.h, b->screen.fmt);
     a[0] = 0; command(&out, OG_OP_TARGET, a, 1);
     for (i = 0; i < b->nclip; i++) {
+        uint32_t current_slot = 0;
         int32_t cw = b->clips[i].x1 - b->clips[i].x0 + 1;
         int32_t ch = b->clips[i].y1 - b->clips[i].y0 + 1;
         if (cw <= 0 || ch <= 0) continue;
@@ -295,6 +297,11 @@ static int a_submit(void *ctx, void *batch, uint32_t *fence)
         for (j = 0; j < b->nop; j++) {
             og_op *op = &b->ops[j];
             int32_t w = op->box.x1 - op->box.x0 + 1, h = op->box.y1 - op->box.y0 + 1;
+            int32_t x0 = op->kind == B_FILL ? op->box.x0 : op->dx;
+            int32_t y0 = op->kind == B_FILL ? op->box.y0 : op->dy;
+            int32_t x1 = x0 + w - 1, y1 = y0 + h - 1;
+            if (x1 < b->clips[i].x0 || x0 > b->clips[i].x1 ||
+                y1 < b->clips[i].y0 || y0 > b->clips[i].y1) continue;
             if (op->kind == B_FILL) {
                 int ok;
                 a[0] = pack(op->box.x0, op->box.y0); a[1] = pack(w, h);
@@ -304,7 +311,10 @@ static int a_submit(void *ctx, void *batch, uint32_t *fence)
             } else {
                 og_surface *s = surface_by_slot(g, op->slot);
                 if (!s) { out.failed = 1; break; }
-                emit_surface(&out, 1, s->address, s->bpr, s->w, s->h, s->fmt);
+                if (current_slot != s->slot) {
+                    emit_surface(&out, 1, s->address, s->bpr, s->w, s->h, s->fmt);
+                    current_slot = s->slot;
+                }
                 a[0] = 1; a[1] = pack(op->box.x0, op->box.y0);
                 if (op->kind == B_COPY) {
                     a[2] = pack(op->dx, op->dy); a[3] = pack(w, h);

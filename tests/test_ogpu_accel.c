@@ -19,6 +19,7 @@ static uint32_t address_of(void *ctx, const void *p)
 {
     mock *m = (mock *)ctx;
     m->addresses++;
+    /* 0x4444 models Fast/host pixels: not an RTG bitmap, therefore unsafe. */
     return p == (const void *)0x3333 ? 0x00200000u : p == (const void *)0x1111 ? 0x00300000u
                                                   : p == (const void *)0x2222 ? 0x00400000u : 0;
 }
@@ -82,22 +83,23 @@ int main(void)
     CHECK(b != NULL && m.addresses == 1);
     CHECK(a->bind(a->ctx, b, (void *)0x1111, 256, 64, 64, OLC_FMT_XRGB32, &s1) == 0);
     CHECK(a->bind(a->ctx, b, (void *)0x2222, 128, 64, 64, OLC_FMT_RGB16, &s2) == 0 && s2 != s1);
+    CHECK(a->bind(a->ctx, b, (void *)0x4444, 256, 64, 64, OLC_FMT_XRGB32, &s1) == -1);
     CHECK(a->upload(a->ctx, b, s1, &upload, 1) == 0);
     CHECK(a->clip(a->ctx, b, clips, 2) == 0);
     CHECK(a->fill(a->ctx, b, &fill, 0xff123456u) == 0);
-    CHECK(a->copy(a->ctx, b, s2, &src, 40, 50) == 0);
-    CHECK(a->composite(a->ctx, b, s1, &src, 60, 70, 128) == 0);
+    CHECK(a->copy(a->ctx, b, s2, &src, 2, 3) == 0);
+    CHECK(a->composite(a->ctx, b, s1, &src, 25, 35, 128) == 0);
     CHECK(m.submits == 0 && m.waits == 0); /* no per-primitive crossing */
     CHECK(a->submit(a->ctx, b, &fence) == 0);
     CHECK(m.submits == 1 && fence == 1 && m.waits == 0); /* one compose, one submit/fence, no wait */
     CHECK(count_op(&m, OP_CLIP) == 2);
-    CHECK(count_op(&m, OP_FILL) == 2 && count_op(&m, OP_COPY) == 2 && count_op(&m, OP_COMPOSITE) == 2);
+    CHECK(count_op(&m, OP_FILL) == 2 && count_op(&m, OP_COPY) == 1 && count_op(&m, OP_COMPOSITE) == 1);
     CHECK(count_op(&m, OP_SURFACE) >= 3 && count_op(&m, OP_TARGET) == 1);
     CHECK(has4(&m, OP_FILL, xy(0, 0), xy(101, 51), 0x00123456u));
 
     /* The same surface gets the same logical slot in the next compose. */
     b = a->begin(a->ctx, (void *)0x1234, (void *)0x3333, 2560, OLC_FMT_XRGB32, 640, 480);
-    CHECK(b != NULL && m.addresses == 4); /* screen address plus the two first-compose surfaces */
+    CHECK(b != NULL && m.addresses == 5); /* screens, two RTG surfaces and one rejected host surface */
     { uint32_t again = 0; CHECK(a->bind(a->ctx, b, (void *)0x1111, 256, 64, 64, OLC_FMT_XRGB32, &again) == 0 && again == s1); }
     CHECK(a->clip(a->ctx, b, clips, 1) == 0);
     CHECK(a->copy(a->ctx, b, s1, &src, 0, 0) == 0);
