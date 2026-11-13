@@ -1,0 +1,271 @@
+/* GFOpenLayout's ROM core: the small, versioned API that goes in the thin ROM (Workbench redesign, wave 2 review
+ * rule 2, 13 November 2026). Everything above it (CSS, olui, markup, documents, tables, wave 1's oldraw calls)
+ * loads on demand from the module set and calls down into it; nothing in the ROM calls up.
+ *
+ * The core is exactly:
+ *   1. the drawing hooks openintuition takes from its shell today (struct olc_oi_hooks, below: struct oi_env's
+ *      fourteen and struct oi_wenv's four), so Intuition draws through the core with no change to its cores;
+ *   2. surfaces: a layer's pixels, in Fast, host or RTG memory, never Chip RAM;
+ *   3. regions: lists of rectangles (damage, clips, what is visible);
+ *   4. compose: the visible layers onto the screen, as one batch with one fence, for the damage only;
+ *   5. text: one outline rasteriser with a glyph cache.
+ *
+ * Rules the core keeps (designs/WORKBENCH-REVIEW-SUMMARY-20261113.md):
+ *   - Boot is CPU-direct. olc_init probes nothing: no GPU, no fence, no compositor memory. Acceleration is
+ *     attached later (olc_accel_attach), once boards and RTG are up.
+ *   - Direct mode is today's rasteriser unchanged. A screen is composited only when olc_scene_new asks for it,
+ *     and only Workbench and public RTG screens are; custom, private and AGA screens stay direct.
+ *   - One GPU batch and one fence per compose. Nothing is done once per primitive, and nothing is read back from
+ *     the GPU: a surface's CPU pixels are the master copy.
+ *   - olc_compose never waits: not for the fence, nor for drawing to settle.
+ *   - Locks (designs/WORKBENCH-REDESIGN-20261113.md, "Lock order"): a scene's lock is number 5, the compositor,
+ *     taken after a Layer_Info's and its layers'. The glyph cache's lock is a leaf. No core call waits on DOS,
+ *     ramlib or a requester while it holds either.
+ *
+ * Coordinates are whole pixels. A box is x0, y0 to x1, y1 with both corners inside, as layers and Intuition
+ * have them; one with x1 < x0 or y1 < y0 is empty. Colours are 0xAARRGGBB, or OLC_PEN(n), a pen of the target.
+ * No call uses floating point.
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
+#ifndef GFOPENLAYOUT_CORE_H
+#define GFOPENLAYOUT_CORE_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The API's version. A call is only ever added at the end of a table; a version that changes or removes one is a
+ * new major version, and the ROM keeps the old one's table beside it. */
+#define OLC_VERSION_MAJOR 1
+#define OLC_VERSION_MINOR 0
+uint32_t olc_version(void);                 /* major << 16 | minor */
+
+typedef struct olc_box {
+    int32_t x0, y0, x1, y1;
+} olc_box;
+
+typedef uint32_t olc_colour;
+/* A colour argument (never image pixels: an ARGB32 surface may hold alpha 1) is a pen when its alpha is 1, which no
+ * colour a caller passes uses. */
+#define OLC_PEN(n) (0x01000000UL | ((uint32_t)(n) & 0xFFUL))
+#define OLC_IS_PEN(c) (((c) & 0xFF000000UL) == 0x01000000UL)
+
+/* ---- start ---- */
+/* Called once, by the ROM's init, before any other call. Probes nothing (see above). 0 when out of memory. */
+int olc_init(void);
+
+/* ---- 1. openintuition's drawing hooks ----
+ * The same names, arguments and meaning as openintuition's struct oi_env (boopsi_core.h) and struct oi_wenv
+ * (window_core.h), in that order, with the same types: openintuition's own structs as opaque pointers and
+ * Intuition's as void * (rp: a struct RastPort *;
+ * image: a struct Image *; font: a struct TextAttr *, or with textfont set a struct TextFont *).
+ * env is the caller's (openintuition's env or wenv) and the core never looks inside it. openintuition's shell
+ * copies these into its env in place of its own graphics.library calls. Every hook works in direct mode and on
+ * a composited screen alike: on one, what it draws marks the layer's damage for the next compose. */
+/* openintuition's own types, so olc_oi()'s entries go into its env tables as they are: its structs stay
+ * opaque here, and its ou_s32/ou_u32 (openutility/utility_core.h) are int with OU_NATIVE, long without. */
+struct oi_env;
+struct oi_wenv;
+struct oi_RastPort;
+struct oi_BitMap;
+#ifdef OU_NATIVE
+typedef signed int olc_oi_s32;
+typedef unsigned int olc_oi_u32;
+#else
+typedef signed long olc_oi_s32;
+typedef unsigned long olc_oi_u32;
+#endif
+typedef struct olc_oi_hooks {
+    /* struct oi_env's */
+    void *(*obtain_rp)(struct oi_env *env, void *ginfo);
+    void (*release_rp)(struct oi_env *env, void *rp);
+    void (*draw_image_state)(struct oi_env *env, void *rp, void *image, olc_oi_s32 x, olc_oi_s32 y, olc_oi_u32 state,
+                             void *drawinfo);
+    void (*erase_rect)(struct oi_env *env, void *rp, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1);
+    void (*fill_rect)(struct oi_env *env, void *rp, olc_oi_u32 pen, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1);
+    void (*text)(struct oi_env *env, void *rp, olc_oi_u32 fpen, olc_oi_u32 bpen, olc_oi_u32 mode, void *font, int textfont,
+                 olc_oi_s32 x, olc_oi_s32 y, const char *s, olc_oi_u32 len);
+    olc_oi_s32 (*text_length)(struct oi_env *env, void *font, int textfont, const char *s, olc_oi_u32 len);
+    olc_oi_s32 (*font_height)(struct oi_env *env, void *font, int textfont);
+    void (*polyline)(struct oi_env *env, void *rp, olc_oi_u32 fpen, olc_oi_u32 bpen, olc_oi_u32 mode, olc_oi_s32 x, olc_oi_s32 y,
+                     const short *xy, olc_oi_u32 count);
+    void (*blit_image)(struct oi_env *env, void *rp, void *image, olc_oi_s32 x, olc_oi_s32 y);
+    void (*fill_pattern)(struct oi_env *env, void *rp, olc_oi_u32 fpen, olc_oi_u32 bpen, olc_oi_u32 mode, const unsigned short *pattern,
+                         olc_oi_s32 patsize, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1);
+    int (*deep)(struct oi_env *env, void *drawinfo);
+    void *(*limit_rect)(struct oi_env *env, void *rp, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1, void **old);
+    void (*limit_end)(struct oi_env *env, void *rp, void *limit, void *old);
+    /* struct oi_wenv's */
+    void (*set_font)(struct oi_wenv *we, struct oi_RastPort *rp, void *font);
+    void (*complement)(struct oi_wenv *we, void *rp, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1, olc_oi_s32 y1);
+    void (*blit_bitmap)(struct oi_wenv *we, void *rp, struct oi_BitMap *bm, olc_oi_s32 x, olc_oi_s32 y, olc_oi_s32 w, olc_oi_s32 h);
+    void (*scroll_raster)(struct oi_wenv *we, void *rp, olc_oi_s32 dx, olc_oi_s32 dy, olc_oi_s32 x0, olc_oi_s32 y0, olc_oi_s32 x1,
+                          olc_oi_s32 y1);
+} olc_oi_hooks;
+#define OLC_OI_HOOKS 18
+/* The core's own; the same table for the life of the system. */
+const olc_oi_hooks *olc_oi(void);
+
+/* ---- 2. surfaces ---- */
+typedef struct olc_surface olc_surface;
+enum {
+    OLC_FMT_CLUT8 = 1,          /* pens, as an 8-bit screen */
+    OLC_FMT_RGB16,              /* R5G6B5 */
+    OLC_FMT_XRGB32,
+    OLC_FMT_ARGB32              /* with its own alpha (a shadow, a rounded corner) */
+};
+enum {
+    OLC_MEM_ANY = 0,            /* RTG memory when the screen's board has room, else Fast, else host */
+    OLC_MEM_FAST,
+    OLC_MEM_HOST,
+    OLC_MEM_RTG
+    /* there is no Chip RAM choice: a surface is never in Chip RAM */
+};
+/* A surface w by h in format fmt, its pixels where says. like: a screen bitmap (struct BitMap *) whose board it
+ * should suit, or NULL. NULL when there is no memory. */
+olc_surface *olc_surface_new(int32_t w, int32_t h, uint32_t fmt, uint32_t where, void *like);
+void olc_surface_free(olc_surface *s);
+/* The CPU's pixels (the master copy) and the bytes from one row to the next. The pointer is good until
+ * olc_surface_free. Writing them marks nothing: say what changed with olc_surface_damage. */
+void *olc_surface_pixels(olc_surface *s, int32_t *bytes_per_row);
+void olc_surface_size(const olc_surface *s, int32_t *w, int32_t *h, uint32_t *fmt);
+void olc_surface_damage(olc_surface *s, const olc_box *b);
+/* A RastPort-shaped target on the surface, for the hooks above and graphics.library's faces; NULL when out of
+ * memory. Freed with the surface. */
+void *olc_surface_rastport(olc_surface *s);
+
+/* ---- 3. regions ---- */
+typedef struct olc_region olc_region;
+olc_region *olc_region_new(void);
+void olc_region_free(olc_region *r);
+void olc_region_clear(olc_region *r);
+/* Each answers 0, or -1 when out of memory (the region is then as it was). Boxes in a region never overlap. */
+int olc_region_or_box(olc_region *r, const olc_box *b);
+int olc_region_and_box(olc_region *r, const olc_box *b);
+int olc_region_sub_box(olc_region *r, const olc_box *b);
+int olc_region_or(olc_region *r, const olc_region *other);
+int olc_region_copy(olc_region *to, const olc_region *from);
+int32_t olc_region_count(const olc_region *r);
+/* The i-th box, 0 when i is past the end */
+int olc_region_box(const olc_region *r, int32_t i, olc_box *b);
+/* The smallest box round it all; 0 for an empty region */
+int olc_region_bounds(const olc_region *r, olc_box *b);
+
+/* ---- 4. compose ---- */
+typedef struct olc_scene olc_scene;
+typedef struct olc_layer olc_layer;
+enum {
+    OLC_SCENE_DIRECT = 0,       /* today's path: layers draw into the screen; nothing is composed */
+    OLC_SCENE_COMPOSITED = 1
+};
+/* A scene on a screen bitmap (struct BitMap *), w by h, direct or composited. A composited scene's layers each
+ * have a surface. NULL when out of memory, or when screen can't be composited (it is then direct: ask
+ * olc_scene_new again with OLC_SCENE_DIRECT). */
+olc_scene *olc_scene_new(void *screen, int32_t w, int32_t h, uint32_t mode);
+/* The screen's bitmap changed under the scene (double buffering, a mode change): its pixels, bytes per row and
+ * format are looked up again. Called outside every lock. -1 when the new one can't be composited. */
+int olc_scene_rebind(olc_scene *sc, void *screen, int32_t w, int32_t h);
+void olc_scene_free(olc_scene *sc);
+uint32_t olc_scene_mode(const olc_scene *sc);
+/* A layer at x0, y0 to x1, y1, in front of front (NULL: in front of all). Its surface is the core's. */
+olc_layer *olc_layer_new(olc_scene *sc, const olc_box *at, olc_layer *front);
+void olc_layer_free(olc_layer *l);
+olc_surface *olc_layer_surface(olc_layer *l);
+int olc_layer_move(olc_layer *l, const olc_box *at);            /* moved or sized; -1 when out of memory */
+void olc_layer_restack(olc_layer *l, olc_layer *front);           /* NULL: to the front */
+enum {
+    OLC_LOOK_OPACITY = 1,       /* value 0 to 255 */
+    OLC_LOOK_SHADOW,            /* value 0 or 1 */
+    OLC_LOOK_HIDDEN             /* value 0 or 1 */
+};
+void olc_layer_look(olc_layer *l, uint32_t what, uint32_t value);
+/* Composes damage (screen coordinates; NULL: what the layers marked since the last compose) onto the screen, as
+ * one batch with one fence, and returns without waiting for it. Answers 0, 1 when a layer was busy (its lock
+ * was taken: that part is composed next time), or -1 when out of memory (compose all next time). On a direct
+ * scene it does nothing and answers 0. */
+int olc_compose(olc_scene *sc, const olc_region *damage);
+
+/* Acceleration: a back end (row N1: GFOpenGPU, AC090 native) attached once boards and RTG are up, never at boot;
+ * until then, and whenever a call answers no, the CPU does it all.
+ *
+ * Ownership:
+ *   - The core owns surfaces and their CPU pixels, which stay the master copy. The back end only ever copies them
+ *     towards the GPU (bind, upload); nothing is read back.
+ *   - The back end owns what it makes from a surface (a texture, a slot), keyed by the slot bind gave. Before a
+ *     surface is freed the core calls retire(slot), and frees the CPU pixels only when retire has returned.
+ *     retire is the one call that may wait (for the GPU to be done with the slot, as GFOpenRTG's FreeBitMap
+ *     waits today), so the core calls it outside every lock and never during a compose.
+ *   - A batch is the back end's from begin until submit or abort.
+ * Calls: one compose is begin, then bind and upload for each surface it shows, clip with the damage, the fills,
+ * copies and composites back to front, then one submit giving one fence. All of that runs under the compositor's
+ * lock (number 5 of the lock order): a back end takes none of locks 1 to 5, and none of those calls waits (no fence
+ * wait, no DOS, no ramlib). Boxes are the screen's, both corners inside, already cut to the screen. clip may give
+ * several boxes: a back end whose stream has one clip rectangle records the ops and replays them for each box,
+ * still in the one batch and the one submit. */
+#define OLC_ACCEL_VERSION 1
+typedef struct olc_accel {
+    uint32_t version;           /* OLC_ACCEL_VERSION */
+    void *ctx;                  /* the back end's, given to every call */
+    /* A compose on screen (struct BitMap *), w by h: a batch, or NULL for the CPU to do this one. The screen's
+     * pixels, bytes per row and format are the core's, looked up once when the scene was made (olc_scene_new,
+     * outside every lock: ORTG_BitMapInfo may settle batches) and again only when the screen's bitmap changes,
+     * so a back end never looks them up or caches them itself. */
+    void *(*begin)(void *ctx, void *screen, void *pixels, int32_t bytes_per_row, uint32_t fmt, int32_t w,
+                   int32_t h);
+    /* The surface's pixels (fmt, w by h, bytes_per_row) named in this batch; *slot gets its slot, the same one for
+     * the same surface until retire. 0, or -1: the CPU does this compose (the core calls abort). */
+    int (*bind)(void *ctx, void *batch, const void *pixels, int32_t bytes_per_row, int32_t w, int32_t h, uint32_t fmt,
+                uint32_t *slot);
+    /* What changed in the surface since it was last uploaded (the surface's own coordinates), CPU to GPU */
+    int (*upload)(void *ctx, void *batch, uint32_t slot, const olc_box *boxes, int32_t n);
+    /* What this compose may touch: the damage. Nothing outside it is drawn. */
+    int (*clip)(void *ctx, void *batch, const olc_box *boxes, int32_t n);
+    /* What no layer covers: c (0xFFrrggbb, or a pen of the screen) */
+    int (*fill)(void *ctx, void *batch, const olc_box *b, olc_colour c);
+    /* An opaque layer's part: slot's src at dx, dy on the screen */
+    int (*copy)(void *ctx, void *batch, uint32_t slot, const olc_box *src, int32_t dx, int32_t dy);
+    /* A see-through one: opacity 0 to 255, times the surface's own alpha when it is ARGB32 */
+    int (*composite)(void *ctx, void *batch, uint32_t slot, const olc_box *src, int32_t dx, int32_t dy,
+                     uint32_t opacity);
+    /* The batch handed over, without waiting: *fence gets its one fence. 0, or -1 (the batch is gone and the
+     * compose is done by the CPU). */
+    int (*submit)(void *ctx, void *batch, uint32_t *fence);
+    /* The batch dropped, nothing drawn */
+    void (*abort)(void *ctx, void *batch);
+    /* A slot no longer used: the surface is going. May wait until the GPU is done with it; called outside every
+     * lock and never during a compose. */
+    void (*retire)(void *ctx, uint32_t slot);
+    /* The back end is going (olc_accel_detach, outside every lock): everything of the core's it holds is let go,
+     * waiting for the GPU if it must */
+    void (*detach)(void *ctx);
+} olc_accel;
+/* ops stays the caller's until olc_accel_detach. 0 when the core takes it; -1 when one is attached already or the
+ * version is not one the core knows. Never called at boot: olc_init's ROM code calls neither. */
+int olc_accel_attach(const olc_accel *ops);
+/* Back to the CPU: calls ops->detach, which may wait; not to be called with a lock held. */
+void olc_accel_detach(void);
+
+/* ---- 5. text ---- */
+typedef struct olc_face olc_face;
+/* An outline face (a file the core reads once, or one built into the ROM: name NULL) at px pixels high. NULL when
+ * it can't be read or there is no memory. Opening reads; it is never called with a lock held (lock rule 3). */
+olc_face *olc_face_open(const char *name, int32_t px);
+void olc_face_close(olc_face *f);
+typedef struct olc_text_size {
+    int32_t width, ascent, descent;
+} olc_text_size;
+/* UTF-8 text with its baseline at x, y on target (a RastPort, or olc_surface_rastport's), cut to clip (NULL: the
+ * target), anti-aliased onto what is there on a deep target and with pen colour c. 1 when drawn. */
+int olc_text(void *target, int32_t x, int32_t y, const char *utf8, size_t len, olc_face *f, olc_colour c,
+             const olc_box *clip);
+int olc_text_measure(olc_face *f, const char *utf8, size_t len, olc_text_size *size);
+/* The glyph cache's most bytes (0: the core's default). Answers what it was. */
+uint32_t olc_glyph_cache_limit(uint32_t bytes);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
