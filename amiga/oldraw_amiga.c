@@ -141,16 +141,15 @@ static void a_image(void *tp, const oldraw_image *img_c, int sx, int sy, int x, 
     const uint32_t *px;
     int i, j, n;
     if (img->kind == OLDRAW_IMG_ICON) {
-        /* icon.library draws the whole icon: a clip region only when part of it is cut off */
-        struct Region *reg = NULL;
-        if (sx || sy || w != img->w || h != img->h) {
-            oldraw_rect c;
-            c.x = x;
-            c.y = y;
-            c.w = w;
-            c.h = h;
-            reg = clip_on(t, &c);
-        }
+        /* icon.library draws the whole icon, so always through a clip region: without one, DrawIconState was 3 to 4
+         * times slower in GFLayoutBench (icon_blit_diskobject 1683 and 1932 icons/s with it, 422 and 535 without) */
+        oldraw_rect c;
+        struct Region *reg;
+        c.x = x;
+        c.y = y;
+        c.w = w;
+        c.h = h;
+        reg = clip_on(t, &c);
         DrawIconState(t->rp, (struct DiskObject *)img->icon, NULL, x - sx, y - sy,
                       (flags & OLDRAW_SELECTED) ? IDS_SELECTED : (flags & OLDRAW_GHOSTED) ? IDS_DISABLED : IDS_NORMAL,
                       ICONDRAWA_Frameless, TRUE, ICONDRAWA_EraseBackground, FALSE, TAG_DONE);
