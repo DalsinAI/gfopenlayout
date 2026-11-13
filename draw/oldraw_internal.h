@@ -12,10 +12,11 @@ struct oldraw_image {
     int w, h;
     uint32_t *argb;             /* OLDRAW_IMG_ARGB: w * h, rows w apart */
     void *icon;                 /* OLDRAW_IMG_ICON: the DiskObject */
-    void *target_data;          /* the target's own (the Amiga's: the selected and ghosted pixels, made once) */
+    int ox, oy;                 /* OLDRAW_IMG_ICON: GetIconRectangle's MinX, MinY (the picture's corner) */
+    void *target_data;          /* the target's own (a cached BitMap in wave 2) */
     oldraw_rect *blocks;        /* OLDRAW_IMG_ARGB: rectangles covering exactly its drawn pixels */
     int nblocks;
-    uint32_t *variant[2];       /* its pixels selected (0) and ghosted (1), made the first time they're drawn */
+    uint32_t *variant[3];       /* its pixels selected (0), ghosted (1), both (2), made the first time they're drawn */
 };
 
 #define OLDRAW_MEASURES 64          /* measures kept */
