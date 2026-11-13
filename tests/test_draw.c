@@ -12,7 +12,7 @@
 
 static uint32_t px[H][W];
 static int fails, checks;
-static int fills, texts, flushes;
+static int fills, texts, flushes, texts_clipped, measures;
 
 #define CHECK(c) do { ++checks; if (!(c)) { ++fails; printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); } } while (0)
 
@@ -39,14 +39,19 @@ static void t_invert(void *t, int x, int y, int w, int h)
         for (i = x; i < x + w; ++i) px[j][i] ^= 0xFFFFFFu;
 }
 
+/* as the Amiga target draws it: only inside the picture's blocks */
 static void t_image(void *t, const oldraw_image *img, int sx, int sy, int x, int y, int w, int h, unsigned flags)
 {
-    int i, j;
+    const oldraw_rect *b;
+    int i, j, k, n = oldraw_image_blocks(img, &b);
     (void)t;
     for (j = 0; j < h; ++j)
         for (i = 0; i < w; ++i) {
             uint32_t p = oldraw_image_pixel(img, sx + i, sy + j);
-            if ((p >> 24) < 0x80) continue;
+            int in = 0;
+            for (k = 0; k < n; ++k)
+                if (sx + i >= b[k].x && sx + i < b[k].x + b[k].w && sy + j >= b[k].y && sy + j < b[k].y + b[k].h) in = 1;
+            if (!in) continue;
             p &= 0xFFFFFFu;
             if (flags & OLDRAW_SELECTED) p = (p >> 1) & 0x7F7F7Fu;
             px[y + j][x + i] = p;
@@ -58,6 +63,7 @@ static int t_measure(void *t, const char *s, size_t n, const oldraw_font *f, old
     (void)t;
     (void)s;
     (void)f;
+    ++measures;
     size->width = (int)n * 6;
     size->ascent = 7;
     size->descent = 2;
@@ -75,10 +81,14 @@ static int t_text(void *t, int x, int y, const char *s, size_t n, const oldraw_f
     (void)f;
     (void)st;
     ++texts;
+    if (clip) ++texts_clipped;
     for (k = 0; k < n; ++k)
         for (j = y - 7; j < y + 2; ++j)
             for (i = x + (int)k * 6; i < x + (int)k * 6 + 5; ++i)
-                if (i >= clip->x && i < clip->x + clip->w && j >= clip->y && j < clip->y + clip->h) px[j][i] = v;
+                if (!clip || (i >= clip->x && i < clip->x + clip->w && j >= clip->y && j < clip->y + clip->h)) {
+                    if (i < 0 || j < 0 || i >= W || j >= H) { ++fails; printf("FAIL text outside the target, no clip\n"); return 1; }
+                    px[j][i] = v;
+                }
     return 1;
 }
 
@@ -515,6 +525,86 @@ static void test_copy_scroll(oldraw *d)
     oldraw_redraw(d, NULL, NULL);
 }
 
+/* the speed-ups (13 Nov bench): what they keep from the target, and that nothing drawn changes */
+static void test_speed(oldraw *d)
+{
+    /* a 6x5 picture: a frame with a see-through hole, as the bench's icon */
+    uint32_t pic[5 * 6];
+    oldraw_image *img;
+    const oldraw_rect *b;
+    oldraw_rect box = { 4, 4, 40, 12 }, half = { 0, 0, 30, 48 };
+    int i, j, k, n, cover, overlap, before;
+    for (j = 0; j < 5; ++j)
+        for (i = 0; i < 6; ++i) pic[j * 6 + i] = (i >= 2 && i <= 3 && j >= 1 && j <= 2) ? 0x00000000u : 0xFF102030u + (uint32_t)i;
+    img = oldraw_image_argb(d, 6, 5, pic, 6);
+    n = oldraw_image_blocks(img, &b);
+    cover = 1;
+    overlap = 0;
+    for (j = 0; j < 5; ++j)
+        for (i = 0; i < 6; ++i) {
+            int in = 0;
+            for (k = 0; k < n; ++k)
+                if (i >= b[k].x && i < b[k].x + b[k].w && j >= b[k].y && j < b[k].y + b[k].h) ++in;
+            if (in > 1) overlap = 1;
+            if ((in == 1) != ((pic[j * 6 + i] >> 24) >= 0x80)) cover = 0;
+        }
+    CHECK(cover && !overlap);                           /* every drawn pixel once, no see-through one */
+    CHECK(n == 4);                                       /* the top row, the hole's two sides, the bottom rows */
+    CHECK(b[0].x == 0 && b[0].y == 0 && b[0].w == 6 && b[0].h == 1);
+    CHECK(b[1].h == 2 && b[2].h == 2);                   /* the rows with the same runs joined */
+    CHECK(b[3].y == 3 && b[3].h == 2 && b[3].w == 6);
+    oldraw_image_free(d, img);
+    {   /* a solid picture is one block */
+        uint32_t solid[16];
+        for (i = 0; i < 16; ++i) solid[i] = 0xFF000000u | (uint32_t)i;
+        img = oldraw_image_argb(d, 4, 4, solid, 4);
+        CHECK(oldraw_image_blocks(img, &b) == 1 && b[0].w == 4 && b[0].h == 4);
+        oldraw_image_free(d, img);
+        for (i = 0; i < 16; ++i) solid[i] = 0x10FFFFFFu;        /* all see-through: none */
+        img = oldraw_image_argb(d, 4, 4, solid, 4);
+        CHECK(img && oldraw_image_blocks(img, &b) == 0);
+        oldraw_image_free(d, img);
+    }
+    /* the same text again is not measured again; another text is */
+    oldraw_text(d, 2, 10, "speed", (size_t)-1, NULL, OLDRAW_PEN(OLDRAW_PEN_TEXT), 0);
+    before = measures;
+    oldraw_text(d, 2, 10, "speed", (size_t)-1, NULL, OLDRAW_PEN(OLDRAW_PEN_TEXT), 0);
+    oldraw_text(d, 2, 30, "speed", 5, NULL, OLDRAW_PEN(OLDRAW_PEN_TEXT), 0);
+    CHECK(measures == before);
+    oldraw_text(d, 2, 10, "speeds", (size_t)-1, NULL, OLDRAW_PEN(OLDRAW_PEN_TEXT), 0);
+    CHECK(measures == before + 1);
+    {   /* another font is another measure */
+        oldraw_font f = { "topaz.font", 8, 0 };
+        oldraw_text(d, 2, 10, "speed", (size_t)-1, &f, OLDRAW_PEN(OLDRAW_PEN_TEXT), 0);
+        CHECK(measures == before + 2);
+        oldraw_text(d, 2, 10, "speed", (size_t)-1, &f, OLDRAW_PEN(OLDRAW_PEN_TEXT), OLDRAW_BOLD);
+        CHECK(measures == before + 3);
+    }
+    /* a text box that fits measures once and draws without a clip */
+    before = measures;
+    texts_clipped = 0;
+    texts = 0;
+    oldraw_text_box(d, &box, "fits!", (size_t)-1, NULL, OLDRAW_PEN(OLDRAW_PEN_TEXT), 0, OLDRAW_LEFT);
+    CHECK(measures == before + 1 && texts == 1 && texts_clipped == 0);
+    /* text crossing the clip is given it, and cut there */
+    clear(BG);
+    oldraw_clip(d, &half);
+    oldraw_text(d, 20, 20, "abcd", (size_t)-1, NULL, OLDRAW_PEN(OLDRAW_PEN_TEXT), 0);
+    oldraw_clip(d, NULL);
+    CHECK(texts_clipped == 1);
+    CHECK(count(30, 0, W - 30, H, TEXT) == 0 && count(20, 13, 10, 9, TEXT) > 0);
+    /* a text wholly off the target is not drawn at all */
+    texts = 0;
+    oldraw_text(d, W + 10, 20, "abcd", (size_t)-1, NULL, OLDRAW_PEN(OLDRAW_PEN_TEXT), 0);
+    CHECK(texts == 0);
+    /* a long text is measured each time (not kept), and still right */
+    {
+        static const char longtext[] = "0123456789012345678901234567890123456789012345678901234567890123456789";
+        oldraw_text_size s;
+        CHECK(oldraw_text_measure(d, longtext, (size_t)-1, NULL, 0, &s) && s.width == 70 * 6);
+    }
+}
+
 int main(void)
 {
     oldraw *d = oldraw_new(&ops, NULL, W, H, pens);
@@ -532,6 +622,7 @@ int main(void)
     test_progress(d);
     test_pie(d);
     test_copy_scroll(d);
+    test_speed(d);
     oldraw_resize(d, 10, 10);
     clear(BG);
     {
