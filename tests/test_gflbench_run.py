@@ -66,6 +66,20 @@ class Median(unittest.TestCase):
         self.assertIsNone(g.speedup(None, 3, "ms"))
         self.assertIsNone(g.speedup(0, 3, "a/s"))
 
+    def test_failed_run_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "failed.txt"
+            p.write_text("BENCH x 1 x/s\nBENCH-END fail\n")
+            with self.assertRaisesRegex(SystemExit, "BENCH-END fail"):
+                g.read_runs(f"jit={p}")
+
+    def test_incomplete_run_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "incomplete.txt"
+            p.write_text("BENCH x 1 x/s\n")
+            with self.assertRaisesRegex(SystemExit, "BENCH-END missing"):
+                g.read_runs(f"jit={p}")
+
 
 class Report(unittest.TestCase):
     def modes(self):
@@ -115,6 +129,12 @@ class Report(unittest.TestCase):
 
 
 class LabGuard(unittest.TestCase):
+    @staticmethod
+    def agent(root):
+        s = Path(root) / "devices" / "harddisks" / "DH0" / "S"
+        s.mkdir(parents=True)
+        (s / "ACAgent").write_text("x")
+
     def test_needs_agent(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "labs" / "l1" / "devices" / "harddisks" / "DH0" / "S").mkdir(parents=True)
@@ -123,6 +143,49 @@ class LabGuard(unittest.TestCase):
             (Path(d) / "labs" / "l1" / "devices" / "harddisks" / "DH0" / "S" / "ACAgent").write_text("x")
             lab = g.Lab("l1", d, Path(d) / "labs")
             self.assertTrue(str(lab.agent).endswith(os.path.join("DH0", "ACAgent")))
+
+    def test_prefix_sibling_is_not_a_lab(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "labs").mkdir()
+            self.agent(root / "labs-x" / "inst")
+            with self.assertRaisesRegex(SystemExit, "not a lab"):
+                g.Lab("../labs-x/inst", d, root / "labs")
+
+    def test_symlink_to_live_instance_is_not_a_lab(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            labs, instances = root / "labs", root / "instances"
+            labs.mkdir()
+            self.agent(instances / "Instance-32")
+            (labs / "evil").symlink_to(instances / "Instance-32", target_is_directory=True)
+            old = os.environ.get("AMICRADLE_LIVE_INSTANCES")
+            os.environ["AMICRADLE_LIVE_INSTANCES"] = str(instances)
+            try:
+                with self.assertRaisesRegex(SystemExit, "not a lab"):
+                    g.Lab("evil", d, labs)
+            finally:
+                if old is None:
+                    os.environ.pop("AMICRADLE_LIVE_INSTANCES", None)
+                else:
+                    os.environ["AMICRADLE_LIVE_INSTANCES"] = old
+
+    def test_symlink_to_new_labs_root_is_allowed(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            labs, new_labs = root / "labs", root / "new-labs"
+            labs.mkdir()
+            self.agent(new_labs / "bench")
+            (labs / "bench").symlink_to(new_labs / "bench", target_is_directory=True)
+            old = os.environ.get("AMICRADLE_NEW_LABS")
+            os.environ["AMICRADLE_NEW_LABS"] = str(new_labs)
+            try:
+                self.assertEqual(g.Lab("bench", d, labs).folder, (new_labs / "bench").resolve())
+            finally:
+                if old is None:
+                    os.environ.pop("AMICRADLE_NEW_LABS", None)
+                else:
+                    os.environ["AMICRADLE_NEW_LABS"] = old
 
 
 if __name__ == "__main__":

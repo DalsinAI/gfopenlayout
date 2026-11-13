@@ -66,7 +66,8 @@ enum {
 /* ---- targets ---- */
 struct RastPort;
 struct Screen;
-/* An oldraw on rp, width by height pixels (a window's RastPort, or a BitMap's of the screen's kind), with scr's
+/* An oldraw on rp, width by height pixels (a window's RastPort, or a BitMap's of the screen's kind: one with no
+ * layer gets oldraw's own layer on its BitMap, so text and icons are cut there too), with scr's
  * pens and font (NULL: the default public screen's). The pens are found when it is made: make it again (or call
  * oldraw_pens_changed) after the Palette changes. NULL when memory is short. Amiga only. */
 oldraw *oldraw_new_rastport(struct RastPort *rp, struct Screen *scr, int width, int height);
@@ -105,11 +106,17 @@ typedef struct oldraw_ops {
     /* text with its baseline at y, cut to clip; 1 when drawn */
     int (*text)(void *target, int x, int y, const char *utf8, size_t length, const oldraw_font *font, oldraw_colour c,
                 unsigned style, const oldraw_rect *clip);
+    /* utf8's size in font; font->style also holds the call's OLDRAW_BOLD, ITALIC and UNDERLINE (font is never
+     * NULL when a style is asked for) */
     int (*measure)(void *target, const char *utf8, size_t length, const oldraw_font *font, oldraw_text_size *size);
     /* the end of a batch: what was drawn goes to the screen */
     void (*flush)(void *target);
     /* free the target's side of an image (may be NULL) */
     void (*image_free)(void *target, oldraw_image *img);
+    /* the target's own pixels w by h at sx,sy copied to dx,dy, as memmove copies (the two may overlap); both are
+     * inside the target and the clip. 0 when copied; not 0 when part of the source can't be read (hidden in a
+     * simple-refresh window): then the whole destination is damaged */
+    int (*copy)(void *target, int sx, int sy, int dx, int dy, int w, int h);
 } oldraw_ops;
 /* An oldraw on any target. pens: the colour of each OLDRAW_PEN role as 0xFFRRGGBB (NULL: grey 3.2.3 ones). */
 oldraw *oldraw_new(const oldraw_ops *ops, void *target, int width, int height, const oldraw_colour *pens);
@@ -135,6 +142,16 @@ int oldraw_redraw(oldraw *d, oldraw_redraw_fn fn, void *userdata);
 void oldraw_clip(oldraw *d, const oldraw_rect *r);
 /* What is drawn goes to the screen now (outside oldraw_redraw: after a selection box moves). */
 void oldraw_flush(oldraw *d);
+
+/* ---- copy and scroll ---- */
+/* The pixels of src copied to dx,dy on the same target, as memmove copies, so the two may overlap (a drawer's
+ * rows moved up). The source and the destination are cut together: what is copied is what both the source (cut to
+ * the target) and the destination (cut to the target and the clip) cover. Where the destination's source was off
+ * the target, nothing is copied and that part is damaged (oldraw_damage), for the next oldraw_redraw to draw. */
+void oldraw_copy(oldraw *d, const oldraw_rect *src, int dx, int dy);
+/* What is in area moved by ddx, ddy inside it (ddy below 0: up, as a list scrolled down a row); the strip it
+ * leaves is damaged. A move as big as the area or bigger damages it all and copies nothing. */
+void oldraw_scroll(oldraw *d, const oldraw_rect *area, int ddx, int ddy);
 
 /* ---- boxes ---- */
 void oldraw_fill(oldraw *d, const oldraw_rect *r, oldraw_colour c);
@@ -190,7 +207,7 @@ typedef struct oldraw_row {
     int ncells;
     unsigned flags;             /* OLDRAW_ROW_... */
     const oldraw_font *font;    /* NULL: the screen's */
-    int pad;                    /* pixels between cells and inside each end; below 0: 4 */
+    int pad;                    /* pixels inside each side of a cell (so 2 * pad between two cells); below 0: 4 */
 } oldraw_row;
 /* The row filling r: its background, then each cell left to right, cut to its width and to r. */
 void oldraw_list_row(oldraw *d, const oldraw_rect *r, const oldraw_row *row);
@@ -200,7 +217,8 @@ int oldraw_list_cell_box(const oldraw_row *row, const oldraw_rect *r, int i, old
 
 /* ---- the selection box (the lasso) ---- */
 /* A dotted box from x0,y0 to x1,y1 (either corner first), complemented as 3.2.3's Workbench draws it: the same
- * call again takes it off, so a drag draws the old one, then the new. */
+ * call again takes it off, so a drag draws the old one, then the new. Take it off before oldraw_redraw and draw it
+ * again after: complemented pixels drawn over by a redraw would be left behind. */
 void oldraw_select_box(oldraw *d, int x0, int y0, int x1, int y1);
 
 /* ---- a progress bar ---- */
@@ -213,7 +231,11 @@ int oldraw_progress_fill(int w, uint32_t done, uint32_t total);
 
 /* ---- a pie segment ---- */
 /* The part of the circle round cx,cy of radius r from start for sweep, in tenths of a degree, 0 at the top,
- * clockwise (a disk's used part: start 0, sweep used * 3600 / size). sweep 3600 and over: the whole circle. */
+ * clockwise (a disk's used part: start 0, sweep oldraw_pie_sweep(used, size)). sweep 3600 and over: the whole
+ * circle. r above OLDRAW_PIE_MAX is taken as OLDRAW_PIE_MAX. */
+#define OLDRAW_PIE_MAX 16383
+/* used of size (bytes or blocks, any size) as a sweep in tenths of a degree, 0 to 3600 */
+unsigned oldraw_pie_sweep(uint64_t used, uint64_t size);
 void oldraw_pie(oldraw *d, int cx, int cy, int r, int start, int sweep, oldraw_colour c);
 /* 1 when the pixel at dx,dy from the centre is in that segment (what oldraw_pie fills). */
 int oldraw_pie_has(int r, int start, int sweep, int dx, int dy);

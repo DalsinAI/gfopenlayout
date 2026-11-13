@@ -203,10 +203,23 @@ def read_runs(spec):
     for f, r in zip(names, runs):
         if not r["results"]:
             raise SystemExit(f"{f}: no BENCH lines")
+        require_complete_run(r, f)
     return mode, runs, [Path(f).name for f in names]
 
 
 # ---- on the Cradle host
+
+def require_complete_run(result, source="benchmark"):
+    """Refuse a failed or truncated run before it can enter a baseline."""
+    if result["end"] != "ok":
+        state = result["end"] if result["end"] is not None else "missing"
+        raise SystemExit(f"{source}: BENCH-END {state} (not a complete run)")
+
+
+def within(path, root):
+    """Path-aware containment, after following links."""
+    path, root = Path(path).resolve(), Path(root).resolve()
+    return path == root or path.is_relative_to(root)
 
 def loadavg():
     try:
@@ -223,7 +236,11 @@ class Lab:
         self.app_root = Path(app_root).expanduser()
         self.labs_root = Path(labs_root).expanduser().resolve()
         self.folder = (self.labs_root / name).resolve()
-        if not str(self.folder).startswith(str(self.labs_root)) and not (self.labs_root / name).is_symlink():
+        allowed = [self.labs_root]
+        if os.environ.get("AMICRADLE_NEW_LABS"):
+            allowed.append(Path(os.environ["AMICRADLE_NEW_LABS"]).expanduser().resolve())
+        instances = Path(os.environ.get("AMICRADLE_LIVE_INSTANCES", "~/AmiCradleInstances")).expanduser().resolve()
+        if not any(within(self.folder, root) for root in allowed) or within(self.folder, instances):
             raise SystemExit(f"{name}: not a lab")
         self.sys = self.folder / "devices" / "harddisks" / "DH0"
         if not (self.sys / "S" / "ACAgent").is_file():
@@ -245,7 +262,7 @@ class Lab:
 
     def put(self, binary):
         dest = self.sys / "C" / "GFLayoutBench"
-        if not str(dest.resolve().parent).startswith(str(self.folder)):
+        if not within(dest.resolve().parent, self.folder):
             raise SystemExit("refusing to write outside the lab")
         shutil.copyfile(binary, dest)
 
@@ -290,7 +307,9 @@ def run_lab(a):
                 text = lab.run(f"SYS:C/GFLayoutBench LABEL={a.lab}-{mode}-{i + 1}")
                 f = outdir / f"{mode}-{i + 1}.txt"
                 f.write_text(f"# load {' '.join(la)}\n" + text, encoding="latin-1")
-                runs.append(parse(text))
+                parsed = parse(text)
+                require_complete_run(parsed, f"{mode} run {i + 1}")
+                runs.append(parsed)
                 files.append(f.name)
                 print(f"{mode} run {i + 1}: load {la[0]}, {len(runs[-1]['results'])} results", flush=True)
         finally:

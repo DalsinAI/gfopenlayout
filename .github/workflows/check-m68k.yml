@@ -1,0 +1,30 @@
+# Copyright (c) 2026 AmiCradle Team. MIT licence.
+name: m68k (the compositor's marks)
+
+# layers_mark.h's marks against GFOpenGfx's own drawing, built by an m68k
+# cross GCC for the 68040 and run under qemu-m68k.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/check-m68k.yml
+      - library/layers/**
+      - tests/m68k/**
+
+permissions:
+  contents: read
+
+jobs:
+  m68k:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: DalsinAI/gfopengfx
+          path: gfopengfx
+      - name: m68k cross GCC and qemu-m68k
+        run: sudo apt-get update && sudo apt-get install -y gcc-m68k-linux-gnu g++-m68k-linux-gnu qemu-user
+      - name: GFOpenLayers composited marks
+        run: GFX=gfopengfx QEMU_M68K=qemu-m68k sh tests/m68k/test_comp_marks.sh

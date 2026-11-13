@@ -4,7 +4,7 @@ CFLAGS ?= -O2
 WARN = -std=c99 -Wall -Wextra -Werror -pedantic
 BUILD = build
 
-.PHONY: all test clean
+.PHONY: all test clean probe_oi
 
 # GFOpenLayout UI: with OGT_ROOT (GFOpenGadTools), its theme reader is built in
 OGT_ROOT ?=
@@ -28,7 +28,7 @@ GTK_HDR = gtk/include/glib.h gtk/include/gtk/gtk.h gtk/include/gtk/gtkc.h gtk/in
           gtk/include/gdk/gdkkeysyms.h gtk/gtkc_internal.h
 
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui \
-     $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw
+     $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_core_api
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -90,7 +90,7 @@ $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
 test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
-      $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_gflbench
+      $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_core_api $(BUILD)/test_gflbench
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
@@ -103,9 +103,26 @@ test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/te
 	./$(BUILD)/test_desktop
 	./$(BUILD)/test_gtk
 	./$(BUILD)/test_draw
+	./$(BUILD)/test_core_api
 	./$(BUILD)/test_gflbench
 	python3 -I tests/test_gflbench_run.py
 	python3 tools/gen-library.py --check
+
+# The ROM core's API (gfopenlayout_core.h, wave 2 review rule 2): the header alone in C89 and C99, and in C++
+$(BUILD)/test_core_api: tests/test_core_api.c include/gfopenlayout_core.h | $(BUILD)
+	$(CC) -std=c89 -pedantic -Wall -Wextra -Werror -Iinclude -fsyntax-only tests/test_core_api.c
+	if command -v c++ >/dev/null; then printf '#include "gfopenlayout_core.h"\nint main(){return olc_oi()!=0;}\n' | \
+	  c++ -x c++ -Wall -Wextra -Werror -Iinclude -fsyntax-only -; fi
+	$(CC) $(CFLAGS) -std=c99 -pedantic -Wall -Wextra -Werror -Iinclude tests/test_core_api.c -o $@
+
+# olc_oi()'s entries against openintuition's real env tables, with its m68k types (its NDK size checks need
+# 32-bit pointers): make probe_oi OI_DIR=<amigachrome-guest>/libraries/openintuition [OI_CC=m68k-linux-gnu-gcc]
+OI_CC ?= m68k-linux-gnu-gcc
+probe_oi:
+	@test -n "$(OI_DIR)" || { echo "probe_oi: set OI_DIR to openintuition's source"; exit 1; }
+	$(OI_CC) -std=c99 -Wall -Wextra -Werror -Iinclude -I$(OI_DIR) -fsyntax-only tests/probe_oi_types.c
+	$(OI_CC) -DOU_NATIVE -std=c99 -Wall -Wextra -Werror -Iinclude -I$(OI_DIR) -fsyntax-only tests/probe_oi_types.c
+	@echo "probe_oi: 18 hooks match openintuition's types"
 
 clean:
 	rm -rf $(BUILD)
