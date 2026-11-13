@@ -165,7 +165,7 @@ def report(modes, sha, date, load="", lab="", previous=None, notes=()):
     L.append("Units: `/s` and `icons` are better higher, `ms` lower. `drawer_200_redraw` is one full redraw of a drawer"
              " of 200 icons (icon and label each, 1024x640); `drawer_200_icons_per_frame` is how many of its icons fit"
              " in a 60 Hz frame; `list_scroll_1000` scrolls a 20-row view through 1000 list rows a row a step, each"
-             " step a damage-rect redraw (gfopenlayout_draw.h has no scroll-by-copy yet).")
+             " step a damage-rect redraw (this benchmark deliberately does not use scroll-by-copy).")
     L.append("")
     L.append("## Each run")
     L.append("")

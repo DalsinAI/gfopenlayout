@@ -282,7 +282,7 @@ static void w_drawer(bench *b, unsigned long n)
 }
 
 /* the list of 1000 rows scrolled from its top to its end, a row a step: each step redraws the view (there is no
- * scroll-by-copy in gfopenlayout_draw.h yet) */
+ * this benchmark deliberately does not use scroll-by-copy) */
 static void w_scroll(bench *b, unsigned long n)
 {
     oldraw_rect view = { 0, 0, LIST_W, LIST_VISIBLE * LIST_ROW_H };

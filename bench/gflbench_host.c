@@ -87,7 +87,7 @@ static int h_text(void *t, int x, int y, const char *s, size_t n, const oldraw_f
 
 static void h_flush(void *t) { (void)t; }
 
-static const oldraw_ops host_ops = { h_fill, h_invert, h_image, h_text, h_measure, h_flush, NULL };
+static const oldraw_ops host_ops = { h_fill, h_invert, h_image, h_text, h_measure, h_flush, NULL, NULL };
 
 static uint64_t h_now(void *u)
 {
