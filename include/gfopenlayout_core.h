@@ -150,6 +150,9 @@ enum {
  * have a surface. NULL when out of memory, or when screen can't be composited (it is then direct: ask
  * olc_scene_new again with OLC_SCENE_DIRECT). */
 olc_scene *olc_scene_new(void *screen, int32_t w, int32_t h, uint32_t mode);
+/* The screen's bitmap changed under the scene (double buffering, a mode change): its pixels, bytes per row and
+ * format are looked up again. Called outside every lock. -1 when the new one can't be composited. */
+int olc_scene_rebind(olc_scene *sc, void *screen, int32_t w, int32_t h);
 void olc_scene_free(olc_scene *sc);
 uint32_t olc_scene_mode(const olc_scene *sc);
 /* A layer at x0, y0 to x1, y1, in front of front (NULL: in front of all). Its surface is the core's. */
@@ -191,8 +194,12 @@ int olc_compose(olc_scene *sc, const olc_region *damage);
 typedef struct olc_accel {
     uint32_t version;           /* OLC_ACCEL_VERSION */
     void *ctx;                  /* the back end's, given to every call */
-    /* A compose on screen (struct BitMap *), w by h: a batch, or NULL for the CPU to do this one. */
-    void *(*begin)(void *ctx, void *screen, int32_t w, int32_t h);
+    /* A compose on screen (struct BitMap *), w by h: a batch, or NULL for the CPU to do this one. The screen's
+     * pixels, bytes per row and format are the core's, looked up once when the scene was made (olc_scene_new,
+     * outside every lock: ORTG_BitMapInfo may settle batches) and again only when the screen's bitmap changes,
+     * so a back end never looks them up or caches them itself. */
+    void *(*begin)(void *ctx, void *screen, void *pixels, int32_t bytes_per_row, uint32_t fmt, int32_t w,
+                   int32_t h);
     /* The surface's pixels (fmt, w by h, bytes_per_row) named in this batch; *slot gets its slot, the same one for
      * the same surface until retire. 0, or -1: the CPU does this compose (the core calls abort). */
     int (*bind)(void *ctx, void *batch, const void *pixels, int32_t bytes_per_row, int32_t w, int32_t h, uint32_t fmt,
