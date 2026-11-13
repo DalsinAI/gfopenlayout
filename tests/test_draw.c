@@ -57,8 +57,7 @@ static int t_measure(void *t, const char *s, size_t n, const oldraw_font *f, old
 {
     (void)t;
     (void)s;
-    (void)f;
-    size->width = (int)n * 6;
+    size->width = (int)n * 6 + ((f && (f->style & OLDRAW_BOLD)) ? (int)n : 0);   /* bold: a pixel wider each */
     size->ascent = 7;
     size->descent = 2;
     return 1;
@@ -84,19 +83,23 @@ static int t_text(void *t, int x, int y, const char *s, size_t n, const oldraw_f
 
 static void t_flush(void *t) { (void)t; ++flushes; }
 
-static void t_copy(void *t, int sx, int sy, int dx, int dy, int w, int h)
+static int copy_refuses;      /* the target says part of the source was hidden */
+
+static int t_copy(void *t, int sx, int sy, int dx, int dy, int w, int h)
 {
     static uint32_t tmp[H][W];
     int i, j;
     (void)t;
+    if (copy_refuses) return 1;
     for (j = 0; j < h; ++j)
         for (i = 0; i < w; ++i) {
             if (sx + i < 0 || sy + j < 0 || sx + i >= W || sy + j >= H || dx + i < 0 || dy + j < 0 || dx + i >= W ||
-                dy + j >= H) { ++fails; printf("FAIL copy outside the target\n"); return; }
+                dy + j >= H) { ++fails; printf("FAIL copy outside the target\n"); return 0; }
             tmp[j][i] = px[sy + j][sx + i];
         }
     for (j = 0; j < h; ++j)
         for (i = 0; i < w; ++i) px[dy + j][dx + i] = tmp[j][i];
+    return 0;
 }
 
 static const oldraw_ops ops = { t_fill, t_invert, t_image, t_text, t_measure, t_flush, NULL, t_copy };
@@ -161,6 +164,13 @@ static void test_fill_frame_clip(oldraw *d)
     clear(BG);
     oldraw_frame(d, &r, 1);
     CHECK(count(10, 10, 7, 1, SHADOW) == 7 && count(17, 10, 1, 5, SHINE) == 5);
+    /* a one-pixel frame is a pixel */
+    {
+        oldraw_rect one = { 5, 5, 1, 1 };
+        clear(BG);
+        oldraw_frame(d, &one, 0);
+        CHECK(count(5, 5, 1, 1, SHINE) == 1 && count_not(0, 0, W, H, BG) == 1);
+    }
 }
 
 static void test_damage(oldraw *d)
@@ -179,6 +189,14 @@ static void test_damage(oldraw *d)
     oldraw_damage(d, &outside);                     /* off the target: dropped */
     CHECK(oldraw_damage_count(d) == 2);
     oldraw_redraw(d, NULL, NULL);
+    /* touching only at a corner: kept apart (joining them would redraw 200 pixels for 100) */
+    {
+        oldraw_rect c1 = { 0, 0, 10, 10 }, c2 = { 10, 10, 10, 10 };
+        oldraw_damage(d, &c1);
+        oldraw_damage(d, &c2);
+        CHECK(oldraw_damage_count(d) == 2);
+        oldraw_redraw(d, NULL, NULL);
+    }
     /* more than OLDRAW_DAMAGE_MAX apart: never more than the most kept, and every pixel still covered */
     for (i = 0; i < 30; ++i) {
         oldraw_rect s;
@@ -266,6 +284,19 @@ static void test_text(oldraw *d)
     small.w = 10;
     CHECK(oldraw_text_box(d, &small, "abcdef", (size_t)-1, NULL, OLDRAW_PEN(OLDRAW_PEN_TEXT), 0, OLDRAW_LEFT) == 0);
     CHECK(count(0, 0, W, H, TEXT) == 0);
+    /* the call's style reaches the measure (bold is wider), with no font and with one */
+    {
+        oldraw_font f = { "topaz.font", 8, 0 };
+        CHECK(oldraw_text_measure(d, "abc", (size_t)-1, NULL, OLDRAW_BOLD, &s) && s.width == 21);
+        CHECK(oldraw_text_measure(d, "abc", (size_t)-1, &f, OLDRAW_BOLD, &s) && s.width == 21);
+        CHECK(f.style == 0);                        /* the caller's font is left as it was */
+        f.style = OLDRAW_BOLD;
+        CHECK(oldraw_text_measure(d, "abc", (size_t)-1, &f, 0, &s) && s.width == 21);
+        /* and so a bold "..." cut is a bold one: 3 * 7 + 21 = 42 > 40, so 2 kept */
+        kept = oldraw_text_box(d, &box, "abcdefghijkl", (size_t)-1, NULL, OLDRAW_PEN(OLDRAW_PEN_TEXT), OLDRAW_BOLD,
+                               OLDRAW_LEFT);
+        CHECK(kept == 2);
+    }
 }
 
 static void test_image(oldraw *d)
@@ -406,6 +437,14 @@ static void test_pie(oldraw *d)
     CHECK(oldraw_pie_has(10, 0, 2700, -5, 5) && !oldraw_pie_has(10, 0, 2700, -5, -5));   /* more than half */
     CHECK(oldraw_pie_has(10, 3500, 200, 1, -9) && oldraw_pie_has(10, 3500, 200, -1, -9)); /* across 0 */
     CHECK(!oldraw_pie_has(10, 0, 0, 1, -9));
+    /* a huge radius doesn't overflow: Franklin's probe, a point outside a circle of 40000 */
+    CHECK(!oldraw_pie_has(40000, 0, 3600, 39000, -30000));
+    CHECK(oldraw_pie_has(40000, 0, 3600, 100, -100));
+    /* the sweep of used of size, for any size */
+    CHECK(oldraw_pie_sweep(0, 0) == 0 && oldraw_pie_sweep(1, 2) == 1800 && oldraw_pie_sweep(5, 4) == 3600);
+    CHECK(oldraw_pie_sweep(2000000000000ULL, 4000000000000ULL) == 1800);         /* 4 TB in bytes */
+    CHECK(oldraw_pie_sweep(0xFFFFFFFFFFFFFFF0ULL / 4, 0xFFFFFFFFFFFFFFF0ULL) >= 899 &&
+          oldraw_pie_sweep(0xFFFFFFFFFFFFFFF0ULL / 4, 0xFFFFFFFFFFFFFFF0ULL) <= 901);
     for (y = -10; y <= 10; ++y)
         for (x = -10; x <= 10; ++x) {
             full += oldraw_pie_has(10, 0, 3600, x, y);
@@ -431,6 +470,19 @@ static void test_pie(oldraw *d)
         CHECK(same);
     }
     CHECK(count_not(0, 0, 30, H, BG) == 1 || count_not(0, 0, 30, H, BG) == 0);  /* left of centre: at most its column */
+    /* clipped to one row: that row only, the same pixels as unclipped */
+    {
+        oldraw_rect row = { 0, 20, W, 1 };
+        int same = 1;
+        clear(BG);
+        oldraw_clip(d, &row);
+        oldraw_pie(d, 30, 24, 10, 0, 3600, OLDRAW_RGB(0xFF0000));
+        oldraw_clip(d, NULL);
+        CHECK(count_not(0, 0, W, 20, BG) == 0 && count_not(0, 21, W, H - 21, BG) == 0);
+        for (x = -12; x <= 12; ++x)
+            if ((px[20][30 + x] == 0xFF0000u) != (oldraw_pie_has(10, 0, 3600, x, -4) != 0)) same = 0;
+        CHECK(same);
+    }
 }
 
 /* a picture whose every pixel says where it is */
@@ -512,6 +564,40 @@ static void test_copy_scroll(oldraw *d)
     /* as big as the area: all of it damaged */
     oldraw_scroll(d, &area, 0, 20);
     CHECK(oldraw_damage_count(d) == 1 && oldraw_damage_get(d, 0, &got) && got.w == 30 && got.h == 20);
+    oldraw_redraw(d, NULL, NULL);
+    /* damage pending in the source moves with the copy: 0,20 20x5 damaged, then the area scrolls up 10, so 0,10
+     * 20x5 (where the stale pixels went) is damaged too, and so is the strip left at the bottom */
+    {
+        oldraw_rect pend = { 0, 20, 20, 5 }, area2 = { 0, 10, 30, 20 };
+        int k, n, cov = 1;
+        oldraw_damage(d, &pend);
+        oldraw_scroll(d, &area2, 0, -10);
+        n = oldraw_damage_count(d);
+        for (j = 10; j < 30; ++j)
+            for (i = 0; i < 30; ++i) {
+                int want = (i < 20 && j >= 10 && j < 15) || (i < 20 && j >= 20 && j < 25) || j >= 20, in = 0;
+                for (k = 0; k < n; ++k) {
+                    oldraw_damage_get(d, k, &got);
+                    if (i >= got.x && i < got.x + got.w && j >= got.y && j < got.y + got.h) in = 1;
+                }
+                if (want && !in) cov = 0;
+            }
+        CHECK(cov);
+        /* and nothing above it: rows 15 to 19 were copied from clean rows */
+        for (k = 0; k < n; ++k) {
+            oldraw_damage_get(d, k, &got);
+            CHECK(!(got.y < 20 && got.y + got.h > 15));
+        }
+        oldraw_redraw(d, NULL, NULL);
+    }
+    /* a target that can't read the source (hidden in a simple-refresh window): all of the destination damaged */
+    stamp();
+    copy_refuses = 1;
+    oldraw_copy(d, &src, 30, 20);
+    copy_refuses = 0;
+    CHECK(is_from(30, 20, 30, 20));
+    CHECK(oldraw_damage_count(d) == 1 && oldraw_damage_get(d, 0, &got) && got.x == 30 && got.y == 20 && got.w == 10 &&
+          got.h == 6);
     oldraw_redraw(d, NULL, NULL);
 }
 

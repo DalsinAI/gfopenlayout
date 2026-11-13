@@ -12,6 +12,7 @@ struct oldraw_image {
     int w, h;
     uint32_t *argb;             /* OLDRAW_IMG_ARGB: w * h, rows w apart */
     void *icon;                 /* OLDRAW_IMG_ICON: the DiskObject */
+    int ox, oy;                 /* OLDRAW_IMG_ICON: GetIconRectangle's MinX, MinY (the picture's corner) */
     void *target_data;          /* the target's own (a cached BitMap in wave 2) */
 };
 
