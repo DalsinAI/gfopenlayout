@@ -1,0 +1,639 @@
+/* GFOpenLayout drawing, the portable part: damage, clipping and the shapes of each primitive, drawn through a
+ * target's oldraw_ops (oldraw_amiga.c's RastPort; a host test's pixels). No floating point.
+ * MIT, Copyright (c) 2026 AmiCradle Team. */
+#include "oldraw_internal.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+/* 3.2.3's grey Workbench pens, for a target that gives none */
+static const oldraw_colour grey_pens[OLDRAW_PEN_COUNT] = {
+    0xFF000000UL, 0xFFAAAAAAUL, 0xFF000000UL, 0xFFFFFFFFUL, 0xFF000000UL, 0xFF6688BBUL,
+    0xFF000000UL, 0xFFAAAAAAUL, 0xFFFFFFFFUL, 0xFF000000UL, 0xFFFFFFFFUL, 0xFF000000UL
+};
+
+oldraw *oldraw_new(const oldraw_ops *ops, void *target, int width, int height, const oldraw_colour *pens)
+{
+    oldraw *d;
+    if (!ops) return NULL;
+    d = (oldraw *)calloc(1, sizeof *d);
+    if (!d) return NULL;
+    d->ops = ops;
+    d->target = target;
+    d->w = width;
+    d->h = height;
+    memcpy(d->pens, pens ? pens : grey_pens, sizeof d->pens);
+    return d;
+}
+
+void oldraw_free(oldraw *d)
+{
+    if (!d) return;
+    if (d->free_target) d->free_target(d);
+    free(d);
+}
+
+void oldraw_resize(oldraw *d, int width, int height)
+{
+    if (!d) return;
+    d->w = width;
+    d->h = height;
+    d->ndamage = 0;
+    d->has_user = 0;
+    d->has_extra = 0;
+}
+
+oldraw_colour oldraw_resolve(const oldraw *d, oldraw_colour c)
+{
+    if ((c >> 24) == 0xFEu) return d->pens[(c & 0xFFu) < OLDRAW_PEN_COUNT ? (c & 0xFFu) : OLDRAW_PEN_TEXT];
+    return c;
+}
+
+/* ---- rectangles ---- */
+static int rect_cut(oldraw_rect *a, const oldraw_rect *b)
+{
+    int32_t x1 = a->x > b->x ? a->x : b->x, y1 = a->y > b->y ? a->y : b->y;
+    int32_t x2 = a->x + a->w < b->x + b->w ? a->x + a->w : b->x + b->w;
+    int32_t y2 = a->y + a->h < b->y + b->h ? a->y + a->h : b->y + b->h;
+    a->x = x1;
+    a->y = y1;
+    a->w = x2 - x1;
+    a->h = y2 - y1;
+    return a->w > 0 && a->h > 0;
+}
+
+static oldraw_rect rect_join(const oldraw_rect *a, const oldraw_rect *b)
+{
+    oldraw_rect r;
+    int32_t x2 = a->x + a->w > b->x + b->w ? a->x + a->w : b->x + b->w;
+    int32_t y2 = a->y + a->h > b->y + b->h ? a->y + a->h : b->y + b->h;
+    r.x = a->x < b->x ? a->x : b->x;
+    r.y = a->y < b->y ? a->y : b->y;
+    r.w = x2 - r.x;
+    r.h = y2 - r.y;
+    return r;
+}
+
+static int rect_touch(const oldraw_rect *a, const oldraw_rect *b)
+{
+    return a->x <= b->x + b->w && b->x <= a->x + a->w && a->y <= b->y + b->h && b->y <= a->y + a->h;
+}
+
+static long area(const oldraw_rect *r) { return (long)r->w * (long)r->h; }
+
+int oldraw_clip_now(const oldraw *d, oldraw_rect *c)
+{
+    c->x = 0;
+    c->y = 0;
+    c->w = d->w;
+    c->h = d->h;
+    if (c->w <= 0 || c->h <= 0) return 0;
+    if (d->in_redraw && !rect_cut(c, &d->area)) return 0;
+    if (d->has_user && !rect_cut(c, &d->user)) return 0;
+    if (d->has_extra && !rect_cut(c, &d->extra)) return 0;
+    return 1;
+}
+
+/* r cut to the clip now; 0 when nothing is left */
+static int cut(const oldraw *d, int *x, int *y, int *w, int *h)
+{
+    oldraw_rect c, r;
+    if (*w <= 0 || *h <= 0 || !oldraw_clip_now(d, &c)) return 0;
+    r.x = *x;
+    r.y = *y;
+    r.w = *w;
+    r.h = *h;
+    if (!rect_cut(&r, &c)) return 0;
+    *x = (int)r.x;
+    *y = (int)r.y;
+    *w = (int)r.w;
+    *h = (int)r.h;
+    return 1;
+}
+
+/* a call's own box on top of the clip, given back with pop */
+static void push_box(oldraw *d, const oldraw_rect *r, int *had, oldraw_rect *saved)
+{
+    *had = d->has_extra;
+    *saved = d->extra;
+    if (d->has_extra) {
+        oldraw_rect n = *r;
+        if (!rect_cut(&n, &d->extra)) n.w = n.h = 0;
+        d->extra = n;
+    } else {
+        d->extra = *r;
+    }
+    d->has_extra = 1;
+}
+
+static void pop_box(oldraw *d, int had, const oldraw_rect *saved)
+{
+    d->has_extra = had;
+    d->extra = *saved;
+}
+
+/* ---- damage ---- */
+static void damage_put(oldraw *d, oldraw_rect r)
+{
+    int i, again = 1;
+    while (again) {
+        again = 0;
+        for (i = 0; i < d->ndamage; ++i)
+            if (rect_touch(&d->damage[i], &r)) {
+                r = rect_join(&d->damage[i], &r);
+                d->damage[i] = d->damage[--d->ndamage];
+                again = 1;
+                break;
+            }
+    }
+    if (d->ndamage == OLDRAW_DAMAGE_MAX) {
+        /* full: joined to the one it grows least, which may then touch others */
+        int best = 0;
+        long grow = -1;
+        for (i = 0; i < d->ndamage; ++i) {
+            oldraw_rect j = rect_join(&d->damage[i], &r);
+            long g = area(&j) - area(&d->damage[i]) - area(&r);
+            if (grow < 0 || g < grow) { grow = g; best = i; }
+        }
+        r = rect_join(&d->damage[best], &r);
+        d->damage[best] = d->damage[--d->ndamage];
+        damage_put(d, r);
+        return;
+    }
+    d->damage[d->ndamage++] = r;
+}
+
+void oldraw_damage(oldraw *d, const oldraw_rect *r)
+{
+    oldraw_rect n, all;
+    if (!d || !r) return;
+    n = *r;
+    all.x = 0;
+    all.y = 0;
+    all.w = d->w;
+    all.h = d->h;
+    if (!rect_cut(&n, &all)) return;
+    damage_put(d, n);
+}
+
+void oldraw_damage_all(oldraw *d)
+{
+    if (!d) return;
+    d->ndamage = 0;
+    if (d->w > 0 && d->h > 0) {
+        d->damage[0].x = 0;
+        d->damage[0].y = 0;
+        d->damage[0].w = d->w;
+        d->damage[0].h = d->h;
+        d->ndamage = 1;
+    }
+}
+
+int oldraw_damage_count(const oldraw *d) { return d ? d->ndamage : 0; }
+
+int oldraw_damage_get(const oldraw *d, int i, oldraw_rect *r)
+{
+    if (!d || i < 0 || i >= d->ndamage) return 0;
+    if (r) *r = d->damage[i];
+    return 1;
+}
+
+int oldraw_redraw(oldraw *d, oldraw_redraw_fn fn, void *userdata)
+{
+    oldraw_rect list[OLDRAW_DAMAGE_MAX];
+    int i, n;
+    if (!d) return 0;
+    n = d->ndamage;
+    memcpy(list, d->damage, (size_t)n * sizeof list[0]);
+    d->ndamage = 0;     /* what fn marks now is for the next redraw */
+    for (i = 0; i < n; ++i) {
+        d->in_redraw = 1;
+        d->area = list[i];
+        if (fn) fn(userdata, d, &list[i]);
+        d->in_redraw = 0;
+    }
+    oldraw_flush(d);
+    return n;
+}
+
+void oldraw_clip(oldraw *d, const oldraw_rect *r)
+{
+    if (!d) return;
+    d->has_user = r != NULL;
+    if (r) d->user = *r;
+}
+
+void oldraw_flush(oldraw *d)
+{
+    if (d && d->ops->flush) d->ops->flush(d->target);
+}
+
+/* ---- boxes ---- */
+static void fill(oldraw *d, int x, int y, int w, int h, oldraw_colour c)
+{
+    if (c == OLDRAW_NONE) return;
+    if (cut(d, &x, &y, &w, &h)) d->ops->fill(d->target, x, y, w, h, c);
+}
+
+static void invert(oldraw *d, int x, int y, int w, int h)
+{
+    if (cut(d, &x, &y, &w, &h)) d->ops->invert(d->target, x, y, w, h);
+}
+
+void oldraw_fill(oldraw *d, const oldraw_rect *r, oldraw_colour c)
+{
+    if (d && r) fill(d, (int)r->x, (int)r->y, (int)r->w, (int)r->h, c);
+}
+
+void oldraw_frame(oldraw *d, const oldraw_rect *r, int recessed)
+{
+    oldraw_colour tl, br;
+    int x, y, w, h;
+    if (!d || !r || r->w <= 0 || r->h <= 0) return;
+    x = (int)r->x;
+    y = (int)r->y;
+    w = (int)r->w;
+    h = (int)r->h;
+    tl = OLDRAW_PEN(recessed ? OLDRAW_PEN_SHADOW : OLDRAW_PEN_SHINE);
+    br = OLDRAW_PEN(recessed ? OLDRAW_PEN_SHINE : OLDRAW_PEN_SHADOW);
+    fill(d, x, y, w - 1, 1, tl);                /* top, its right end the other's */
+    fill(d, x, y + 1, 1, h - 1, tl);            /* left, with the bottom left corner */
+    fill(d, x + 1, y + h - 1, w - 1, 1, br);    /* bottom */
+    if (h > 1 || w == 1) fill(d, x + w - 1, y, 1, h - 1, br);   /* right */
+    if (h == 1 && w > 1) fill(d, x + w - 1, y, 1, 1, br);
+}
+
+/* ---- text ---- */
+static size_t text_len(const char *utf8, size_t length)
+{
+    if (!utf8) return 0;
+    return length == (size_t)-1 ? strlen(utf8) : length;
+}
+
+int oldraw_text_measure(oldraw *d, const char *utf8, size_t length, const oldraw_font *font, unsigned style,
+                     oldraw_text_size *size)
+{
+    oldraw_text_size s;
+    (void)style;
+    if (!d || !d->ops->measure) return 0;
+    length = text_len(utf8, length);
+    memset(&s, 0, sizeof s);
+    if (!d->ops->measure(d->target, utf8 ? utf8 : "", length, font, &s)) return 0;
+    if (size) *size = s;
+    return 1;
+}
+
+int oldraw_text(oldraw *d, int x, int y, const char *utf8, size_t length, const oldraw_font *font, oldraw_colour c,
+                unsigned style)
+{
+    oldraw_text_size s;
+    oldraw_rect clip, box;
+    if (!d || !utf8) return 0;
+    length = text_len(utf8, length);
+    if (!length || !oldraw_text_measure(d, utf8, length, font, style, &s)) return 0;
+    box.x = x;
+    box.y = y - s.ascent;
+    box.w = s.width + ((style & (OLDRAW_SHADOW | OLDRAW_OUTLINE)) ? 2 : 0);
+    box.h = s.ascent + s.descent + ((style & (OLDRAW_SHADOW | OLDRAW_OUTLINE)) ? 2 : 0);
+    if (style & OLDRAW_OUTLINE) { box.x--; box.y--; }
+    if (c != OLDRAW_NONE && oldraw_clip_now(d, &clip) && rect_cut(&box, &clip))
+        d->ops->text(d->target, x, y, utf8, length, font, c, style, &clip);
+    return s.width;
+}
+
+size_t oldraw_text_box(oldraw *d, const oldraw_rect *r, const char *utf8, size_t length, const oldraw_font *font,
+                       oldraw_colour c, unsigned style, int align)
+{
+    static const char dots[] = "...";
+    oldraw_text_size s, e;
+    size_t keep, lo;
+    int had, x, y, tw;
+    oldraw_rect saved;
+    if (!d || !r || !utf8 || r->w <= 0 || r->h <= 0) return 0;
+    length = text_len(utf8, length);
+    if (!length || !oldraw_text_measure(d, utf8, length, font, style, &s)) return 0;
+    keep = length;
+    tw = s.width;
+    if (s.width > r->w) {
+        /* the longest start that fits with "..." after it: a binary search over where characters start */
+        size_t starts[256];
+        int n = 0, a, b;
+        if (!oldraw_text_measure(d, dots, 3, font, style, &e) || e.width > r->w) return 0;
+        for (lo = 1; lo < length && n < 256; ++lo)
+            if (((unsigned char)utf8[lo] & 0xC0u) != 0x80u) starts[n++] = lo;
+        a = -1;                 /* starts[a] fits (-1: none) */
+        b = n - 1;
+        while (a < b) {
+            int mid = (a + b + 1) / 2;
+            oldraw_text_size m;
+            if (oldraw_text_measure(d, utf8, starts[mid], font, style, &m) && m.width + e.width <= r->w) a = mid;
+            else b = mid - 1;
+        }
+        lo = a >= 0 ? starts[a] : 0;
+        keep = lo;
+        if (keep) oldraw_text_measure(d, utf8, keep, font, style, &s);
+        else s.width = 0;
+        tw = s.width + e.width;
+    }
+    x = (int)r->x;
+    if (align == OLDRAW_CENTRE) x += ((int)r->w - tw) / 2;
+    else if (align == OLDRAW_RIGHT) x += (int)r->w - tw;
+    y = (int)r->y + ((int)r->h - (s.ascent + s.descent)) / 2 + s.ascent;
+    push_box(d, r, &had, &saved);
+    if (keep) x += oldraw_text(d, x, y, utf8, keep, font, c, style);
+    if (keep < length) oldraw_text(d, x, y, dots, 3, font, c, style);
+    pop_box(d, had, &saved);
+    return keep;
+}
+
+/* ---- pictures ---- */
+oldraw_image *oldraw_image_argb(oldraw *d, int w, int h, const uint32_t *argb, int stride)
+{
+    oldraw_image *img;
+    int y;
+    (void)d;
+    if (w <= 0 || h <= 0 || !argb || stride < w) return NULL;
+    img = (oldraw_image *)calloc(1, sizeof *img);
+    if (!img) return NULL;
+    img->argb = (uint32_t *)malloc((size_t)w * (size_t)h * sizeof(uint32_t));
+    if (!img->argb) { free(img); return NULL; }
+    for (y = 0; y < h; ++y) memcpy(img->argb + (size_t)y * (size_t)w, argb + (size_t)y * (size_t)stride,
+                                   (size_t)w * sizeof(uint32_t));
+    img->kind = OLDRAW_IMG_ARGB;
+    img->w = w;
+    img->h = h;
+    return img;
+}
+
+#ifndef OLDRAW_AMIGA
+oldraw_image *oldraw_image_icon(oldraw *d, struct DiskObject *icon)
+{
+    (void)d;
+    (void)icon;
+    return NULL;
+}
+#endif
+
+int oldraw_image_width(const oldraw_image *img) { return img ? img->w : 0; }
+int oldraw_image_height(const oldraw_image *img) { return img ? img->h : 0; }
+
+uint32_t oldraw_image_pixel(const oldraw_image *img, int x, int y)
+{
+    if (!img || img->kind != OLDRAW_IMG_ARGB || x < 0 || y < 0 || x >= img->w || y >= img->h) return 0;
+    return img->argb[(size_t)y * (size_t)img->w + (size_t)x];
+}
+
+void oldraw_image_free(oldraw *d, oldraw_image *img)
+{
+    if (!img) return;
+    if (d && d->ops->image_free) d->ops->image_free(d->target, img);
+    free(img->argb);
+    free(img);
+}
+
+void oldraw_image_draw(oldraw *d, const oldraw_image *img, int x, int y, unsigned flags)
+{
+    int cx = x, cy = y, w, h;
+    if (!d || !img) return;
+    w = img->w;
+    h = img->h;
+    if (cut(d, &cx, &cy, &w, &h)) d->ops->image(d->target, img, cx - x, cy - y, cx, cy, w, h, flags);
+}
+
+/* ---- a list's row ---- */
+static int row_pad(const oldraw_row *row) { return row->pad < 0 ? 4 : row->pad; }
+
+int oldraw_list_cell_box(const oldraw_row *row, const oldraw_rect *r, int i, oldraw_rect *cell)
+{
+    int k, x, pad, end;
+    if (!row || !r || i < 0 || i >= row->ncells) return 0;
+    pad = row_pad(row);
+    x = (int)r->x;
+    end = (int)(r->x + r->w);
+    for (k = 0; k <= i; ++k) {
+        int w = row->cells[k].width;
+        if (w <= 0) w = end - x;
+        if (k == i) {
+            oldraw_rect c;
+            c.x = x + pad;
+            c.y = r->y;
+            c.w = (x + w > end ? end - x : w) - 2 * pad;
+            c.h = r->h;
+            if (cell) *cell = c;
+            return c.w > 0 && c.h > 0;
+        }
+        x += w;
+        if (x >= end) break;
+    }
+    return 0;
+}
+
+/* a dotted line of complemented pixels, by where it is on the screen, so the same call takes it off again */
+static void dots_h(oldraw *d, int x0, int x1, int y)
+{
+    int x = x0;
+    while (x <= x1) {
+        int start = x, stop;
+        if ((x >> 2) & 1) { x = ((x >> 2) + 1) << 2; continue; }
+        stop = (((x >> 2) + 1) << 2) - 1;
+        if (stop > x1) stop = x1;
+        invert(d, start, y, stop - start + 1, 1);
+        x = stop + 1;
+    }
+}
+
+static void dots_v(oldraw *d, int x, int y0, int y1)
+{
+    int y = y0;
+    while (y <= y1) {
+        int start = y, stop;
+        if ((y >> 2) & 1) { y = ((y >> 2) + 1) << 2; continue; }
+        stop = (((y >> 2) + 1) << 2) - 1;
+        if (stop > y1) stop = y1;
+        invert(d, x, start, 1, stop - start + 1);
+        y = stop + 1;
+    }
+}
+
+void oldraw_select_box(oldraw *d, int x0, int y0, int x1, int y1)
+{
+    if (!d) return;
+    if (x1 < x0) { int t = x0; x0 = x1; x1 = t; }
+    if (y1 < y0) { int t = y0; y0 = y1; y1 = t; }
+    dots_h(d, x0, x1, y0);
+    if (y1 != y0) dots_h(d, x0, x1, y1);
+    if (y1 - y0 > 1) {
+        dots_v(d, x0, y0 + 1, y1 - 1);
+        if (x1 != x0) dots_v(d, x1, y0 + 1, y1 - 1);
+    }
+}
+
+void oldraw_list_row(oldraw *d, const oldraw_rect *r, const oldraw_row *row)
+{
+    oldraw_colour bg, fg;
+    int i, had;
+    oldraw_rect saved;
+    if (!d || !r || !row || r->w <= 0 || r->h <= 0) return;
+    if (row->flags & OLDRAW_ROW_SELECTED) bg = OLDRAW_PEN(OLDRAW_PEN_FILL);
+    else if (row->flags & OLDRAW_ROW_STRIPE) {
+        /* a shade darker than the background */
+        oldraw_colour b = oldraw_resolve(d, OLDRAW_PEN(OLDRAW_PEN_BACKGROUND));
+        uint32_t rr = (b >> 16) & 255, gg = (b >> 8) & 255, bb = b & 255;
+        rr = rr > 16 ? rr - 16 : 0;
+        gg = gg > 16 ? gg - 16 : 0;
+        bb = bb > 16 ? bb - 16 : 0;
+        bg = OLDRAW_RGB((rr << 16) | (gg << 8) | bb);
+    } else bg = OLDRAW_PEN(OLDRAW_PEN_BACKGROUND);
+    fg = (row->flags & OLDRAW_ROW_GHOSTED) ? OLDRAW_PEN(OLDRAW_PEN_SHADOW)
+         : OLDRAW_PEN((row->flags & OLDRAW_ROW_SELECTED) ? OLDRAW_PEN_FILLTEXT : OLDRAW_PEN_TEXT);
+    oldraw_fill(d, r, bg);
+    push_box(d, r, &had, &saved);
+    for (i = 0; i < row->ncells; ++i) {
+        const oldraw_cell *cell = &row->cells[i];
+        oldraw_rect box;
+        int h2, cbox_had;
+        oldraw_rect cbox_saved;
+        if (!oldraw_list_cell_box(row, r, i, &box)) continue;
+        push_box(d, &box, &cbox_had, &cbox_saved);
+        if (cell->image) {
+            int iy = (int)box.y + ((int)box.h - cell->image->h) / 2;
+            oldraw_image_draw(d, cell->image, (int)box.x, iy,
+                              (row->flags & OLDRAW_ROW_GHOSTED) ? OLDRAW_GHOSTED : 0);
+            h2 = cell->image->w + row_pad(row);
+            box.x += h2;
+            box.w -= h2;
+        }
+        if (cell->text && box.w > 0)
+            oldraw_text_box(d, &box, cell->text, (size_t)-1, row->font, fg, 0, cell->align);
+        pop_box(d, cbox_had, &cbox_saved);
+    }
+    pop_box(d, had, &saved);
+    if (row->flags & OLDRAW_ROW_CURRENT)
+        oldraw_select_box(d, (int)r->x, (int)r->y, (int)(r->x + r->w - 1), (int)(r->y + r->h - 1));
+}
+
+/* ---- a progress bar ---- */
+int oldraw_progress_fill(int w, uint32_t done, uint32_t total)
+{
+    if (w <= 0 || total == 0) return 0;
+    if (done >= total) return w;
+    return (int)(((uint64_t)done * (uint64_t)w) / total);
+}
+
+void oldraw_progress(oldraw *d, const oldraw_rect *r, uint32_t done, uint32_t total, unsigned flags)
+{
+    oldraw_rect in, part;
+    int n;
+    if (!d || !r || r->w < 3 || r->h < 3) return;
+    oldraw_frame(d, r, 1);
+    in.x = r->x + 1;
+    in.y = r->y + 1;
+    in.w = r->w - 2;
+    in.h = r->h - 2;
+    n = oldraw_progress_fill((int)in.w, done, total);
+    part = in;
+    part.w = n;
+    oldraw_fill(d, &part, OLDRAW_PEN(OLDRAW_PEN_FILL));
+    part.x = in.x + n;
+    part.w = in.w - n;
+    oldraw_fill(d, &part, OLDRAW_PEN(OLDRAW_PEN_BACKGROUND));
+    if (flags & OLDRAW_PROGRESS_PERCENT) {
+        char buf[8];
+        uint32_t pct = total ? (uint32_t)(((uint64_t)(done > total ? total : done) * 100u) / total) : 0;
+        int k = 0, had;
+        oldraw_rect saved;
+        if (pct >= 100) buf[k++] = '1';
+        if (pct >= 10) buf[k++] = (char)('0' + (pct / 10) % 10);
+        buf[k++] = (char)('0' + pct % 10);
+        buf[k++] = '%';
+        buf[k] = 0;
+        /* over the done part in the fill's text pen, over the rest in the text pen */
+        part = in;
+        part.w = n;
+        push_box(d, &part, &had, &saved);
+        oldraw_text_box(d, &in, buf, (size_t)k, NULL, OLDRAW_PEN(OLDRAW_PEN_FILLTEXT), 0, OLDRAW_CENTRE);
+        pop_box(d, had, &saved);
+        part.x = in.x + n;
+        part.w = in.w - n;
+        push_box(d, &part, &had, &saved);
+        oldraw_text_box(d, &in, buf, (size_t)k, NULL, OLDRAW_PEN(OLDRAW_PEN_TEXT), 0, OLDRAW_CENTRE);
+        pop_box(d, had, &saved);
+    }
+}
+
+/* ---- a pie segment ---- */
+/* sin of each whole degree 0-90, times 16384 */
+static const uint16_t sin_deg[91] = {
+    0, 286, 572, 857, 1143, 1428, 1713, 1997, 2280, 2563, 2845, 3126, 3406, 3686, 3964, 4240, 4516, 4790, 5063,
+    5334, 5604, 5872, 6138, 6402, 6664, 6924, 7182, 7438, 7692, 7943, 8192, 8438, 8682, 8923, 9162, 9397, 9630,
+    9860, 10087, 10311, 10531, 10749, 10963, 11174, 11381, 11585, 11786, 11982, 12176, 12365, 12551, 12733, 12911,
+    13085, 13255, 13421, 13583, 13741, 13894, 14044, 14189, 14330, 14466, 14598, 14726, 14849, 14968, 15082,
+    15191, 15296, 15396, 15491, 15582, 15668, 15749, 15826, 15897, 15964, 16026, 16083, 16135, 16182, 16225,
+    16262, 16294, 16322, 16344, 16362, 16374, 16382, 16384
+};
+
+/* sin of a in tenths of a degree, 0-900 */
+static int32_t sin_q(int a)
+{
+    int deg = a / 10, frac = a % 10;
+    if (deg >= 90) return 16384;
+    return (int32_t)sin_deg[deg] + ((int32_t)sin_deg[deg + 1] - (int32_t)sin_deg[deg]) * frac / 10;
+}
+
+static int32_t isin(int a)
+{
+    a %= 3600;
+    if (a < 0) a += 3600;
+    if (a <= 900) return sin_q(a);
+    if (a <= 1800) return sin_q(1800 - a);
+    if (a <= 2700) return -sin_q(a - 1800);
+    return -sin_q(3600 - a);
+}
+
+static int32_t icos(int a) { return isin(a + 900); }
+
+int oldraw_pie_has(int r, int start, int sweep, int dx, int dy)
+{
+    int32_t sx, sy, ex, ey, cs, ce;
+    if (r <= 0 || sweep <= 0) return 0;
+    if ((int32_t)dx * dx + (int32_t)dy * dy > (int32_t)r * r) return 0;
+    if (sweep >= 3600 || (dx == 0 && dy == 0)) return 1;
+    /* a direction a: (sin a, -cos a) on a screen whose y goes down; clockwise from u to v when u x v > 0 */
+    sx = isin(start);
+    sy = -icos(start);
+    ex = isin(start + sweep);
+    ey = -icos(start + sweep);
+    cs = sx * dy - sy * dx;     /* start x point */
+    ce = dx * ey - dy * ex;     /* point x end */
+    if (sweep <= 1800) return cs >= 0 && ce >= 0;
+    return !(cs < 0 && ce < 0);
+}
+
+static int32_t isqrt32(int32_t v)
+{
+    int32_t r = 0, b = (int32_t)1 << 30;
+    if (v <= 0) return 0;
+    while (b > v) b >>= 2;
+    while (b) {
+        if (v >= r + b) { v -= r + b; r = (r >> 1) + b; }
+        else r >>= 1;
+        b >>= 2;
+    }
+    return r;
+}
+
+void oldraw_pie(oldraw *d, int cx, int cy, int r, int start, int sweep, oldraw_colour c)
+{
+    int dy;
+    if (!d || r <= 0 || sweep <= 0 || c == OLDRAW_NONE) return;
+    for (dy = -r; dy <= r; ++dy) {
+        int hw = (int)isqrt32((int32_t)r * r - (int32_t)dy * dy), dx = -hw;
+        while (dx <= hw) {
+            int from;
+            while (dx <= hw && !oldraw_pie_has(r, start, sweep, dx, dy)) ++dx;
+            from = dx;
+            while (dx <= hw && oldraw_pie_has(r, start, sweep, dx, dy)) ++dx;
+            if (dx > from) fill(d, cx + from, cy + dy, dx - from, 1, c);
+        }
+    }
+}
