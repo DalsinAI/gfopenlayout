@@ -102,7 +102,8 @@ typedef struct oldraw_ops {
     void (*invert)(void *target, int x, int y, int w, int h);
     /* image's pixels sx,sy on, w by h, at x,y; flags OLDRAW_SELECTED, OLDRAW_GHOSTED */
     void (*image)(void *target, const oldraw_image *img, int sx, int sy, int x, int y, int w, int h, unsigned flags);
-    /* text with its baseline at y, cut to clip; 1 when drawn */
+    /* text with its baseline at y, cut to clip; clip NULL: the text is wholly inside the clip, so nothing need be
+     * cut (the usual case, and the fast one). 1 when drawn */
     int (*text)(void *target, int x, int y, const char *utf8, size_t length, const oldraw_font *font, oldraw_colour c,
                 unsigned style, const oldraw_rect *clip);
     int (*measure)(void *target, const char *utf8, size_t length, const oldraw_font *font, oldraw_text_size *size);
@@ -180,6 +181,10 @@ int oldraw_image_height(const oldraw_image *img);
 /* 0xAARRGGBB of the pixel at x,y of an ARGB picture (0 outside it, or for an icon). */
 uint32_t oldraw_image_pixel(const oldraw_image *img, int x, int y);
 void oldraw_image_free(oldraw *d, oldraw_image *img);
+/* For targets: an ARGB picture's drawn pixels as rectangles (made once, when it is made): together they cover every
+ * pixel with alpha 128 and over and no other, none overlapping, rows with the same runs joined top to bottom, so a
+ * target draws it with a few blits and never looks at a see-through pixel. How many; *blocks set to them. */
+int oldraw_image_blocks(const oldraw_image *img, const oldraw_rect **blocks);
 /* The picture's top left at x,y. OLDRAW_SELECTED: as a selected icon (its second image, or darkened);
  * OLDRAW_GHOSTED: dimmed (a disk being worked on, a busy drawer). */
 enum { OLDRAW_SELECTED = 1u << 0, OLDRAW_GHOSTED = 1u << 1 };
