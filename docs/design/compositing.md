@@ -6,6 +6,10 @@ The code is `library/layers/layers_comp.c`, built into the Amiga library only (`
 
 **Where it lives (13 November 2026, wave 2, review rule 4):** `layers_comp.c` and `layers_mark.h` moved from gfopengfx into GFOpenLayout as they were, with `tests/m68k/test_comp_marks.sh` and `tests/CompTest.c`. They are still built into gfopengfx's layers.library: its `library/layers/build-amiga.sh` takes them from a GFOpenLayout checkout (`LAYOUT=`). Classic layers, `layers_lib.c` and `layers_core.c`, stay in gfopengfx. The compositor's lock, `cb->lock`, is lock 5 in the lock order (amicradle-teams `designs/WORKBENCH-REDESIGN-20261113.md`).
 
+## Screen direct mode is the default (row 11, 13 November 2026)
+
+Dale, 05:57: "we gift it with screen direct mode that just lets it rasterize sidestepping the openlayout engine until we optimise it to be near identical in performance". Until Franklin's bench shows the compositor within about 5% of direct mode (window drag, drawer scroll, CM4Bench and a blit-heavy title), a screen is composited only when ENV:GFOpenPrefs/Windows says `screen.mode composited`. Without it, every screen draws as classic layers onto the screen's bitmap with today's rasteriser, and `ComposeLayerInfo(li, NULL, LAYERS_COMPOSE_WHY)` answers `LAYERS_WHY_DIRECT` (9). `composite off` still switches the compositor off either way (`LAYERS_WHY_SWITCHED_OFF`). Tested on the host by `tests/host-comp/run.sh`.
+
 ## Where it composites, and where it stays classic
 
 A `Layer_Info` is composited when all of these hold. Otherwise it is classic and nothing below runs for it.

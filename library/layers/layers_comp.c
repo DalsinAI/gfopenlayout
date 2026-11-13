@@ -63,6 +63,10 @@
 #include <proto/dos.h>
 #include "../../include/oa_protos_end.h"
 
+#ifndef LAYERS_WHY_DIRECT
+#define LAYERS_WHY_DIRECT 9     /* gfopenlayers.h 47.109: screen direct mode, the default (screen.mode) */
+#endif
+
 #ifndef OGPU_FMT_XRGB32
 #define OGPU_FMT_XRGB32 10      /* stream v1.3's; used only where OGPU_Query answers FULL for it */
 #endif
@@ -71,7 +75,7 @@ enum { S_SCREEN, S_SURF, S_SHADOW, S_SUB };     /* the batch's slots */
 /* the look's settings, as ENV:GFOpenPrefs/Windows' lines (oc_prefs' keys):
  * composite on|off; shadows on|off; the shadow's reach R in pixels; and,
  * as 0-255, its darkest and a dragged and an inactive window's opacity */
-enum { SET_ON, SET_SHADOWS, SET_SIZE, SET_STRENGTH, SET_DRAG, SET_INACTIVE };
+enum { SET_ON, SET_SHADOWS, SET_SIZE, SET_STRENGTH, SET_DRAG, SET_INACTIVE, SET_MODE, SET_N };
 
 #define OC_STACK 16384
 #define OC_SIG SIGBREAKF_CTRL_F
@@ -100,7 +104,7 @@ struct OComp {
     ULONG saddr, sbpr;          /* the screen's pixel 0,0 and bytes a row */
     UWORD w, h;
     UBYTE fmt, depth;           /* OGPU format of the screen and the surfaces; 16 or 32 */
-    UBYTE set[6];               /* the prefs (oc_prefs): SET_ */
+    UBYTE set[SET_N];           /* the prefs (oc_prefs): SET_ */
     UBYTE full;                 /* the compositor composes all of it next */
     UBYTE pull;                 /* 47.106: GFOpenRTG has ORTG_WrittenSpans (0.23) */
     ULONG *shadow;              /* ARGB32, (4R + 1) square: the shadow's corners and edges */
@@ -1212,14 +1216,21 @@ static int oc_finish(struct change *ch, struct Layer *made, struct Layer *gone)
 /* ---- switching it on, and the prefs --------------------------------------- */
 
 /* oc_prefs' keys, in SET_ order, and how each value is read: 0 on or off,
- * 1 pixels (2-32), 2 percent (as 0-255) */
-static const char *const keys[6] = { "composite", "shadows", "shadow.size", "shadow.strength", "drag.opacity",
-                                     "inactive.opacity" };
-static const UBYTE kinds[6] = { 0, 0, 1, 2, 2, 2 };
+ * 1 pixels (2-32), 2 percent (as 0-255), 3 "composited" or "direct".
+ *
+ * screen.mode (row 11, Dale 13 Nov 05:57): screen direct mode, classic
+ * layers drawing straight onto the screen with today's rasteriser, is the
+ * default until the compositor is within about 5% of it on Franklin's
+ * bench; "screen.mode composited" asks for the compositor. "composite off"
+ * still switches it off either way. */
+static const char *const keys[SET_N] = { "composite", "shadows", "shadow.size", "shadow.strength", "drag.opacity",
+                                         "inactive.opacity", "screen.mode" };
+static const UBYTE kinds[SET_N] = { 0, 0, 1, 2, 2, 2, 3 };
 
 /* ENV:GFOpenPrefs/Windows' lines for the composited mode (the rest are
- * GFOpenWindows'). A missing file or line keeps the default. Answers 0 when
- * "composite off". */
+ * GFOpenWindows'). A missing file or line keeps the default. Answers whether
+ * to composite: "composite on" (the default) and "screen.mode composited"
+ * (not the default). */
 static int oc_prefs(struct OComp *c)
 {
     struct Process *me = (struct Process *)FindTask(0);
@@ -1231,7 +1242,8 @@ static int oc_prefs(struct OComp *c)
     const char *k, *q;
     int i;
 
-    if (me->pr_Task.tc_Node.ln_Type != NT_PROCESS || !(dos = OpenLibrary((CONST_STRPTR)"dos.library", 36))) return 1;
+    if (me->pr_Task.tc_Node.ln_Type != NT_PROCESS || !(dos = OpenLibrary((CONST_STRPTR)"dos.library", 36)))
+        return c->set[SET_ON] && c->set[SET_MODE];     /* the defaults */
     if ((buf = AllocMem(4096, MEMF_PUBLIC))) {
         win = me->pr_WindowPtr;
         me->pr_WindowPtr = (APTR)-1;            /* no requester when ENV: isn't there yet */
@@ -1242,13 +1254,14 @@ static int oc_prefs(struct OComp *c)
         me->pr_WindowPtr = win;
         buf[n > 0 ? n : 0] = 0;
         for (p = buf; *p;) {
-            for (i = 0; i < 6; i++) {
+            for (i = 0; i < SET_N; i++) {
                 for (k = keys[i], q = p; *k && *q == *k; k++, q++)
                     ;
                 if (*k || *q != ' ') continue;
                 while (*q == ' ') q++;
                 for (v = 0; *q >= '0' && *q <= '9'; q++) v = v * 10 + *q - '0';
                 if (kinds[i] == 0) v = q[0] == 'o' && q[1] == 'n';
+                else if (kinds[i] == 3) v = q[0] == 'c';                    /* composited; direct */
                 else if (kinds[i] == 1) v = v < 2 ? 2 : v > 32 ? 32 : v;
                 else v = v >= 100 ? 255 : v * 653 >> 8;   /* percent to 0-255 */
                 c->set[i] = (UBYTE)v;
@@ -1259,7 +1272,7 @@ static int oc_prefs(struct OComp *c)
         FreeMem(buf, 4096);
     }
     CloseLibrary(dos);
-    return c->set[SET_ON];
+    return c->set[SET_ON] && c->set[SET_MODE];
 }
 
 /* The composited mode's state, made once: gfopengpu.library and
@@ -1333,7 +1346,7 @@ static struct OComp *oc_new(struct OCB *cb, struct OInfo *inf, struct Layer_Info
     if (OGPU_ANSWER(q) != OGPU_FULL || OGPU_BACKEND(q) == OGPU_BACKEND_CPU) return 0;
     inf->why = LAYERS_WHY_NO_MEMORY;
     if (!(c = zalloc(sizeof *c))) return 0;
-    /* the defaults: on, shadows on, 8 pixels, 40%; dragged 75%, inactive 100% */
+    /* the defaults: on, shadows on, 8 pixels, 40%; dragged 75%, inactive 100%; screen direct mode */
     c->set[SET_ON] = 1;
     c->set[SET_SHADOWS] = 1;
     c->set[SET_SIZE] = 8;
@@ -1341,8 +1354,8 @@ static struct OComp *oc_new(struct OCB *cb, struct OInfo *inf, struct Layer_Info
     c->set[SET_DRAG] = 75 * 653 >> 8;
     c->set[SET_INACTIVE] = 255;
     if (!oc_prefs(c)) {
+        inf->why = c->set[SET_ON] ? LAYERS_WHY_DIRECT : LAYERS_WHY_SWITCHED_OFF;
         FreeMem(c, sizeof *c);
-        inf->why = LAYERS_WHY_SWITCHED_OFF;
         return 0;
     }
     if (c->set[SET_SHADOWS]) c->shadow = oc_shadow_image(c->set[SET_SIZE]);
