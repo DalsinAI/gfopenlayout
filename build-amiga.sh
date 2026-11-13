@@ -43,6 +43,9 @@ done
 "$AR" rcs "$OUT/libgfopenlayout_draw.a" "$OUT/oldraw.o" "$OUT/oldraw_amiga.o"
 "$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
   -noixemul -I"$HERE/include" -I"$HERE/draw" "$HERE/tests/test_draw.c" "$HERE/draw/oldraw.c" -o "$OUT/DrawTest"
+# DrawAmigaTest (tests/test_draw_amiga.c): amiga/oldraw_amiga.c on a real RastPort, run in a lab
+"$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
+  -noixemul -I"$HERE/include" "$HERE/tests/test_draw_amiga.c" "$OUT/libgfopenlayout_draw.a" -o "$OUT/DrawAmigaTest"
 echo "$OUT/libgfopenlayout_draw.a ($(wc -c < "$OUT/libgfopenlayout_draw.a") bytes)"
 # 0.5: gfopenlayout.library and its tests (LayoutLibTest, LayoutLibStress) too, for the lab (Cradle builds with
 # this script alone)

@@ -392,9 +392,14 @@ oldraw *oldraw_new_rastport(struct RastPort *rp, struct Screen *scr, int width, 
         if (scr) UnlockPubScreen(NULL, scr);
     }
     if (!rp->Layer) {
-        /* a BitMap's RastPort: drawn through a layer of our own over it, which clip regions can cut */
+        /* a BitMap's RastPort: drawn through a layer of our own over it, which clip regions can cut. Neither making
+         * the layer nor deleting it may touch the BitMap (its owner drew there already and draws there after us):
+         * no backfill for the layer, and none for the LayerInfo, whose hook fills what DeleteLayer uncovers.
+         * Without these, a slot window's bitmap (GFOpenTitle's) came out cleared to pen 0. */
         if (!rp->BitMap || width <= 0 || height <= 0 || !(t->li = NewLayerInfo()) ||
-            !(t->own = CreateUpfrontLayer(t->li, rp->BitMap, 0, 0, width - 1, height - 1, LAYERSIMPLE, NULL))) {
+            (InstallLayerInfoHook(t->li, LAYERS_NOBACKFILL), 0) ||
+            !(t->own = CreateUpfrontHookLayer(t->li, rp->BitMap, 0, 0, width - 1, height - 1, LAYERSIMPLE,
+                                              LAYERS_NOBACKFILL, NULL))) {
             if (t->li) DisposeLayerInfo(t->li);
             free(t);
             d->target = NULL;
