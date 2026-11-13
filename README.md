@@ -254,6 +254,16 @@ unchanged, and callers open `OPENLAYOUTLIB_CONTOUR_VERSION` (17).
 
 GFOpenLayout 0.19 adds footnotes to pages. `ol_layout_pages_notes` lays out pages as `ol_layout_pages` does, given each note's anchor (its mark, a node in the flow) and the height its text takes: the notes anchored in a page's lines take that much room from the foot of its body, with a separator above them, so the lines a note belongs to and the note stay on one page. With less room a page may hold fewer lines and so fewer notes; the room only grows while it is worked out, so the notes that stay always fit. A page keeps at least one line, so a note taller than a page goes on below the foot. It answers each note's page; the caller lays out and draws the notes' text. It is a link-library call for now (GFOpenWrite links GFOpenLayout in), not yet in `gfopenlayout.library`.
 
+## The compositor (wave 2)
+
+Moved from gfopengfx as they were on 13 November 2026 (Workbench review rule 4), and still built into gfopengfx's layers.library, which takes them from a GFOpenLayout checkout (`LAYOUT=` for its `library/layers/build-amiga.sh`). The design is `docs/design/compositing.md`.
+
+| File | What it is |
+| --- | --- |
+| `library/layers/layers_comp.c` | layers.library's composited mode: on a public RTG screen of 16 or 32 bits with GFOpenGPU, each layer draws into a surface of its own and the screen is composed from them in one GFOpenGPU batch, with opacity, shadows and a translucent drag; written-spans (D7(b)) for programs that write the screen by address. Included by gfopengfx's `layers_lib.c` when `OL_COMPOSITE` is defined. |
+| `library/layers/layers_mark.h`, `tests/m68k/test_comp_marks.sh` | What each drawing call into a composited layer marks for the compositor, from its registers; tested under qemu-m68k against GFOpenGfx's own Draw, PolyDraw, DrawEllipse, ClearEOL and ClearScreen (`GFX=` a gfopengfx checkout, else one is cloned). |
+| `tests/CompTest.c` | The composited mode on the Workbench screen from the Shell: compose and drag timed, latency, WA_Opacity, and custom (game) and AGA screens staying classic. |
+
 ## GTK compatibility
 
 GFOpenGTK (`gtk/`, 0.1) is GTK 1.2's API, with 2.x's names beside it, over
