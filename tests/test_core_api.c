@@ -83,10 +83,11 @@ int main(void)
     t.complement = h_complement;
     t.blit_bitmap = h_blit_bitmap;
     t.scroll_raster = h_scroll_raster;
-    {
-        void (*const *p)(void) = (void (*const *)(void))(const void *)&t;
-        for (i = 0; i < OLC_OI_HOOKS; i++) CHECK(p[i] != 0);
-    }
+    /* each hook by name: reading the table through another pointer type breaks aliasing at -O2 */
+    CHECK(t.obtain_rp && t.release_rp && t.draw_image_state && t.erase_rect && t.fill_rect);
+    CHECK(t.text && t.text_length && t.font_height && t.polyline && t.blit_image);
+    CHECK(t.fill_pattern && t.deep && t.limit_rect && t.limit_end && t.set_font);
+    CHECK(t.complement && t.blit_bitmap && t.scroll_raster);
     CHECK(t.text_length(0, 0, 0, "abc", 3) == 24);
 
     /* the back end's table: a version, its context, then eleven calls in this order (ABI) */
