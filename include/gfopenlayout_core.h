@@ -47,7 +47,9 @@ typedef struct olc_box {
 } olc_box;
 
 typedef uint32_t olc_colour;
-#define OLC_PEN(n) (0x01000000UL | ((uint32_t)(n) & 0xFFUL))   /* alpha 1 never occurs in a real colour */
+/* A colour argument (never image pixels: an ARGB32 surface may hold alpha 1) is a pen when its alpha is 1, which no
+ * colour a caller passes uses. */
+#define OLC_PEN(n) (0x01000000UL | ((uint32_t)(n) & 0xFFUL))
 #define OLC_IS_PEN(c) (((c) & 0xFF000000UL) == 0x01000000UL)
 
 /* ---- start ---- */
