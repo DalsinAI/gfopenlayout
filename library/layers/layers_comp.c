@@ -1263,10 +1263,18 @@ static int oc_prefs(struct OComp *c)
 }
 
 /* The composited mode's state, made once: gfopengpu.library and
- * gfopenrtg.library (from ROM:), and the compositor task. */
+ * gfopenrtg.library (from ROM:), and the compositor task.
+ *
+ * Lock order (amicradle-teams designs/WORKBENCH-REDESIGN-20261113.md):
+ * infolock is a leaf, and opening a library can go through ramlib and DOS,
+ * whose requester needs the screen's Layer_Info, while begin() holds a
+ * Layer_Info and its layers and takes infolock. So the libraries are opened
+ * under no lock at all; only publishing olb->cb takes infolock, and a task
+ * that finds another's there closes its own copy
+ * (tests/host-comp/test_infolock.c). */
 static struct OCB *oc_cb(struct ol_base *olb)
 {
-    struct OCB *cb;
+    struct OCB *cb, *have = 0;
     struct Task *t;
     UBYTE *stack;
     if (olb->cb) return olb->cb;
@@ -1276,25 +1284,30 @@ static struct OCB *oc_cb(struct ol_base *olb)
     cb->ogpu = OpenLibrary((CONST_STRPTR)OPENGPU_NAME, OPENGPU_VERSION);
     cb->ortg = OpenLibrary((CONST_STRPTR)OPENRTG_NAME, OPENRTG_VERSION);
     cb->cgx = OpenLibrary((CONST_STRPTR)"cybergraphics.library", 0);
-    if (!cb->ogpu || !cb->ortg || !(t = zalloc(sizeof *t + OC_STACK))) {
-        CloseLibrary(cb->ogpu);
-        CloseLibrary(cb->ortg);
-        CloseLibrary(cb->cgx);
-        FreeMem(cb, sizeof *cb);
-        return 0;
+    if (cb->ogpu && cb->ortg && (t = zalloc(sizeof *t + OC_STACK))) {
+        stack = (UBYTE *)(t + 1);
+        t->tc_Node.ln_Type = NT_TASK;
+        t->tc_Node.ln_Pri = 1;
+        t->tc_Node.ln_Name = (char *)"layers.library compositor";
+        t->tc_SPLower = stack;
+        t->tc_SPUpper = stack + OC_STACK;
+        t->tc_SPReg = stack + OC_STACK;
+        t->tc_UserData = cb;
+        cb->task = t;
+        ObtainSemaphore(&olb->infolock);
+        if (!(have = olb->cb)) {
+            olb->cb = cb;
+            AddTask(t, (APTR)oc_task, 0);   /* never waits */
+        }
+        ReleaseSemaphore(&olb->infolock);
+        if (!have) return cb;
+        FreeMem(t, sizeof *t + OC_STACK);   /* another task's came first: ours goes */
     }
-    stack = (UBYTE *)(t + 1);
-    t->tc_Node.ln_Type = NT_TASK;
-    t->tc_Node.ln_Pri = 1;
-    t->tc_Node.ln_Name = (char *)"layers.library compositor";
-    t->tc_SPLower = stack;
-    t->tc_SPUpper = stack + OC_STACK;
-    t->tc_SPReg = stack + OC_STACK;
-    t->tc_UserData = cb;
-    cb->task = t;
-    AddTask(t, (APTR)oc_task, 0);
-    olb->cb = cb;
-    return cb;
+    CloseLibrary(cb->ogpu);
+    CloseLibrary(cb->ortg);
+    CloseLibrary(cb->cgx);
+    FreeMem(cb, sizeof *cb);
+    return have;
 }
 
 /* A new composited Layer_Info's state, when its bitmap is a GFOpenRTG one
@@ -1380,9 +1393,7 @@ LONG ol_ComposeLayerInfo(struct ol_base *olb, struct Layer_Info *li, struct BitM
      * ROM:, through DOS, and GFOpenGPU loads its driver for a process */
     inf->why = LAYERS_WHY_NO_OPENGPU;
     if (!olb->cb && FindTask(0)->tc_Node.ln_Type != NT_PROCESS) return FALSE;
-    ObtainSemaphore(&olb->infolock);
-    cb = oc_cb(olb);
-    ReleaseSemaphore(&olb->infolock);
+    cb = oc_cb(olb);                    /* under no lock: it opens libraries */
     if (!cb || !(c = oc_new(cb, inf, li, bm))) return FALSE;
     ObtainSemaphore(&cb->lock);
     c->next = cb->comps;
