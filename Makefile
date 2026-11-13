@@ -78,11 +78,19 @@ $(BUILD)/test_gtk: tests/test_gtk.c $(GTK_SRC) $(GTK_HDR) $(UI_SRC) ui/olui_inte
 $(BUILD)/test_draw: tests/test_draw.c draw/oldraw.c draw/oldraw_internal.h include/gfopenlayout_draw.h | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) -Iinclude -Idraw tests/test_draw.c draw/oldraw.c -o $@
 
+# GFLayoutBench (bench/): its portable part's tests, and the host build (gflbench-host: CPU-only figures)
+GFLBENCH_DEP = bench/gflbench.c bench/gflbench.h draw/oldraw.c draw/oldraw_internal.h include/gfopenlayout_draw.h
+$(BUILD)/test_gflbench: tests/test_gflbench.c $(GFLBENCH_DEP) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -Iinclude -Idraw -Ibench tests/test_gflbench.c bench/gflbench.c draw/oldraw.c -o $@
+
+$(BUILD)/gflbench-host: bench/gflbench_host.c $(GFLBENCH_DEP) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -Iinclude -Idraw -Ibench bench/gflbench_host.c bench/gflbench.c draw/oldraw.c -o $@
+
 $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
 test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
-      $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_core_api
+      $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_core_api $(BUILD)/test_gflbench
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
@@ -96,6 +104,8 @@ test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/te
 	./$(BUILD)/test_gtk
 	./$(BUILD)/test_draw
 	./$(BUILD)/test_core_api
+	./$(BUILD)/test_gflbench
+	python3 -I tests/test_gflbench_run.py
 	python3 tools/gen-library.py --check
 
 # The ROM core's API (gfopenlayout_core.h, wave 2 review rule 2): the header alone in C89 and C99, and in C++
