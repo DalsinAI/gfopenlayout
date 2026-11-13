@@ -177,13 +177,16 @@ int olc_compose(olc_scene *sc, const olc_region *damage);
  *   - The core owns surfaces and their CPU pixels, which stay the master copy. The back end only ever copies them
  *     towards the GPU (bind, upload); nothing is read back.
  *   - The back end owns what it makes from a surface (a texture, a slot), keyed by the slot bind gave. Before a
- *     surface is freed the core calls forget(slot), and frees the CPU pixels only once fence_done says the last
- *     fence that named it has passed.
+ *     surface is freed the core calls retire(slot), and frees the CPU pixels only when retire has returned.
+ *     retire is the one call that may wait (for the GPU to be done with the slot, as GFOpenRTG's FreeBitMap
+ *     waits today), so the core calls it outside every lock and never during a compose.
  *   - A batch is the back end's from begin until submit or abort.
  * Calls: one compose is begin, then bind and upload for each surface it shows, clip with the damage, the fills,
- * copies and composites back to front, then one submit giving one fence. All of it runs under the compositor's
- * lock (number 5 of the lock order): a back end takes none of locks 1 to 5, and none of its calls waits (no fence
- * wait, no DOS, no ramlib). Boxes are the screen's, both corners inside, already cut to the screen. */
+ * copies and composites back to front, then one submit giving one fence. All of that runs under the compositor's
+ * lock (number 5 of the lock order): a back end takes none of locks 1 to 5, and none of those calls waits (no fence
+ * wait, no DOS, no ramlib). Boxes are the screen's, both corners inside, already cut to the screen. clip may give
+ * several boxes: a back end whose stream has one clip rectangle records the ops and replays them for each box,
+ * still in the one batch and the one submit. */
 #define OLC_ACCEL_VERSION 1
 typedef struct olc_accel {
     uint32_t version;           /* OLC_ACCEL_VERSION */
@@ -210,17 +213,17 @@ typedef struct olc_accel {
     int (*submit)(void *ctx, void *batch, uint32_t *fence);
     /* The batch dropped, nothing drawn */
     void (*abort)(void *ctx, void *batch);
-    /* Whether a fence has passed: a look, never a wait */
-    int (*fence_done)(void *ctx, uint32_t fence);
-    /* A slot no longer used: the surface is going */
-    void (*forget)(void *ctx, uint32_t slot);
-    /* The back end is going (olc_accel_detach): everything of the core's it holds is let go */
+    /* A slot no longer used: the surface is going. May wait until the GPU is done with it; called outside every
+     * lock and never during a compose. */
+    void (*retire)(void *ctx, uint32_t slot);
+    /* The back end is going (olc_accel_detach, outside every lock): everything of the core's it holds is let go,
+     * waiting for the GPU if it must */
     void (*detach)(void *ctx);
 } olc_accel;
 /* ops stays the caller's until olc_accel_detach. 0 when the core takes it; -1 when one is attached already or the
  * version is not one the core knows. Never called at boot: olc_init's ROM code calls neither. */
 int olc_accel_attach(const olc_accel *ops);
-/* Back to the CPU: waits for nothing, calls ops->detach. */
+/* Back to the CPU: calls ops->detach, which may wait; not to be called with a lock held. */
 void olc_accel_detach(void);
 
 /* ---- 5. text ---- */
