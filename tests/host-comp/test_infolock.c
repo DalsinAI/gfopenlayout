@@ -24,12 +24,18 @@
  *   3. publication: olb->cb is never seen before its compositor task has
  *      been added (a switch at AddTask, or at Permit);
  *   4. cost: once the compositor is there, a ComposeLayerInfo takes infolock
- *      only for its record (info_of), not again round oc_cb.
+ *      only for its record (info_of), not again round oc_cb;
+ *   5. screen direct mode (row 11): the default; "screen.mode composited" in
+ *      ENV:GFOpenPrefs/Windows asks for the compositor, "composite off" still
+ *      switches it off, and LAYERS_COMPOSE_WHY says which.
  * Copyright (c) 2026 AmiCradle Team. MIT. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <graphics/gfopenlayers.h>
+#ifndef LAYERS_WHY_DIRECT
+#define LAYERS_WHY_DIRECT 9     /* gfopenlayers.h 47.109, as layers_comp.c */
+#endif
 #include "layers_lib.h"
 
 static int fails;
@@ -107,7 +113,9 @@ APTR AddTask(struct Task *t, APTR pc, APTR end)
 
 /* ---- libraries: OpenLibrary is ramlib, and what it lets run meanwhile -- */
 
-static struct Library libs[3];
+/* each library with room for its jump table before it (oc_patch_all reads the vectors) */
+static UBYTE libmem[3][2048];
+#define LIB(i) ((struct Library *)(libmem[i] + 1536))
 static int opened, closed, under_infolock, nested;
 static void (*meanwhile)(void);         /* runs once, as task 2, inside task 1's first open */
 
@@ -128,31 +136,56 @@ struct Library *OpenLibrary(const char *name, ULONG version)
         nested = 0;
     }
     opened++;
-    if (!strcmp(name, OPENGPU_NAME)) return &libs[0];
-    if (!strcmp(name, OPENRTG_NAME)) return &libs[1];
-    return &libs[2];
+    if (!strcmp(name, OPENGPU_NAME)) return LIB(0);
+    if (!strcmp(name, OPENRTG_NAME)) return LIB(1);
+    return LIB(2);
 }
 void CloseLibrary(struct Library *l) { if (l) closed++; }
 
 /* ---- what the compositor's start needs, and nothing past it ------------ */
 
-ULONG ORTG_BitMapInfo(struct BitMap *bm, struct OpenRTGBitMapInfo *bi) { (void)bm; (void)bi; return 0; }
+/* rtg: the screen is a 640 x 480 XRGB32 GFOpenRTG bitmap with a GPU that composites it (test_screen_mode);
+ * otherwise no GFOpenRTG bitmap, and nothing past the compositor's start runs */
+static int rtg, patched;
+static ULONG screenmem[16];
+ULONG ORTG_BitMapInfo(struct BitMap *bm, struct OpenRTGBitMapInfo *bi)
+{
+    (void)bm;
+    if (!rtg) return 0;
+    bi->format = 2;
+    bi->width = 640;
+    bi->height = 480;
+    bi->bytes_per_row = 640 * 4;
+    bi->memory = screenmem;
+    return 1;
+}
+/* ENV:GFOpenPrefs/Windows, when there is one */
+static const char *prefs;
+static LONG prefs_at;
 
 static void never(const char *what) { printf("FAIL: %s called\n", what); exit(20); }
 void CacheClearU(void) {}
-APTR SetFunction(struct Library *l, LONG lvo, APTR f) { (void)l; (void)lvo; (void)f; never("SetFunction"); return 0; }
+APTR SetFunction(struct Library *l, LONG lvo, APTR f) { (void)l; (void)lvo; (void)f; if (!rtg) never("SetFunction"); patched++; return 0; }
 struct MsgPort *CreateMsgPort(void) { return 0; }
 BYTE OpenDevice(CONST_STRPTR n, ULONG u, struct IORequest *io, ULONG f) { (void)n; (void)u; (void)io; (void)f; return -1; }
 BYTE DoIO(struct IORequest *io) { (void)io; return -1; }
 void Signal(struct Task *t, ULONG s) { (void)t; (void)s; }
 ULONG Wait(ULONG s) { (void)s; never("Wait"); return 0; }
-BPTR Open(CONST_STRPTR n, LONG m) { (void)n; (void)m; return 0; }
+BPTR Open(CONST_STRPTR n, LONG m) { (void)m; prefs_at = 0; return prefs && !strcmp(n, "ENV:GFOpenPrefs/Windows"); }
 LONG Close(BPTR f) { (void)f; return 0; }
-LONG Read(BPTR f, APTR b, LONG l) { (void)f; (void)b; (void)l; return 0; }
+LONG Read(BPTR f, APTR b, LONG l)
+{
+    LONG n = (LONG)strlen(prefs + prefs_at);
+    (void)f;
+    if (n > l) n = l;
+    memcpy(b, prefs + prefs_at, (size_t)n);
+    prefs_at += n;
+    return n;
+}
 LONG OGPU_Submit(ULONG *w, ULONG n, ULONG *fence) { (void)w; (void)n; (void)fence; never("OGPU_Submit"); return 0; }
 LONG OGPU_Wait(ULONG fence) { (void)fence; never("OGPU_Wait"); return 0; }
-ULONG OGPU_Query(ULONG op, ULONG fmt) { (void)op; (void)fmt; return 0; }
-CONST_STRPTR OGPU_BackEndName(ULONG w) { (void)w; return 0; }
+ULONG OGPU_Query(ULONG op, ULONG fmt) { (void)op; (void)fmt; return rtg ? 2u << 8 | OGPU_FULL : 0; }   /* a driver, fully */
+CONST_STRPTR OGPU_BackEndName(ULONG w) { (void)w; return rtg ? "test" : 0; }
 ULONG ORTG_WrittenSpans(struct BitMap *bm, struct oc_span *s, ULONG max) { (void)bm; (void)s; (void)max; return 0; }
 ULONG ol_call_hook(struct Hook *h, APTR o, APTR m) { (void)h; (void)o; (void)m; never("a hook"); return 0; }
 /* graphics: layers_lib.c's classic paths, never reached from here */
@@ -186,6 +219,9 @@ static void reset(void)
     for (i = 0; i < 3; i++) tasks[i].pr_Task.tc_Node.ln_Type = NT_PROCESS;
     waits = under_infolock = opened = closed = adds = infolock_obtains = forbid = published_early = observing = 0;
     added = 0;
+    rtg = patched = 0;
+    memset(libmem, 0x4e, sizeof libmem);  /* every vector set, as a library's are */
+    prefs = 0;
 }
 
 /* task 2 as begin() is: the Layer_Info held, then its record (infolock) */
@@ -246,6 +282,33 @@ static void test_publish(void)
     CHECK(forbid == 0);
 }
 
+/* screen direct mode (row 11): the default, with or without a prefs file;
+ * "screen.mode composited" asks for the compositor; "composite off" still
+ * switches it off, and says so */
+static LONG mode_of(const char *p, LONG *why)
+{
+    LONG r;
+    reset();
+    rtg = 1;
+    prefs = p;
+    r = ol_ComposeLayerInfo(&olb, &li1, &bm, LAYERS_COMPOSE_ON);
+    *why = ol_ComposeLayerInfo(&olb, &li1, 0, LAYERS_COMPOSE_WHY);
+    return r;
+}
+
+static void test_screen_mode(void)
+{
+    LONG why;
+    CHECK(mode_of(0, &why) == FALSE && why == LAYERS_WHY_DIRECT && !patched);
+    CHECK(mode_of("composite on\nshadows off\n", &why) == FALSE && why == LAYERS_WHY_DIRECT);
+    CHECK(mode_of("screen.mode direct\n", &why) == FALSE && why == LAYERS_WHY_DIRECT);
+    CHECK(mode_of("composite off\nscreen.mode composited\n", &why) == FALSE && why == LAYERS_WHY_SWITCHED_OFF);
+    CHECK(mode_of("composite off\n", &why) == FALSE && why == LAYERS_WHY_SWITCHED_OFF);
+    CHECK(mode_of("shadows off\nscreen.mode composited\n", &why) == TRUE && why == LAYERS_WHY_COMPOSITED && patched);
+    /* a line that only starts like it is another key */
+    CHECK(mode_of("shadows off\nscreen.modes composited\n", &why) == FALSE && why == LAYERS_WHY_DIRECT);
+}
+
 static void test_cost(void)
 {
     reset();
@@ -260,6 +323,7 @@ int main(void)
     test_deadlock();
     test_race();
     test_publish();
+    test_screen_mode();
     test_cost();
     if (fails) { printf("test_infolock: %d failed\n", fails); return 1; }
     printf("test_infolock: ok\n");
