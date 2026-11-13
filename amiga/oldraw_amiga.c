@@ -1,6 +1,6 @@
 /* GFOpenLayout drawing's Amiga target: oldraw_ops on a RastPort. The only place wave 1's drawing reaches
  * graphics.library, layers.library, cybergraphics.library and icon.library. Wave 1 draws each call as it comes
- * (RectFill, FillPixelArray, WritePixelArray, ClipBlit, Text, DrawIconStateA); the caches and the AC090 and GFOpenGPU hooks
+ * (RectFill, FillPixelArray, WritePixelArray a block at a time, ClipBlit, Text, DrawIconStateA); the caches and the AC090 and GFOpenGPU hooks
  * come in behind these same calls in wave 2.
  * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "oldraw_internal.h"
@@ -57,8 +57,6 @@ typedef struct {
     int px;
     struct Layer_Info *li;      /* a layerless RastPort's: oldraw's own layer on its BitMap, so it can be cut */
     struct Layer *own;
-    uint32_t *row;              /* a row of an image, darkened or dimmed */
-    int rowlen;
     oldraw *d;
 } amiga_target;
 
@@ -150,11 +148,16 @@ static void clip_off(amiga_target *t, clip_state *cs)
     cs->on = 0;
 }
 
-static void a_image(void *tp, const oldraw_image *img, int sx, int sy, int x, int y, int w, int h, unsigned flags)
+static void a_image(void *tp, const oldraw_image *img_c, int sx, int sy, int x, int y, int w, int h, unsigned flags)
 {
     amiga_target *t = (amiga_target *)tp;
-    int i, j;
+    oldraw_image *img = (oldraw_image *)img_c;      /* its selected and ghosted pixels are kept in it */
+    const oldraw_rect *b;
+    const uint32_t *px;
+    int i, j, n;
     if (img->kind == OLDRAW_IMG_ICON) {
+        /* icon.library draws the whole icon, so always through a clip region: without one, DrawIconState was 3 to 4
+         * times slower in GFLayoutBench (icon_blit_diskobject 1683 and 1932 icons/s with it, 422 and 535 without) */
         oldraw_rect c;
         clip_state cs;
         c.x = x;
@@ -169,38 +172,33 @@ static void a_image(void *tp, const oldraw_image *img, int sx, int sy, int x, in
         clip_off(t, &cs);
         return;
     }
-    if (t->rowlen < w) {
-        free(t->row);
-        t->row = (uint32_t *)malloc((size_t)w * sizeof(uint32_t));
-        t->rowlen = t->row ? w : 0;
-        if (!t->row) return;
-    }
+    px = oldraw_image_variant(img, flags);
+    if (!px) return;
+    n = oldraw_image_blocks(img, &b);
     SetDrMd(t->rp, JAM1);
-    for (j = 0; j < h; ++j) {
-        const uint32_t *src = img->argb + (size_t)(sy + j) * (size_t)img->w + (size_t)sx;
-        for (i = 0; i < w; ++i) {
-            uint32_t p = src[i];
-            if (flags & OLDRAW_SELECTED) p = (p & 0xFF000000UL) | ((p >> 1) & 0x7F7F7FUL);
-            if (flags & OLDRAW_GHOSTED) p = (p & 0xFF000000UL) | (((p & 0xFEFEFEUL) >> 1) + 0x404040UL);
-            t->row[i] = p;
+    for (i = 0; i < n; ++i) {
+        /* each block of drawn pixels that crosses what is asked for: one blit (true colour) */
+        int bx = (int)b[i].x, by = (int)b[i].y, bw = (int)b[i].w, bh = (int)b[i].h;
+        if (bx < sx) { bw -= sx - bx; bx = sx; }
+        if (by < sy) { bh -= sy - by; by = sy; }
+        if (bx + bw > sx + w) bw = sx + w - bx;
+        if (by + bh > sy + h) bh = sy + h - by;
+        if (bw <= 0 || bh <= 0) continue;
+        if (t->direct) {
+            CGX_WRITE((APTR)px, (UWORD)bx, (UWORD)by, (UWORD)(img->w * 4), t->rp, (UWORD)(x + bx - sx),
+                      (UWORD)(y + by - sy), (UWORD)bw, (UWORD)bh, RECTFMT_ARGB);
+            continue;
         }
-        /* each run of drawn pixels (alpha 128 and over) */
-        for (i = 0; i < w;) {
-            int from;
-            while (i < w && (t->row[i] >> 24) < 0x80) ++i;
-            from = i;
-            if (t->direct) {
-                while (i < w && (t->row[i] >> 24) >= 0x80) ++i;
-                if (i > from)
-                    CGX_WRITE(t->row, (UWORD)from, 0, (UWORD)(w * 4), t->rp, (UWORD)(x + from), (UWORD)(y + j),
-                              (UWORD)(i - from), 1, RECTFMT_ARGB);
-            } else {
-                uint32_t rgb;
-                if (i >= w) break;
-                rgb = t->row[i] & 0xFFFFFFUL;
-                while (i < w && (t->row[i] >> 24) >= 0x80 && (t->row[i] & 0xFFFFFFUL) == rgb) ++i;
+        /* a palette: runs of one colour along each row of the block */
+        for (j = by; j < by + bh; ++j) {
+            const uint32_t *row = px + (size_t)j * (size_t)img->w;
+            int k = bx;
+            while (k < bx + bw) {
+                uint32_t rgb = row[k] & 0xFFFFFFUL;
+                int from = k;
+                while (k < bx + bw && (row[k] & 0xFFFFFFUL) == rgb) ++k;
                 SetAPen(t->rp, (UBYTE)pen_for_rgb(t, rgb));
-                RectFill(t->rp, x + from, y + j, x + i - 1, y + j);
+                RectFill(t->rp, x + from - sx, y + j - sy, x + k - 1 - sx, y + j - sy);
             }
         }
     }
@@ -248,15 +246,16 @@ static int latin1(const char *s, size_t n, char *out, int max)
 static void with_font(amiga_target *t, const oldraw_font *f, unsigned style, struct TextFont **old)
 {
     struct TextFont *tf = font_for(t, f);
+    ULONG want = (ULONG)(((style & OLDRAW_BOLD) ? FSF_BOLD : 0) | ((style & OLDRAW_ITALIC) ? FSF_ITALIC : 0) |
+                         ((style & OLDRAW_UNDERLINE) ? FSF_UNDERLINED : 0));
     *old = t->rp->Font;
-    if (tf) SetFont(t->rp, tf);
-    SetSoftStyle(t->rp, (ULONG)(((style & OLDRAW_BOLD) ? FSF_BOLD : 0) | ((style & OLDRAW_ITALIC) ? FSF_ITALIC : 0) |
-                                ((style & OLDRAW_UNDERLINE) ? FSF_UNDERLINED : 0)), 0xFF);
+    if (tf && t->rp->Font != tf) SetFont(t->rp, tf);
+    if (want) SetSoftStyle(t->rp, want, 0xFF);      /* plain text (the most) leaves the style alone */
 }
 
 static void font_back(amiga_target *t, struct TextFont *old)
 {
-    SetSoftStyle(t->rp, 0, 0xFF);
+    if (t->rp->AlgoStyle) SetSoftStyle(t->rp, 0, 0xFF);
     if (old && t->rp->Font != old) SetFont(t->rp, old);
 }
 
@@ -374,7 +373,6 @@ static void free_target(oldraw *d)
     if (t->own) DeleteLayer(0, t->own);
     if (t->li) DisposeLayerInfo(t->li);
     if (--cgx_users == 0 && OldrawCgxBase) { CloseLibrary(OldrawCgxBase); OldrawCgxBase = NULL; }
-    free(t->row);
     free(t);
     d->target = NULL;
 }
@@ -428,6 +426,9 @@ void oldraw_pens_changed(oldraw *d)
     t = (amiga_target *)d->target;
     release_pens(t);
     read_pens(t);
+    if (t->font) { CloseFont(t->font); t->font = NULL; }   /* opened again, as Font prefs now say, when next used */
+    t->family[0] = 0;
+    oldraw_theme_changed(d);
 }
 
 oldraw_image *oldraw_image_icon(oldraw *d, struct DiskObject *icon)

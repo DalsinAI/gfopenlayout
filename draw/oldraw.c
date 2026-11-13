@@ -371,43 +371,117 @@ static size_t text_len(const char *utf8, size_t length)
     return length == (size_t)-1 ? strlen(utf8) : length;
 }
 
+/* the last measures, by text, font and style: a list row's columns and a drawer's labels are measured each redraw
+ * (and oldraw_text_box measures what it then draws), so most are found here */
+static unsigned text_hash(const char *s, size_t n, const oldraw_font *f, unsigned style)
+{
+    unsigned h = 2166136261u;
+    size_t i;
+    for (i = 0; i < n; ++i) h = (h ^ (unsigned char)s[i]) * 16777619u;
+    h ^= (unsigned)n * 31u + style * 7u;
+    if (f) {
+        h ^= (unsigned)f->px * 131u + f->style;
+        if (f->family) for (i = 0; f->family[i]; ++i) h = (h ^ (unsigned char)f->family[i]) * 16777619u;
+    }
+    return h;
+}
+
+static int same_font(const oldraw_measure_entry *m, const oldraw_font *f, unsigned style)
+{
+    if (m->style != style) return 0;
+    if (!f) return !m->has_font;
+    if (!m->has_font || m->px != f->px || m->fstyle != f->style) return 0;
+    if (!f->family) return m->family[0] == 0 && !m->has_family;
+    return m->has_family && !strcmp(m->family, f->family);
+}
+
+void oldraw_theme_changed(oldraw *d)
+{
+    if (!d) return;
+    memset(d->measures, 0, sizeof d->measures);
+}
+
+/* font with the call's bold, italic and underline added to its style (what a target measures by); font itself
+ * when nothing is added */
+static const oldraw_font *with_style(const oldraw_font *font, unsigned style, oldraw_font *both)
+{
+    unsigned st = style & (OLDRAW_BOLD | OLDRAW_ITALIC | OLDRAW_UNDERLINE);
+    if (!st || (font && (font->style | st) == font->style)) return font;
+    if (font) *both = *font;
+    else { both->family = NULL; both->px = 0; both->style = 0; }
+    both->style |= st;
+    return both;
+}
+
+static int measure_cached(oldraw *d, const char *utf8, size_t length, const oldraw_font *font, unsigned style,
+                          oldraw_text_size *size)
+{
+    oldraw_measure_entry *m;
+    unsigned h;
+    if (length > OLDRAW_MEASURE_TEXT || (font && font->family && strlen(font->family) >= sizeof m->family))
+        return d->ops->measure(d->target, utf8, length, font, size);
+    h = text_hash(utf8, length, font, style);
+    m = &d->measures[h % OLDRAW_MEASURES];
+    if (m->used && m->hash == h && m->length == length && same_font(m, font, style) &&
+        !memcmp(m->text, utf8, length)) {
+        *size = m->size;
+        d->measure_hits++;
+        return 1;
+    }
+    if (!d->ops->measure(d->target, utf8, length, font, size)) return 0;
+    m->used = 1;
+    m->hash = h;
+    m->length = length;
+    memcpy(m->text, utf8, length);
+    m->style = style;
+    m->has_font = font != NULL;
+    m->px = font ? font->px : 0;
+    m->fstyle = font ? font->style : 0;
+    m->has_family = font && font->family;
+    if (m->has_family) strcpy(m->family, font->family);
+    else m->family[0] = 0;
+    m->size = *size;
+    return 1;
+}
+
 int oldraw_text_measure(oldraw *d, const char *utf8, size_t length, const oldraw_font *font, unsigned style,
                      oldraw_text_size *size)
 {
     oldraw_text_size s;
     oldraw_font both;
-    const oldraw_font *f = font;
-    unsigned st = style & (OLDRAW_BOLD | OLDRAW_ITALIC | OLDRAW_UNDERLINE);
     if (!d || !d->ops->measure) return 0;
     length = text_len(utf8, length);
     memset(&s, 0, sizeof s);
-    /* the target measures by font->style: the call's style goes in with it (bold is wider) */
-    if (st && (!font || (font->style | st) != font->style)) {
-        if (font) both = *font;
-        else { both.family = NULL; both.px = 0; both.style = 0; }
-        both.style |= st;
-        f = &both;
-    }
-    if (!d->ops->measure(d->target, utf8 ? utf8 : "", length, f, &s)) return 0;
+    if (!measure_cached(d, utf8 ? utf8 : "", length, with_style(font, style, &both), style, &s)) return 0;
     if (size) *size = s;
     return 1;
+}
+
+/* text already measured: drawn, and given the clip only when it crosses it (a target clips at a cost: a layer's
+ * clip region on the Amiga) */
+static void text_draw(oldraw *d, int x, int y, const char *utf8, size_t length, const oldraw_font *font, oldraw_colour c,
+                      unsigned style, const oldraw_text_size *s)
+{
+    oldraw_rect clip, box, whole;
+    box.x = x;
+    box.y = y - s->ascent;
+    box.w = s->width + ((style & (OLDRAW_SHADOW | OLDRAW_OUTLINE)) ? 2 : 0);
+    box.h = s->ascent + s->descent + ((style & (OLDRAW_SHADOW | OLDRAW_OUTLINE)) ? 2 : 0);
+    if (style & OLDRAW_OUTLINE) { box.x--; box.y--; }
+    whole = box;
+    if (c == OLDRAW_NONE || !oldraw_clip_now(d, &clip) || !rect_cut(&box, &clip)) return;
+    d->ops->text(d->target, x, y, utf8, length, font, c, style,
+                 (box.x == whole.x && box.y == whole.y && box.w == whole.w && box.h == whole.h) ? NULL : &clip);
 }
 
 int oldraw_text(oldraw *d, int x, int y, const char *utf8, size_t length, const oldraw_font *font, oldraw_colour c,
                 unsigned style)
 {
     oldraw_text_size s;
-    oldraw_rect clip, box;
     if (!d || !utf8) return 0;
     length = text_len(utf8, length);
     if (!length || !oldraw_text_measure(d, utf8, length, font, style, &s)) return 0;
-    box.x = x;
-    box.y = y - s.ascent;
-    box.w = s.width + ((style & (OLDRAW_SHADOW | OLDRAW_OUTLINE)) ? 2 : 0);
-    box.h = s.ascent + s.descent + ((style & (OLDRAW_SHADOW | OLDRAW_OUTLINE)) ? 2 : 0);
-    if (style & OLDRAW_OUTLINE) { box.x--; box.y--; }
-    if (c != OLDRAW_NONE && oldraw_clip_now(d, &clip) && rect_cut(&box, &clip))
-        d->ops->text(d->target, x, y, utf8, length, font, c, style, &clip);
+    text_draw(d, x, y, utf8, length, font, c, style, &s);
     return s.width;
 }
 
@@ -416,9 +490,11 @@ size_t oldraw_text_box(oldraw *d, const oldraw_rect *r, const char *utf8, size_t
 {
     static const char dots[] = "...";
     oldraw_text_size s, e;
+    oldraw_font fs;
     size_t keep, lo;
     int had, x, y, tw;
     oldraw_rect saved;
+    memset(&e, 0, sizeof e);
     if (!d || !r || !utf8 || r->w <= 0 || r->h <= 0) return 0;
     length = text_len(utf8, length);
     if (!length || !oldraw_text_measure(d, utf8, length, font, style, &s)) return 0;
@@ -437,7 +513,11 @@ size_t oldraw_text_box(oldraw *d, const oldraw_rect *r, const char *utf8, size_t
         while (a < b) {
             int mid = (a + b + 1) / 2;
             oldraw_text_size m;
-            if (oldraw_text_measure(d, utf8, starts[mid], font, style, &m) && m.width + e.width <= r->w) a = mid;
+            /* the search's probes go to the target uncached: each is measured once and would only push out
+             * entries that come round again */
+            memset(&m, 0, sizeof m);
+            if (d->ops->measure(d->target, utf8, starts[mid], with_style(font, style, &fs), &m) && m.width + e.width <= r->w)
+                a = mid;
             else b = mid - 1;
         }
         lo = a >= 0 ? starts[a] : 0;
@@ -451,13 +531,67 @@ size_t oldraw_text_box(oldraw *d, const oldraw_rect *r, const char *utf8, size_t
     else if (align == OLDRAW_RIGHT) x += (int)r->w - tw;
     y = (int)r->y + ((int)r->h - (s.ascent + s.descent)) / 2 + s.ascent;
     push_box(d, r, &had, &saved);
-    if (keep) x += oldraw_text(d, x, y, utf8, keep, font, c, style);
-    if (keep < length) oldraw_text(d, x, y, dots, 3, font, c, style);
+    if (keep) {
+        text_draw(d, x, y, utf8, keep, font, c, style, &s);   /* s: keep's own size */
+        x += s.width;
+    }
+    if (keep < length) text_draw(d, x, y, dots, 3, font, c, style, &e);
     pop_box(d, had, &saved);
     return keep;
 }
 
 /* ---- pictures ---- */
+/* img's blocks: each row's runs of drawn pixels, a run joined to the block above when that block has the same left
+ * and width and ends on the row above */
+static int make_blocks(oldraw_image *img)
+{
+    int y, cap = 8, n = 0;
+    oldraw_rect *b = (oldraw_rect *)malloc((size_t)cap * sizeof *b);
+    int *open_ = NULL, nopen = 0, nnext;
+    int *next;
+    if (!b) return 0;
+    open_ = (int *)malloc((size_t)img->w * sizeof(int));
+    next = (int *)malloc((size_t)img->w * sizeof(int));
+    if (!open_ || !next) { free(b); free(open_); free(next); return 0; }
+    for (y = 0; y < img->h; ++y) {
+        const uint32_t *row = img->argb + (size_t)y * (size_t)img->w;
+        int x = 0;
+        nnext = 0;
+        while (x < img->w) {
+            int from, k, joined = -1;
+            while (x < img->w && (row[x] >> 24) < 0x80) ++x;
+            if (x >= img->w) break;
+            from = x;
+            while (x < img->w && (row[x] >> 24) >= 0x80) ++x;
+            for (k = 0; k < nopen; ++k)
+                if (b[open_[k]].x == from && b[open_[k]].w == x - from) { joined = open_[k]; break; }
+            if (joined >= 0) {
+                b[joined].h++;
+            } else {
+                if (n == cap) {
+                    oldraw_rect *nb = (oldraw_rect *)realloc(b, (size_t)cap * 2 * sizeof *b);
+                    if (!nb) { free(b); free(open_); free(next); return 0; }
+                    b = nb;
+                    cap *= 2;
+                }
+                b[n].x = from;
+                b[n].y = y;
+                b[n].w = x - from;
+                b[n].h = 1;
+                joined = n++;
+            }
+            next[nnext++] = joined;
+        }
+        memcpy(open_, next, (size_t)nnext * sizeof(int));
+        nopen = nnext;
+    }
+    free(open_);
+    free(next);
+    img->blocks = b;
+    img->nblocks = n;
+    return 1;
+}
+
 oldraw_image *oldraw_image_argb(oldraw *d, int w, int h, const uint32_t *argb, int stride)
 {
     oldraw_image *img;
@@ -474,7 +608,36 @@ oldraw_image *oldraw_image_argb(oldraw *d, int w, int h, const uint32_t *argb, i
     img->kind = OLDRAW_IMG_ARGB;
     img->w = w;
     img->h = h;
+    if (!make_blocks(img)) { free(img->argb); free(img); return NULL; }
     return img;
+}
+
+int oldraw_image_blocks(const oldraw_image *img, const oldraw_rect **blocks)
+{
+    if (!img || img->kind != OLDRAW_IMG_ARGB) { if (blocks) *blocks = NULL; return 0; }
+    if (blocks) *blocks = img->blocks;
+    return img->nblocks;
+}
+
+const uint32_t *oldraw_image_variant(oldraw_image *img, unsigned flags)
+{
+    int k;
+    size_t i, n;
+    if (!img || img->kind != OLDRAW_IMG_ARGB) return NULL;
+    if (!(flags & (OLDRAW_SELECTED | OLDRAW_GHOSTED))) return img->argb;
+    /* selected (0), ghosted (1), or both (2: darkened, then dimmed, as each is drawn alone) */
+    k = (flags & OLDRAW_SELECTED) ? ((flags & OLDRAW_GHOSTED) ? 2 : 0) : 1;
+    if (img->variant[k]) return img->variant[k];
+    n = (size_t)img->w * (size_t)img->h;
+    img->variant[k] = (uint32_t *)malloc(n * sizeof(uint32_t));
+    if (!img->variant[k]) return NULL;
+    for (i = 0; i < n; ++i) {
+        uint32_t p = img->argb[i];
+        if (k != 1) p = (p & 0xFF000000UL) | ((p >> 1) & 0x7F7F7FUL);                     /* half as bright */
+        if (k != 0) p = (p & 0xFF000000UL) | (((p & 0xFEFEFEUL) >> 1) + 0x404040UL);      /* towards grey */
+        img->variant[k][i] = p;
+    }
+    return img->variant[k];
 }
 
 #ifndef OLDRAW_AMIGA
@@ -500,6 +663,10 @@ void oldraw_image_free(oldraw *d, oldraw_image *img)
     if (!img) return;
     if (d && d->ops->image_free) d->ops->image_free(d->target, img);
     free(img->argb);
+    free(img->blocks);
+    free(img->variant[0]);
+    free(img->variant[1]);
+    free(img->variant[2]);
     free(img);
 }
 
@@ -704,6 +871,37 @@ static int32_t isin(int a)
 
 static int32_t icos(int a) { return isin(a + 900); }
 
+/* a segment's two edges, worked out once for every pixel of it */
+typedef struct {
+    int32_t r2, sx, sy, ex, ey;
+    int sweep;
+} pie_edges;
+
+static void pie_setup(pie_edges *p, int r, int start, int sweep)
+{
+    /* a direction a: (sin a, -cos a) on a screen whose y goes down; clockwise from u to v when u x v > 0 */
+    if (r > OLDRAW_PIE_MAX) r = OLDRAW_PIE_MAX;       /* so r * r and dx * dx + dy * dy fit in 32 bits */
+    p->r2 = (int32_t)r * r;
+    p->sweep = sweep;
+    p->sx = isin(start);
+    p->sy = -icos(start);
+    p->ex = isin(start + sweep);
+    p->ey = -icos(start + sweep);
+}
+
+static int pie_in(const pie_edges *p, int dx, int dy)
+{
+    int32_t cs, ce;
+    if (p->sweep <= 0) return 0;
+    if (dx < -OLDRAW_PIE_MAX || dx > OLDRAW_PIE_MAX || dy < -OLDRAW_PIE_MAX || dy > OLDRAW_PIE_MAX) return 0;
+    if ((int32_t)dx * dx + (int32_t)dy * dy > p->r2) return 0;
+    if (p->sweep >= 3600 || (dx == 0 && dy == 0)) return 1;
+    cs = p->sx * dy - p->sy * dx;     /* start x point */
+    ce = dx * p->ey - dy * p->ex;     /* point x end */
+    if (p->sweep <= 1800) return cs >= 0 && ce >= 0;
+    return !(cs < 0 && ce < 0);
+}
+
 unsigned oldraw_pie_sweep(uint64_t used, uint64_t size)
 {
     if (!size) return 0;
@@ -715,21 +913,10 @@ unsigned oldraw_pie_sweep(uint64_t used, uint64_t size)
 
 int oldraw_pie_has(int r, int start, int sweep, int dx, int dy)
 {
-    int32_t sx, sy, ex, ey, cs, ce;
-    if (r <= 0 || sweep <= 0) return 0;
-    if (r > OLDRAW_PIE_MAX) r = OLDRAW_PIE_MAX;       /* so r * r and dx * dx + dy * dy fit in 32 bits */
-    if (dx < -r || dx > r || dy < -r || dy > r) return 0;
-    if ((int32_t)dx * dx + (int32_t)dy * dy > (int32_t)r * r) return 0;
-    if (sweep >= 3600 || (dx == 0 && dy == 0)) return 1;
-    /* a direction a: (sin a, -cos a) on a screen whose y goes down; clockwise from u to v when u x v > 0 */
-    sx = isin(start);
-    sy = -icos(start);
-    ex = isin(start + sweep);
-    ey = -icos(start + sweep);
-    cs = sx * dy - sy * dx;     /* start x point */
-    ce = dx * ey - dy * ex;     /* point x end */
-    if (sweep <= 1800) return cs >= 0 && ce >= 0;
-    return !(cs < 0 && ce < 0);
+    pie_edges p;
+    if (r <= 0) return 0;
+    pie_setup(&p, r, start, sweep);
+    return pie_in(&p, dx, dy);
 }
 
 static int32_t isqrt32(int32_t v)
@@ -747,10 +934,12 @@ static int32_t isqrt32(int32_t v)
 
 void oldraw_pie(oldraw *d, int cx, int cy, int r, int start, int sweep, oldraw_colour c)
 {
+    pie_edges p;
     int dy, y0, y1;
     oldraw_rect clip;
     if (!d || r <= 0 || sweep <= 0 || c == OLDRAW_NONE || !oldraw_clip_now(d, &clip)) return;
     if (r > OLDRAW_PIE_MAX) r = OLDRAW_PIE_MAX;
+    pie_setup(&p, r, start, sweep);
     /* only the rows and columns inside the clip are walked */
     y0 = (int)clip.y - cy > -r ? (int)clip.y - cy : -r;
     y1 = (int)(clip.y + clip.h - 1) - cy < r ? (int)(clip.y + clip.h - 1) - cy : r;
@@ -761,9 +950,9 @@ void oldraw_pie(oldraw *d, int cx, int cy, int r, int start, int sweep, oldraw_c
         hw = xe;
         while (dx <= hw) {
             int from;
-            while (dx <= hw && !oldraw_pie_has(r, start, sweep, dx, dy)) ++dx;
+            while (dx <= hw && !pie_in(&p, dx, dy)) ++dx;
             from = dx;
-            while (dx <= hw && oldraw_pie_has(r, start, sweep, dx, dy)) ++dx;
+            while (dx <= hw && pie_in(&p, dx, dy)) ++dx;
             if (dx > from) fill(d, cx + from, cy + dy, dx - from, 1, c);
         }
     }
