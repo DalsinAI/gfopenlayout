@@ -1,4 +1,6 @@
 build/
 build-amiga/
+build-native/
+__pycache__/
 *.o
 *.a
