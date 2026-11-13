@@ -1,0 +1,63 @@
+# Builds GFOpenLayout (build-amiga.sh: the library, libgfopenlayout_draw.a and the test programs) on the Team's
+# self-hosted runner, which has the os32-gcc16-open6 stove (m68k-amigaos-gcc 16 and NDK 3.2; the NDK is never in
+# this repository), and runs the host tests (make test) on GitHub's own runner. The compiler's messages show on
+# the pull request as annotations; the build is the run's artifact.
+#
+# The self-hosted job runs only for pushes and for pull requests from branches of this repository, never for a
+# fork's: a fork's code never runs on the Team's machine.
+# The stove is $OS32_GCC16_OPEN6 on the runner, else ~/AmiCradle/stoves/os32-gcc16-open6.
+# MIT, Copyright (c) 2026 AmiCradle Team.
+name: Build on the stove
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+jobs:
+  os3:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: self-hosted
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: bash
+        run: |
+          export STOVE="${OS32_GCC16_OPEN6:-$HOME/AmiCradle/stoves/os32-gcc16-open6}"
+          if [ ! -x "$STOVE/prefix/bin/m68k-amigaos-gcc" ]; then
+            echo "::error::No os32-gcc16-open6 stove at $STOVE (set OS32_GCC16_OPEN6 on the runner)"
+            exit 1
+          fi
+          export OUT="$GITHUB_WORKSPACE/build-amiga"
+          mkdir -p build-amiga
+          status=0
+          sh build-amiga.sh > step.log 2>&1 || status=1
+          cat step.log
+          # each compiler message as an annotation on its line (none is fine)
+          { grep -E '^[^ :]+:[0-9]+:[0-9]+: (fatal error|error|warning|note):' step.log || true; } | while IFS= read -r l; do
+            f=${l%%:*}; rest=${l#*:}; line=${rest%%:*}; rest=${rest#*:}; col=${rest%%:*}; rest=${rest#*: }
+            kind=${rest%%:*}; msg=${rest#*: }
+            f=${f#"$GITHUB_WORKSPACE/"}
+            case "$kind" in *error) level=error ;; warning) level=warning ;; *) level=notice ;; esac
+            echo "::$level file=$f,line=$line,col=$col::$msg"
+          done
+          if [ "$status" = 1 ]; then
+            tail -n 40 step.log | sed "s#$GITHUB_WORKSPACE/##g" | awk 'BEGIN{ORS="%0A"} {gsub(/%/,"%25"); print}' > tail.txt
+            echo "::error title=build-amiga.sh failed::$(cat tail.txt)"
+          else
+            echo "::notice title=build-amiga.sh built::$(ls -l build-amiga/libgfopenlayout_draw.a 2>/dev/null | awk '{print $5 " bytes libgfopenlayout_draw.a"}')"
+          fi
+          exit $status
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: os3
+          path: build-amiga
+          if-no-files-found: ignore
+  host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host tests
+        run: make test

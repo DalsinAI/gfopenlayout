@@ -31,6 +31,19 @@ done
 # GFCSS's tests (LayoutCSSTest)
 "$CC" -m68040 -m68881 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
   -pedantic -noixemul -I"$HERE/include" "$HERE/tests/test_css.c" "$OUT/libopenlayout.a" -o "$OUT/LayoutCSSTest"
+# GFOpenLayout drawing (include/gfopenlayout_draw.h): libgfopenlayout_draw.a, what Workbench wave 1's modules draw
+# with instead of graphics.library, and DrawTest (tests/test_draw.c on m68k). No floating point, so it links into
+# soft- and hard-float programs alike.
+mkdir -p "$OUT/include"
+cp "$HERE/include/gfopenlayout_draw.h" "$OUT/include/"
+for f in draw/oldraw amiga/oldraw_amiga; do
+  "$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
+    -noixemul -DOLDRAW_AMIGA -I"$HERE/include" -I"$HERE/draw" -c "$HERE/$f.c" -o "$OUT/$(basename "$f").o"
+done
+"$AR" rcs "$OUT/libgfopenlayout_draw.a" "$OUT/oldraw.o" "$OUT/oldraw_amiga.o"
+"$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
+  -noixemul -I"$HERE/include" -I"$HERE/draw" "$HERE/tests/test_draw.c" "$HERE/draw/oldraw.c" -o "$OUT/DrawTest"
+echo "$OUT/libgfopenlayout_draw.a ($(wc -c < "$OUT/libgfopenlayout_draw.a") bytes)"
 # 0.5: gfopenlayout.library and its tests (LayoutLibTest, LayoutLibStress) too, for the lab (Cradle builds with
 # this script alone)
 OUT="$OUT/library" STOVE="$STOVE" CC="$CC" sh "$HERE/build-library.sh"

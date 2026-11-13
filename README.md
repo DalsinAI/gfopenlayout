@@ -375,3 +375,36 @@ See `DESIGN.md` and `docs/LIGHTWEIGHT_BROWSER.md`.
 ## Licence
 
 MIT. Copyright (c) 2026 AmiCradle Team.
+
+## Drawing for the Workbench modules (`gfopenlayout_draw.h`)
+
+Workbench build wave 1's modules (the file engine, the list view, the task model, the menus, the
+desktop) never call graphics.library or layers.library to draw (13 November 2026). They draw
+through `include/gfopenlayout_draw.h`:
+
+- an `oldraw` on a window's RastPort (`oldraw_new_rastport`), with the screen's pens by job
+  (`OLDRAW_PEN(OLDRAW_PEN_FILL)` and the rest, GFOpenPrefs' Palette) or RGB colours;
+- **damage-rect redraw**: `oldraw_damage` marks what changed, merging what touches, at most 16 kept;
+  `oldraw_redraw` calls the module once for each rectangle, clipped to it, then flushes the batch;
+- **icon blit**: `oldraw_image_icon` (a DiskObject) and `oldraw_image_argb`, drawn with
+  `oldraw_image_draw`, selected or ghosted;
+- **text**: `oldraw_text`, `oldraw_text_measure`, and `oldraw_text_box`, which cuts with "..." at a
+  character;
+- **list row**: `oldraw_list_row`, with cells of an image and a text, selected, current, striped or
+  ghosted rows; `oldraw_list_cell_box` for hit tests;
+- **selection rectangle**: `oldraw_select_box`, the dotted lasso, complemented so the same call
+  takes it off;
+- **progress bar**: `oldraw_progress`, with a percentage that changes pen where the bar ends;
+- **pie segment**: `oldraw_pie`, in tenths of a degree from the top, clockwise;
+- **copy and scroll**: `oldraw_copy` (memmove-style, so the source and destination may overlap,
+  both cut together) and `oldraw_scroll`, which moves an area's contents and damages the strip it
+  leaves, so a scrolled drawer redraws only its new rows and a GPU target never reads pixels back;
+- `oldraw_fill` and `oldraw_frame` for plain boxes and bevels.
+
+`oldraw_ops` is what a target does: the Amiga one is `amiga/oldraw_amiga.c`, and the host test's is
+in `tests/test_draw.c`. A GFOpenGPU target (each primitive on the GPU, with the CPU one beneath)
+comes in behind the same calls, so no module changes when it does. A primitive a module needs that
+isn't here is asked for and added here.
+
+`build-amiga.sh` builds `libgfopenlayout_draw.a` and the header into `build-amiga/`, and `make test`
+runs `test_draw`.
