@@ -1,0 +1,8 @@
+GFOPENLAYOUT_1 {
+    global:
+        ol_*;
+        gfcss_*;
+        olui_*;
+    local:
+        *;
+};

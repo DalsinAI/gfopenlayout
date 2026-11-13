@@ -97,6 +97,7 @@ test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/te
 	./$(BUILD)/test_draw
 	./$(BUILD)/test_core_api
 	python3 tools/gen-library.py --check
+	python3 -B -m unittest -v tests.test_native_modules
 
 # The ROM core's API (gfopenlayout_core.h, wave 2 review rule 2): the header alone in C89 and C99, and in C++
 $(BUILD)/test_core_api: tests/test_core_api.c include/gfopenlayout_core.h | $(BUILD)

@@ -1,7 +1,7 @@
 # GFOpenLayout native module builds (N2)
 
-`build-native.sh [OUT]` builds the portable GFOpenLayout, GFCSS, OLUI and
-`oldraw` cores as PIC shared ELF modules:
+`build-native.sh [OUT]` builds the portable GFOpenLayout, GFCSS and OLUI
+cores as PIC shared ELF modules:
 
 ```
 OUT/
@@ -15,8 +15,13 @@ folder, so the native entry takes the 68k module's RomTag name and version.
 Build products and Manifests are outputs and are not committed here.
 
 There is no native-loader or descriptor ABI in this change. The modules export
-the existing portable C APIs; Amiga library lifecycle and RastPort glue remain
-in the 68k module until that loader contract exists.
+only the existing public GFOpenLayout, GFCSS and OLUI C APIs; private helpers
+have hidden ELF visibility. Amiga library lifecycle, RastPort glue and oldraw
+remain in the 68k-side products until that loader contract exists.
+
+Theme selection matches `build-library.sh`: leave `OGT_ROOT` unset for the
+no-theme reader, or point it at GFOpenGadTools to build `ui/olui_theme.c` with
+`$OGT_ROOT/lib/ogt_theme.c`.
 
 Defaults are `x86_64-linux-gnu-gcc` for x86-64 and
 `aarch64-linux-gnu-gcc` for ARM64. Override them with `X86_64_CC` and

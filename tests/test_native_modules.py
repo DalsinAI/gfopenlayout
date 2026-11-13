@@ -30,7 +30,7 @@ def elf_identity(path: Path) -> tuple[int, int, int, int]:
 class NativeModules(unittest.TestCase):
     def test_arm64_and_x86_64_module_tree(self) -> None:
         arm = shutil.which(os.environ.get("ARM64_CC", "aarch64-linux-gnu-gcc"))
-        x86 = shutil.which(os.environ.get("X86_64_CC", "cc"))
+        x86 = shutil.which(os.environ.get("X86_64_CC", "x86_64-linux-gnu-gcc"))
         if not arm or not x86:
             self.skipTest("the x86-64 and AArch64 C compilers are both required")
         self.assertTrue(BUILD.is_file(), f"missing {BUILD.relative_to(ROOT)}")
@@ -56,10 +56,10 @@ class NativeModules(unittest.TestCase):
                         "ol_document_new",
                         "gfcss_sheet_new",
                         "olui_new",
-                        "oldraw_new",
-                        "oldraw_scroll",
                     ):
-                        self.assertRegex(symbols, rf"(?m)\b{name}$")
+                        self.assertRegex(symbols, rf"(?m)\b{name}(?:@@GFOPENLAYOUT_1)?$")
+                    for private in ("g_hash", "ol_css_node_data", "oldraw_new"):
+                        self.assertNotRegex(symbols, rf"(?m)\b{private}$")
 
 
 if __name__ == "__main__":
