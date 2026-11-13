@@ -28,7 +28,7 @@ GTK_HDR = gtk/include/glib.h gtk/include/gtk/gtk.h gtk/include/gtk/gtkc.h gtk/in
           gtk/include/gdk/gdkkeysyms.h gtk/gtkc_internal.h
 
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui \
-     $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_core_api
+	 $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_core_api $(BUILD)/test_ogpu_accel
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -82,7 +82,7 @@ $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
 test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
-      $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_core_api
+	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_core_api $(BUILD)/test_ogpu_accel
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
@@ -96,6 +96,7 @@ test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/te
 	./$(BUILD)/test_gtk
 	./$(BUILD)/test_draw
 	./$(BUILD)/test_core_api
+	./$(BUILD)/test_ogpu_accel
 	python3 tools/gen-library.py --check
 
 # The ROM core's API (gfopenlayout_core.h, wave 2 review rule 2): the header alone in C89 and C99, and in C++
@@ -113,6 +114,10 @@ probe_oi:
 	$(OI_CC) -std=c99 -Wall -Wextra -Werror -Iinclude -I$(OI_DIR) -fsyntax-only tests/probe_oi_types.c
 	$(OI_CC) -DOU_NATIVE -std=c99 -Wall -Wextra -Werror -Iinclude -I$(OI_DIR) -fsyntax-only tests/probe_oi_types.c
 	@echo "probe_oi: 18 hooks match openintuition's types"
+
+# Row N1's GFOpenGPU back end: the host test supplies the four Amiga calls and inspects the exact stream.
+$(BUILD)/test_ogpu_accel: tests/test_ogpu_accel.c core/olc_ogpu_accel.c core/olc_ogpu_accel.h include/gfopenlayout_core.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -Iinclude -Icore tests/test_ogpu_accel.c core/olc_ogpu_accel.c -o $@
 
 clean:
 	rm -rf $(BUILD)
