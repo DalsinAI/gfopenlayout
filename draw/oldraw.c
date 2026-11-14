@@ -1088,7 +1088,9 @@ static void thin_line(oldraw *d, long long x0, long long y0, long long x1, long 
         for (u = from; u <= to + 1; ++u) {
             long long v = u <= to ? (dx ? y0 + floor_div64(2 * (u - x0) * dy + dx, 2 * dx) : y0) : 0;
             if (u > from && (u > to || v != ry)) {
-                if (ry >= -2147483647LL && ry <= 2147483647LL) {
+                /* a run whose row (column, when steep) is off the clip is dropped here: near the int range's
+                 * ends its rectangle's far edge wouldn't fit in an int */
+                if (steep ? ry >= clip.x && ry < (long long)clip.x + clip.w : ry >= clip.y && ry < (long long)clip.y + clip.h) {
                     if (steep) fill(d, (int)ry, (int)run, 1, (int)(u - run), c);
                     else fill(d, (int)run, (int)ry, (int)(u - run), 1, c);
                 }
@@ -1117,11 +1119,10 @@ static void wide_line(oldraw *d, long long x0, long long y0, long long x1, long 
         return;
     }
     if (!dx && !dy) {
-        oldraw_rect r;
-        r.x = (int32_t)(x0 - width / 2);
-        r.y = (int32_t)(y0 - width / 2);
-        r.w = r.h = width;
-        oldraw_fill(d, &r, c);
+        /* a square of width round the point, cut to the clip first so its edges fit in an int */
+        long long y, l = x0 - width / 2, t = y0 - width / 2;
+        for (y = t > clip->y ? t : clip->y; y < t + width && y < (long long)clip->y + clip->h; ++y)
+            span(d, l, l + width, (int)y, clip, c);
         return;
     }
     len = (long long)isqrt64((uint64_t)(dx * dx + dy * dy));

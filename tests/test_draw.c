@@ -775,6 +775,14 @@ static void test_lines(oldraw *d)
     clear(BG);
     oldraw_line(d, -2000000000, -2000000000, 2000000000, 2000000000, 3, OLDRAW_RGB(RED));
     CHECK(px[20][20] == RED && px[20][21] == RED && px[5][40] == BG);
+    /* at the int range's ends (Budgie's review): nothing past INT_MAX reaches the target */
+    clear(BG);
+    oldraw_line(d, 0, 2147483647, 100, 2147483647, 1, OLDRAW_RGB(RED));
+    oldraw_line(d, 2147483647, 0, 2147483647, 100, 1, OLDRAW_RGB(RED));
+    oldraw_line(d, 0, -2147483647 - 1, 100, -2147483647 - 1, 1, OLDRAW_RGB(RED));
+    oldraw_line(d, 2147483647, 2147483647, 2147483647, 2147483647, 9, OLDRAW_RGB(RED));
+    oldraw_line(d, 2147483600, 2147483600, 2147483647, 2147483647, 7, OLDRAW_RGB(RED));
+    CHECK(count(0, 0, W, H, RED) == 0);
     /* cut to the clip */
     {
         oldraw_rect box = { 10, 10, 8, 8 };
