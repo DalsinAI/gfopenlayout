@@ -248,6 +248,31 @@ void oldraw_pie(oldraw *d, int cx, int cy, int r, int start, int sweep, oldraw_c
 /* 1 when the pixel at dx,dy from the centre is in that segment (what oldraw_pie fills). */
 int oldraw_pie_has(int r, int start, int sweep, int dx, int dy);
 
+/* ---- lines, polygons and ellipses (what a diagram is drawn with) ---- */
+typedef struct oldraw_point {
+    int32_t x, y;
+} oldraw_point;
+/* A line from x0,y0 to x1,y1, both ends' pixels drawn. width 1 and below: one pixel wide (Bresenham's pixels);
+ * above 1: a band width pixels across, centred on the line, its ends cut square at the two points. */
+void oldraw_line(oldraw *d, int x0, int y0, int x1, int y1, int width, oldraw_colour c);
+/* Lines from each of n points to the next (closed: and from the last back to the first). */
+void oldraw_polyline(oldraw *d, const oldraw_point *pts, int n, int closed, int width, oldraw_colour c);
+/* The inside of the polygon through n points (n 3 and over), even-odd: a pixel is filled when its centre is inside.
+ * Two polygons sharing an edge share no pixel and leave none out. A point is the corner of the pixel it names (a box
+ * from 2,2 to 10,6 fills what oldraw_fill fills for 2, 2, 8, 4). A coordinate further than OLDRAW_FAR from 0 is
+ * taken as OLDRAW_FAR (wide lines' corners too), so the sums fit in 64 bits. */
+#define OLDRAW_FAR (1L << 29)
+void oldraw_polygon(oldraw *d, const oldraw_point *pts, int n, oldraw_colour c);
+/* The ellipse that fills r (a circle when r is square): a pixel is filled when its centre is inside. A side above
+ * OLDRAW_ELLIPSE_MAX is taken as OLDRAW_ELLIPSE_MAX. */
+#define OLDRAW_ELLIPSE_MAX 16383
+void oldraw_ellipse(oldraw *d, const oldraw_rect *r, oldraw_colour c);
+/* The same ellipse's outline, width pixels thick inside r (the pixels oldraw_ellipse fills in r but not in r inset
+ * by width). */
+void oldraw_ellipse_frame(oldraw *d, const oldraw_rect *r, int width, oldraw_colour c);
+/* 1 when the pixel at x,y is one that oldraw_ellipse fills in r. */
+int oldraw_ellipse_has(const oldraw_rect *r, int x, int y);
+
 #ifdef __cplusplus
 }
 #endif

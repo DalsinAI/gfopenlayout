@@ -957,3 +957,257 @@ void oldraw_pie(oldraw *d, int cx, int cy, int r, int start, int sweep, oldraw_c
         }
     }
 }
+
+/* ---- lines, polygons and ellipses ---- */
+/* Polygons are filled in half pixels: a pixel's corners are at even numbers and its centre at the odd one between,
+ * so a wide line's edges and a polygon's corners can sit half way across a pixel. A pixel is filled when its centre
+ * is inside, with the top and left edges in and the bottom and right ones out. */
+static long long floor_div64(long long a, long long b)
+{
+    long long q = a / b;
+    return (a % b != 0 && ((a < 0) != (b < 0))) ? q - 1 : q;
+}
+
+static long long ceil_div64(long long a, long long b) { return -floor_div64(-a, b); }
+
+static uint64_t isqrt64(uint64_t v)
+{
+    uint64_t r = 0, b = (uint64_t)1 << 62;
+    while (b > v) b >>= 2;
+    while (b) {
+        if (v >= r + b) { v -= r + b; r = (r >> 1) + b; }
+        else r >>= 1;
+        b >>= 2;
+    }
+    return r;
+}
+
+/* a fill from column a to column b - 1 of row y, cut to the clip by fill() */
+static void span(oldraw *d, long long a, long long b, int y, const oldraw_rect *clip, oldraw_colour c)
+{
+    if (a < clip->x) a = clip->x;
+    if (b > (long long)clip->x + clip->w) b = (long long)clip->x + clip->w;
+    if (b > a) fill(d, (int)a, y, (int)(b - a), 1, c);
+}
+
+static void sort_ints(long long *v, int n)
+{
+    int i, j;
+    for (i = 1; i < n; ++i) {
+        long long t = v[i];
+        for (j = i; j > 0 && v[j - 1] > t; --j) v[j] = v[j - 1];
+        v[j] = t;
+    }
+}
+
+/* the polygon through n points, in half pixels (each within 2 * OLDRAW_FAR of 0, so the products below fit) */
+static long long far_cut(long long v) { return v > 2LL * OLDRAW_FAR ? 2LL * OLDRAW_FAR : v < -2LL * OLDRAW_FAR ? -2LL * OLDRAW_FAR : v; }
+
+static void polygon_half(oldraw *d, long long *xy, int n, oldraw_colour c)
+{
+    long long stack[32], *k = stack, ymin, ymax;
+    long j0, j1, j;
+    int i;
+    oldraw_rect clip;
+    if (n < 3 || c == OLDRAW_NONE || !oldraw_clip_now(d, &clip)) return;
+    for (i = 0; i < 2 * n; ++i) xy[i] = far_cut(xy[i]);
+    ymin = ymax = xy[1];
+    for (i = 1; i < n; ++i) {
+        if (xy[2 * i + 1] < ymin) ymin = xy[2 * i + 1];
+        if (xy[2 * i + 1] > ymax) ymax = xy[2 * i + 1];
+    }
+    j0 = (long)ceil_div64(ymin - 1, 2);                          /* the first row whose centre 2j + 1 >= ymin */
+    j1 = (long)ceil_div64(ymax - 1, 2);                          /* rows before it: 2j + 1 < ymax */
+    if (j0 < clip.y) j0 = clip.y;
+    if (j1 > (long)clip.y + clip.h) j1 = (long)clip.y + clip.h;
+    if (j1 <= j0) return;
+    if (n > 32 && !(k = malloc(sizeof *k * (size_t)n))) return;
+    for (j = j0; j < j1; ++j) {
+        long long y = 2LL * j + 1;
+        int m = 0;
+        for (i = 0; i < n; ++i) {
+            const long long *a = xy + 2 * i, *b = xy + 2 * ((i + 1) % n);
+            long long den, num;
+            if (a[1] == b[1]) continue;
+            if (!((a[1] <= y && y < b[1]) || (b[1] <= y && y < a[1]))) continue;
+            /* the first pixel whose centre is right of the crossing x: ceil((x - 1) / 2) */
+            den = b[1] - a[1];
+            num = (a[0] - 1) * den + (b[0] - a[0]) * (y - a[1]);
+            if (den < 0) { den = -den; num = -num; }
+            k[m++] = ceil_div64(num, 2 * den);
+        }
+        sort_ints(k, m);
+        for (i = 0; i + 1 < m; i += 2) span(d, k[i], k[i + 1], (int)j, &clip, c);
+    }
+    if (k != stack) free(k);
+}
+
+void oldraw_polygon(oldraw *d, const oldraw_point *pts, int n, oldraw_colour c)
+{
+    long long stack[64], *xy = stack;
+    int i;
+    if (!d || !pts || n < 3) return;
+    if (n > 32 && !(xy = malloc(sizeof *xy * 2 * (size_t)n))) return;
+    for (i = 0; i < n; ++i) {
+        xy[2 * i] = 2LL * pts[i].x;
+        xy[2 * i + 1] = 2LL * pts[i].y;
+    }
+    polygon_half(d, xy, n, c);
+    if (xy != stack) free(xy);
+}
+
+/* One pixel wide: for each column (or row, when the line is steeper than 45 degrees) the pixel nearest the line,
+ * worked out for that column alone, so only the columns inside the clip are walked and the line's pixels are the
+ * same whichever end it is drawn from. Runs of pixels in a row (a column) are one fill. */
+#define BIG (1LL << 30)
+static void thin_line(oldraw *d, long long x0, long long y0, long long x1, long long y1, oldraw_colour c)
+{
+    oldraw_rect clip;
+    long long dx, dy, t, from, to, lo, hi;
+    int steep;
+    if (!oldraw_clip_now(d, &clip)) return;
+    if (x1 - x0 > BIG || x0 - x1 > BIG || y1 - y0 > BIG || y0 - y1 > BIG) {
+        /* so 2 * (u - x0) * dy fits in 64 bits: the two halves, from the middle */
+        long long mx = floor_div64(x0 + x1, 2), my = floor_div64(y0 + y1, 2);
+        thin_line(d, x0, y0, mx, my, c);
+        thin_line(d, mx, my, x1, y1, c);
+        return;
+    }
+    steep = (y1 > y0 ? y1 - y0 : y0 - y1) > (x1 > x0 ? x1 - x0 : x0 - x1);
+    if (steep) { t = x0; x0 = y0; y0 = t; t = x1; x1 = y1; y1 = t; }
+    if (x1 < x0) { t = x0; x0 = x1; x1 = t; t = y0; y0 = y1; y1 = t; }
+    dx = x1 - x0;
+    dy = y1 - y0;
+    lo = steep ? clip.y : clip.x;
+    hi = (steep ? (long long)clip.y + clip.h : (long long)clip.x + clip.w) - 1;
+    from = x0 > lo ? x0 : lo;
+    to = x1 < hi ? x1 : hi;
+    if (to < from) return;
+    {
+        long long run = from, ry = 0, u;
+        for (u = from; u <= to + 1; ++u) {
+            long long v = u <= to ? (dx ? y0 + floor_div64(2 * (u - x0) * dy + dx, 2 * dx) : y0) : 0;
+            if (u > from && (u > to || v != ry)) {
+                /* a run whose row (column, when steep) is off the clip is dropped here: near the int range's
+                 * ends its rectangle's far edge wouldn't fit in an int */
+                if (steep ? ry >= clip.x && ry < (long long)clip.x + clip.w : ry >= clip.y && ry < (long long)clip.y + clip.h) {
+                    if (steep) fill(d, (int)ry, (int)run, 1, (int)(u - run), c);
+                    else fill(d, (int)run, (int)ry, (int)(u - run), 1, c);
+                }
+                run = u;
+            }
+            ry = v;
+        }
+    }
+}
+
+/* A band width pixels across: a quadrilateral in half pixels. A line reaching far off the target is halved, and the
+ * halves that miss the clip dropped, until its points are near enough for the band's corners to be exact. */
+static void wide_line(oldraw *d, long long x0, long long y0, long long x1, long long y1, int width, oldraw_colour c,
+                      const oldraw_rect *clip)
+{
+    long long dx = x1 - x0, dy = y1 - y0, len, ox, oy, ex, ey, cx0, cy0, cx1, cy1, xy[8];
+    long long near = OLDRAW_FAR / 4;
+    if ((x0 < x1 ? x0 : x1) - width > (long long)clip->x + clip->w || (x0 > x1 ? x0 : x1) + width < clip->x ||
+        (y0 < y1 ? y0 : y1) - width > (long long)clip->y + clip->h || (y0 > y1 ? y0 : y1) + width < clip->y)
+        return;
+    if ((x0 > near || -x0 > near || y0 > near || -y0 > near || x1 > near || -x1 > near || y1 > near || -y1 > near) &&
+        (dx > 2 || -dx > 2 || dy > 2 || -dy > 2)) {
+        long long mx = floor_div64(x0 + x1, 2), my = floor_div64(y0 + y1, 2);
+        wide_line(d, x0, y0, mx, my, width, c, clip);
+        wide_line(d, mx, my, x1, y1, width, c, clip);
+        return;
+    }
+    if (!dx && !dy) {
+        /* a square of width round the point, cut to the clip first so its edges fit in an int */
+        long long y, l = x0 - width / 2, t = y0 - width / 2;
+        for (y = t > clip->y ? t : clip->y; y < t + width && y < (long long)clip->y + clip->h; ++y)
+            span(d, l, l + width, (int)y, clip, c);
+        return;
+    }
+    len = (long long)isqrt64((uint64_t)(dx * dx + dy * dy));
+    if (len < 1) len = 1;
+    /* in half pixels: the band's half width is width, and the ends go half a pixel past the points' centres */
+    ox = floor_div64(-dy * width * 2 + len, 2 * len);
+    oy = floor_div64(dx * width * 2 + len, 2 * len);
+    ex = floor_div64(dx * 2 + len, 2 * len);
+    ey = floor_div64(dy * 2 + len, 2 * len);
+    cx0 = 2 * x0 + 1 - ex;
+    cy0 = 2 * y0 + 1 - ey;
+    cx1 = 2 * x1 + 1 + ex;
+    cy1 = 2 * y1 + 1 + ey;
+    xy[0] = cx0 - ox; xy[1] = cy0 - oy;
+    xy[2] = cx1 - ox; xy[3] = cy1 - oy;
+    xy[4] = cx1 + ox; xy[5] = cy1 + oy;
+    xy[6] = cx0 + ox; xy[7] = cy0 + oy;
+    polygon_half(d, xy, 4, c);
+}
+
+void oldraw_line(oldraw *d, int x0, int y0, int x1, int y1, int width, oldraw_colour c)
+{
+    oldraw_rect clip;
+    if (!d || c == OLDRAW_NONE) return;
+    if (width <= 1) { thin_line(d, x0, y0, x1, y1, c); return; }
+    if (width > 4096) width = 4096;
+    if (oldraw_clip_now(d, &clip)) wide_line(d, x0, y0, x1, y1, width, c, &clip);
+}
+
+void oldraw_polyline(oldraw *d, const oldraw_point *pts, int n, int closed, int width, oldraw_colour c)
+{
+    int i;
+    if (!d || !pts || n < 1) return;
+    if (n == 1) { oldraw_line(d, pts[0].x, pts[0].y, pts[0].x, pts[0].y, width, c); return; }
+    for (i = 0; i + 1 < n; ++i) oldraw_line(d, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, width, c);
+    if (closed && n > 2) oldraw_line(d, pts[n - 1].x, pts[n - 1].y, pts[0].x, pts[0].y, width, c);
+}
+
+/* The columns l to r - 1 an ellipse in box x, y, w, h fills on row j; 0 when none. In half pixels the centre is
+ * 2x + w, 2y + h and the radii are w and h; a pixel's centre 2i + 1, 2j + 1 is in when
+ * dx^2 h^2 + dy^2 w^2 <= w^2 h^2. */
+static int ellipse_row(long long x, long long y, long long w, long long h, long long j, long long *l, long long *r)
+{
+    long long dy, m;
+    if (w <= 0 || h <= 0) return 0;
+    if (w > OLDRAW_ELLIPSE_MAX) w = OLDRAW_ELLIPSE_MAX;
+    if (h > OLDRAW_ELLIPSE_MAX) h = OLDRAW_ELLIPSE_MAX;
+    dy = 2 * j + 1 - (2 * y + h);
+    if (dy < 0) dy = -dy;
+    if (dy > h) return 0;
+    m = (long long)isqrt64((uint64_t)(w * w * (h * h - dy * dy) / (h * h)));
+    *l = ceil_div64(2 * x + w - m - 1, 2);
+    *r = floor_div64(2 * x + w + m - 1, 2) + 1;
+    return *r > *l;
+}
+
+int oldraw_ellipse_has(const oldraw_rect *r, int x, int y)
+{
+    long long l, rr;
+    return r && ellipse_row(r->x, r->y, r->w, r->h, y, &l, &rr) && x >= l && x < rr;
+}
+
+static void ellipse_rows(oldraw *d, const oldraw_rect *r, int width, oldraw_colour c)
+{
+    oldraw_rect clip;
+    long long j, j0, j1;
+    if (!d || !r || r->w <= 0 || r->h <= 0 || c == OLDRAW_NONE || !oldraw_clip_now(d, &clip)) return;
+    j0 = r->y > clip.y ? r->y : clip.y;
+    j1 = (long long)r->y + r->h < (long long)clip.y + clip.h ? (long long)r->y + r->h : (long long)clip.y + clip.h;
+    for (j = j0; j < j1; ++j) {
+        long long l0, r0, l1, r1;
+        if (!ellipse_row(r->x, r->y, r->w, r->h, j, &l0, &r0)) continue;
+        if (width <= 0 || !ellipse_row((long long)r->x + width, (long long)r->y + width, (long long)r->w - 2LL * width,
+                                       (long long)r->h - 2LL * width, j, &l1, &r1)) {
+            span(d, l0, r0, (int)j, &clip, c);
+            continue;
+        }
+        span(d, l0, l1 < r0 ? l1 : r0, (int)j, &clip, c);
+        span(d, r1 > l0 ? r1 : l0, r0, (int)j, &clip, c);
+    }
+}
+
+void oldraw_ellipse(oldraw *d, const oldraw_rect *r, oldraw_colour c) { ellipse_rows(d, r, 0, c); }
+
+void oldraw_ellipse_frame(oldraw *d, const oldraw_rect *r, int width, oldraw_colour c)
+{
+    ellipse_rows(d, r, width < 1 ? 1 : width, c);
+}
