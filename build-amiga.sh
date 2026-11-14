@@ -35,12 +35,17 @@ done
 # with instead of graphics.library, and DrawTest (tests/test_draw.c on m68k). No floating point, so it links into
 # soft- and hard-float programs alike.
 mkdir -p "$OUT/include"
-cp "$HERE/include/gfopenlayout_draw.h" "$OUT/include/"
-for f in draw/oldraw amiga/oldraw_amiga; do
+# 14 Nov 2026: the About window (include/gfopenlayout_about.h) is in it too, so every module gets the same one
+cp "$HERE/include/gfopenlayout_draw.h" "$HERE/include/gfopenlayout_about.h" "$OUT/include/"
+for f in draw/oldraw amiga/oldraw_amiga about/olabout amiga/olabout_amiga; do
   "$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
     -noixemul -DOLDRAW_AMIGA -I"$HERE/include" -I"$HERE/draw" -c "$HERE/$f.c" -o "$OUT/$(basename "$f").o"
 done
-"$AR" rcs "$OUT/libgfopenlayout_draw.a" "$OUT/oldraw.o" "$OUT/oldraw_amiga.o"
+"$AR" rcs "$OUT/libgfopenlayout_draw.a" "$OUT/oldraw.o" "$OUT/oldraw_amiga.o" "$OUT/olabout.o" "$OUT/olabout_amiga.o"
+# AboutTest (tests/test_about.c on m68k: the mark, the layout and the drawing, soft float for its reference)
+"$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
+  -noixemul -I"$HERE/include" -I"$HERE/draw" "$HERE/tests/test_about.c" "$HERE/about/olabout.c" "$HERE/draw/oldraw.c" -lm \
+  -o "$OUT/AboutTest"
 "$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
   -noixemul -I"$HERE/include" -I"$HERE/draw" "$HERE/tests/test_draw.c" "$HERE/draw/oldraw.c" -o "$OUT/DrawTest"
 # DrawAmigaTest (tests/test_draw_amiga.c): amiga/oldraw_amiga.c on a real RastPort, run in a lab

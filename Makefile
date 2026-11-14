@@ -28,7 +28,7 @@ GTK_HDR = gtk/include/glib.h gtk/include/gtk/gtk.h gtk/include/gtk/gtkc.h gtk/in
           gtk/include/gdk/gdkkeysyms.h gtk/gtkc_internal.h
 
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui \
-	 $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_core_api $(BUILD)/test_ogpu_accel
+	 $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_ogpu_accel
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -75,6 +75,9 @@ $(BUILD)/test_gtk: tests/test_gtk.c $(GTK_SRC) $(GTK_HDR) $(UI_SRC) ui/olui_inte
 	$(CC) $(CFLAGS) -std=c99 -Wall -Wextra -Werror -Igtk/include -Igtk -Iinclude -Iui $(UI_INC) tests/test_gtk.c $(GTK_SRC) $(UI_SRC) $(BUILD)/libopenlayout.a -o $@
 
 # GFOpenLayout drawing (gfopenlayout_draw.h): what wave 1's modules draw with, on a host target of pixels
+$(BUILD)/test_about: tests/test_about.c about/olabout.c draw/oldraw.c include/gfopenlayout_about.h include/gfopenlayout_draw.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -Iinclude -Idraw tests/test_about.c about/olabout.c draw/oldraw.c -lm -o $@
+
 $(BUILD)/test_draw: tests/test_draw.c draw/oldraw.c draw/oldraw_internal.h include/gfopenlayout_draw.h | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) -Iinclude -Idraw tests/test_draw.c draw/oldraw.c -o $@
 
@@ -82,7 +85,7 @@ $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
 test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
-	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_core_api $(BUILD)/test_ogpu_accel
+	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_ogpu_accel
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
@@ -95,6 +98,7 @@ test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/te
 	./$(BUILD)/test_desktop
 	./$(BUILD)/test_gtk
 	./$(BUILD)/test_draw
+	./$(BUILD)/test_about
 	./$(BUILD)/test_core_api
 	./$(BUILD)/test_ogpu_accel
 	python3 tools/gen-library.py --check
