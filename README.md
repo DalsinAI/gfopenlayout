@@ -397,6 +397,10 @@ through `include/gfopenlayout_draw.h`:
   takes it off;
 - **progress bar**: `oldraw_progress`, with a percentage that changes pen where the bar ends;
 - **pie segment**: `oldraw_pie`, in tenths of a degree from the top, clockwise;
+- **lines, polygons and ellipses**: `oldraw_line` (one pixel, or a band of any width), `oldraw_polyline`,
+  `oldraw_polygon` (even-odd, a pixel in when its centre is, so shapes that share an edge never share a pixel),
+  `oldraw_ellipse` and `oldraw_ellipse_frame`, for a diagram's shapes and connectors; only the clip's rows and
+  columns are walked, so a line far off the window costs nothing;
 - **copy and scroll**: `oldraw_copy` (memmove-style, so the source and destination may overlap,
   both cut together) and `oldraw_scroll`, which moves an area's contents and damages the strip it
   leaves, so a scrolled drawer redraws only its new rows and a GPU target never reads pixels back;

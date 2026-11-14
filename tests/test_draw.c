@@ -719,6 +719,199 @@ static void test_speed(oldraw *d)
     }
 }
 
+/* ---- lines, polygons and ellipses ---- */
+#define RED 0xFF0000u
+#define BLUE 0x0000FFu
+static uint32_t saved[H][W];
+
+static void test_lines(oldraw *d)
+{
+    oldraw_rect all = { 0, 0, W, H };
+    int x, y, k, f0, same = 1;
+    unsigned seed = 12345;
+    oldraw_clip(d, &all);
+    /* a row: nine pixels in one fill */
+    clear(BG);
+    f0 = fills;
+    oldraw_line(d, 2, 3, 10, 3, 1, OLDRAW_RGB(RED));
+    CHECK(count(2, 3, 9, 1, RED) == 9 && count(0, 0, W, H, RED) == 9 && fills - f0 == 1);
+    /* the diagonal: one pixel on each */
+    clear(BG);
+    oldraw_line(d, 7, 7, 0, 0, 1, OLDRAW_RGB(RED));
+    for (k = 0, x = 0; x < 8; ++x) k += px[x][x] == RED;
+    CHECK(k == 8 && count(0, 0, W, H, RED) == 8);
+    /* steep: one a row, in at most a column's runs */
+    clear(BG);
+    f0 = fills;
+    oldraw_line(d, 5, 0, 7, 20, 1, OLDRAW_RGB(RED));
+    for (k = 0, y = 0; y <= 20; ++y) k += count(0, y, W, 1, RED) == 1;
+    CHECK(k == 21 && count(0, 0, W, H, RED) == 21 && fills - f0 == 3);
+    CHECK(px[0][5] == RED && px[20][7] == RED);
+    /* the same pixels whichever end a line starts from */
+    for (k = 0; k < 40; ++k) {
+        int a, b, c, e;
+        seed = seed * 1103515245u + 12345u; a = (int)(seed >> 16) % W;
+        seed = seed * 1103515245u + 12345u; b = (int)(seed >> 16) % H;
+        seed = seed * 1103515245u + 12345u; c = (int)(seed >> 16) % W;
+        seed = seed * 1103515245u + 12345u; e = (int)(seed >> 16) % H;
+        clear(BG);
+        oldraw_line(d, a, b, c, e, 1, OLDRAW_RGB(RED));
+        memcpy(saved, px, sizeof px);
+        clear(BG);
+        oldraw_line(d, c, e, a, b, 1, OLDRAW_RGB(RED));
+        if (memcmp(saved, px, sizeof px)) same = 0;
+        if (!px[b][a] || px[b][a] != RED || px[e][c] != RED) same = 0;
+    }
+    CHECK(same);
+    /* far off the target: only the columns inside are walked, and nothing overflows */
+    clear(BG);
+    f0 = fills;
+    oldraw_line(d, -2000000000, 10, 2000000000, 10, 1, OLDRAW_RGB(RED));
+    CHECK(count(0, 10, W, 1, RED) == W && count(0, 0, W, H, RED) == W && fills - f0 <= 2);   /* drawn in two halves */
+    clear(BG);
+    oldraw_line(d, -2000000000, -2000000000, 2000000000, 2000000000, 1, OLDRAW_RGB(RED));
+    for (k = 0, x = 0; x < H; ++x) k += px[x][x] == RED;
+    CHECK(k >= H - 1 && count(0, 0, W, H, RED) <= W + H);
+    clear(BG);
+    oldraw_line(d, -2000000000, -2000000000, 2000000000, 2000000000, 3, OLDRAW_RGB(RED));
+    CHECK(px[20][20] == RED && px[20][21] == RED && px[5][40] == BG);
+    /* cut to the clip */
+    {
+        oldraw_rect box = { 10, 10, 8, 8 };
+        clear(BG);
+        oldraw_clip(d, &box);
+        oldraw_line(d, 0, 14, 63, 14, 1, OLDRAW_RGB(RED));
+        oldraw_line(d, 0, 0, 40, 40, 5, OLDRAW_RGB(RED));
+        CHECK(count(10, 14, 8, 1, RED) == 8 && count_not(0, 0, W, H, BG) == count_not(10, 10, 8, 8, BG));
+        oldraw_clip(d, &all);
+    }
+    /* wide: a band centred on the line, both points' pixels in */
+    clear(BG);
+    oldraw_line(d, 5, 10, 15, 10, 3, OLDRAW_RGB(RED));
+    CHECK(count(5, 9, 11, 3, RED) == 33 && count(0, 0, W, H, RED) == 33);
+    clear(BG);
+    oldraw_line(d, 20, 5, 20, 15, 4, OLDRAW_RGB(RED));
+    CHECK(count(18, 5, 4, 11, RED) == 44 && count(0, 0, W, H, RED) == 44);
+    clear(BG);
+    oldraw_line(d, 30, 30, 30, 30, 3, OLDRAW_RGB(RED));
+    CHECK(count(29, 29, 3, 3, RED) == 9 && count(0, 0, W, H, RED) == 9);
+    clear(BG);
+    oldraw_line(d, 10, 10, 30, 30, 4, OLDRAW_RGB(RED));
+    CHECK(px[20][20] == RED && px[21][19] == RED && px[19][21] == RED && px[10][30] == BG && px[30][10] == BG);
+    oldraw_line(d, 1, 1, 9, 1, 2, OLDRAW_NONE);
+    CHECK(count(0, 0, W, 4, RED) == 0);
+    /* a polyline: closed, a triangle's three sides */
+    {
+        oldraw_point tri[3] = { { 2, 2 }, { 12, 2 }, { 2, 12 } }, one = { 40, 40 };
+        clear(BG);
+        oldraw_polyline(d, tri, 3, 1, 1, OLDRAW_RGB(RED));
+        CHECK(count(2, 2, 11, 1, RED) == 11 && count(2, 2, 1, 11, RED) == 11 && px[7][7] == RED && px[5][5] == BG);
+        clear(BG);
+        oldraw_polyline(d, tri, 3, 0, 1, OLDRAW_RGB(RED));
+        CHECK(px[7][2] == BG && px[7][7] == RED && count(2, 2, 11, 1, RED) == 11);   /* not closed: no left side */
+        clear(BG);
+        oldraw_polyline(d, &one, 1, 0, 1, OLDRAW_RGB(RED));
+        CHECK(px[40][40] == RED && count(0, 0, W, H, RED) == 1);
+    }
+}
+
+static void test_polygons(oldraw *d)
+{
+    oldraw_point box[4] = { { 2, 2 }, { 10, 2 }, { 10, 6 }, { 2, 6 } };
+    oldraw_point t1[3] = { { 20, 4 }, { 40, 4 }, { 40, 30 } }, t2[3] = { { 20, 4 }, { 40, 30 }, { 20, 30 } };
+    oldraw_point star[5] = { { 32, 4 }, { 44, 40 }, { 13, 18 }, { 51, 18 }, { 20, 40 } };
+    oldraw_point ring[40];
+    int n1, n2, k;
+    /* a box: the pixels its corners hold between them, as oldraw_fill fills them */
+    clear(BG);
+    oldraw_polygon(d, box, 4, OLDRAW_RGB(RED));
+    CHECK(count(2, 2, 8, 4, RED) == 32 && count(0, 0, W, H, RED) == 32);
+    /* two triangles sharing an edge: no pixel twice and none left out */
+    clear(BG);
+    oldraw_polygon(d, t1, 3, OLDRAW_RGB(RED));
+    n1 = count(0, 0, W, H, RED);
+    clear(BG);
+    oldraw_polygon(d, t2, 3, OLDRAW_RGB(BLUE));
+    n2 = count(0, 0, W, H, BLUE);
+    oldraw_polygon(d, t1, 3, OLDRAW_RGB(RED));
+    CHECK(n1 + n2 == 20 * 26 && count(20, 4, 20, 26, RED) + count(20, 4, 20, 26, BLUE) == 20 * 26);
+    CHECK(count(0, 0, W, H, RED) == n1 && count(0, 0, W, H, BLUE) == n2);
+    /* even-odd: a five-pointed star's middle is left empty */
+    clear(BG);
+    oldraw_polygon(d, star, 5, OLDRAW_RGB(RED));
+    CHECK(px[24][32] == BG && px[10][32] == RED && px[19][16] == RED && px[19][47] == RED);
+    /* more corners than the stack holds; fewer than three draw nothing */
+    for (k = 0; k < 40; ++k) {
+        static const int dx[40] = { 0, 3, 6, 9, 11, 14, 16, 17, 19, 19, 20, 19, 19, 17, 16, 14, 11, 9, 6, 3,
+                                    0, -3, -6, -9, -11, -14, -16, -17, -19, -19, -20, -19, -19, -17, -16, -14, -11, -9,
+                                    -6, -3 };
+        ring[k].x = 32 + dx[k];
+        ring[k].y = 24 + dx[(k + 30) % 40];
+    }
+    clear(BG);
+    oldraw_polygon(d, ring, 40, OLDRAW_RGB(RED));
+    k = count(0, 0, W, H, RED);
+    CHECK(k > 1000 && k < 1300 && px[24][32] == RED && px[0][0] == BG);
+    clear(BG);
+    oldraw_polygon(d, box, 2, OLDRAW_RGB(RED));
+    oldraw_polygon(d, NULL, 4, OLDRAW_RGB(RED));
+    oldraw_polygon(NULL, box, 4, OLDRAW_RGB(RED));
+    CHECK(count(0, 0, W, H, RED) == 0);
+    /* cut to the clip, and far corners don't overflow */
+    {
+        oldraw_rect c = { 4, 4, 6, 6 }, all = { 0, 0, W, H };
+        oldraw_point big[3] = { { -2000000000, -2000000000 }, { 2000000000, -2000000000 }, { 0, 2000000000 } };
+        clear(BG);
+        oldraw_clip(d, &c);
+        oldraw_polygon(d, big, 3, OLDRAW_RGB(RED));
+        CHECK(count(4, 4, 6, 6, RED) == 36 && count(0, 0, W, H, RED) == 36);
+        oldraw_clip(d, &all);
+    }
+}
+
+static void test_ellipses(oldraw *d)
+{
+    oldraw_rect c = { 10, 10, 21, 21 }, e = { 2, 30, 40, 12 }, dot = { 50, 5, 1, 1 }, in;
+    int x, y, n, sym = 1, match = 1;
+    clear(BG);
+    oldraw_ellipse(d, &c, OLDRAW_RGB(RED));
+    n = count(0, 0, W, H, RED);
+    CHECK(n > 300 && n < 380);                                     /* pi * 10.5^2 = 346 */
+    CHECK(px[20][20] == RED && px[10][20] == RED && px[20][10] == RED && px[10][10] == BG && px[30][30] == BG);
+    for (y = 10; y < 31; ++y)
+        for (x = 10; x < 31; ++x) {
+            if (px[y][x] != px[40 - y][x] || px[y][x] != px[y][40 - x] || px[y][x] != px[x][y]) sym = 0;
+            if ((px[y][x] == RED) != oldraw_ellipse_has(&c, x, y)) match = 0;
+        }
+    CHECK(sym && match && count(0, 0, W, H, RED) == count(10, 10, 21, 21, RED));
+    clear(BG);
+    oldraw_ellipse(d, &e, OLDRAW_RGB(RED));
+    CHECK(count(2, 30, 40, 12, RED) == count(0, 0, W, H, RED) && px[36][2] == RED && px[36][41] == RED &&
+          px[30][22] == RED && px[41][22] == RED && px[30][2] == BG);
+    clear(BG);
+    oldraw_ellipse(d, &dot, OLDRAW_RGB(RED));
+    CHECK(px[5][50] == RED && count(0, 0, W, H, RED) == 1);
+    /* the outline: what the ellipse fills less the one inset by the width */
+    clear(BG);
+    oldraw_ellipse_frame(d, &c, 2, OLDRAW_RGB(RED));
+    in.x = 12; in.y = 12; in.w = 17; in.h = 17;
+    for (match = 1, y = 0; y < H; ++y)
+        for (x = 0; x < W; ++x)
+            if ((px[y][x] == RED) != (oldraw_ellipse_has(&c, x, y) && !oldraw_ellipse_has(&in, x, y))) match = 0;
+    CHECK(match && px[20][20] == BG && px[10][20] == RED && px[11][20] == RED && px[12][20] == BG);
+    clear(BG);
+    oldraw_ellipse_frame(d, &c, 20, OLDRAW_RGB(RED));
+    CHECK(count(0, 0, W, H, RED) == n);
+    /* huge: clamped, no overflow; empty: nothing */
+    {
+        oldraw_rect huge = { -1000000, -1000000, 2000000, 2000000 }, none = { 5, 5, 0, 9 };
+        clear(BG);
+        oldraw_ellipse(d, &huge, OLDRAW_RGB(RED));
+        oldraw_ellipse(d, &none, OLDRAW_RGB(BLUE));
+        CHECK(count(0, 0, W, H, BLUE) == 0 && !oldraw_ellipse_has(&none, 5, 5) && !oldraw_ellipse_has(NULL, 0, 0));
+    }
+}
+
 int main(void)
 {
     oldraw *d = oldraw_new(&ops, NULL, W, H, pens);
@@ -735,6 +928,9 @@ int main(void)
     test_select_box(d);
     test_progress(d);
     test_pie(d);
+    test_lines(d);
+    test_polygons(d);
+    test_ellipses(d);
     test_copy_scroll(d);
     test_speed(d);
     oldraw_resize(d, 10, 10);
