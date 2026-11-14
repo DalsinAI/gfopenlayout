@@ -70,9 +70,19 @@ int olabout_closes(unsigned key);
 
 #if defined(AMIGA) || defined(__amigaos__)
 struct Screen;
+struct Window;
 /* The About window on scr (NULL: the default public screen), centred, until OK, Return, Escape or its close
  * gadget. 1 when it was shown; 0 when it couldn't open (the caller may fall back to an EasyRequest). */
 int olabout_show(struct Screen *scr, const olabout *a);
+/* The same window for a program that keeps running while it is open (a commodity's clock, a title bar): open it,
+ * Wait on its window's UserPort signal with the program's own, and call olabout_handle when it comes; 1 from
+ * olabout_handle means close it (olabout_close). a is kept, not copied: it lives while the window does. NULL when
+ * it couldn't open. */
+typedef struct olabout_win olabout_win;
+olabout_win *olabout_open(struct Screen *scr, const olabout *a);
+struct Window *olabout_window(const olabout_win *aw);
+int olabout_handle(olabout_win *aw);
+void olabout_close(olabout_win *aw);
 #endif
 
 #ifdef __cplusplus
