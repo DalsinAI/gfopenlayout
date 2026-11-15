@@ -2073,6 +2073,81 @@ static void test_drawing_v14(void)
     ol_document_free(doc);
 }
 
+/* 0.20: a gradient fill rides on the shape style; an older (0.14) style has none */
+typedef struct {
+    ol_shape_style_v13 v13;
+    int32_t rotation_tenths;
+} ol_shape_style_v14;
+
+static const ol_display_op *only_shape(ol_document *doc)
+{
+    const ol_display_op *shape = NULL;
+    size_t i;
+    for (i = 0; i < ol_display_count(doc); ++i)
+        if (ol_display_get(doc, i)->type == OL_OP_SHAPE) shape = ol_display_get(doc, i);
+    return shape;
+}
+
+static void test_gradient_v20(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_node *frame = block(doc, NULL, OL_ROLE_BLOCK, OL_ALIGN_START);
+    ol_box_style box_style;
+    ol_shape_style st;
+    ol_shape_style_v14 old;
+    const ol_display_op *shape;
+
+    /* the gradient fields come after every 0.14 field */
+    CHECK(sizeof(ol_shape_style_v14) == offsetof(ol_shape_style, gradient));
+    ol_shape_style_init(&st);
+    CHECK(st.gradient == OL_GRADIENT_NONE && st.fill2_argb == 0 && st.gradient_angle_tenths == 0);
+    CHECK(OL_SHAPE_STYLE_HAS_GRADIENT(&st));
+
+    ol_box_style_init(&box_style);
+    box_style.flags = OL_BOX_ABSOLUTE;
+    box_style.frame.width = OL_CSSPX(100);
+    box_style.frame.height = OL_CSSPX(50);
+    ol_node_set_box(frame, &box_style);
+    st.type = OL_SHAPE_RECT;
+    st.fill_argb = 0xff0000ffu;
+    st.gradient = OL_GRADIENT_LINEAR;
+    st.fill2_argb = 0xffff0000u;
+    st.gradient_angle_tenths = -900;               /* top to bottom, kept as 2700 */
+    CHECK(ol_node_set_shape(frame, &st, 0, NULL));
+    CHECK(ol_layout(doc, OL_CSSPX(200), measure, NULL));
+    shape = only_shape(doc);
+    CHECK(shape && shape->graphic && OL_SHAPE_STYLE_HAS_GRADIENT(&shape->graphic->shape));
+    CHECK(shape && shape->graphic && shape->graphic->shape.gradient == OL_GRADIENT_LINEAR);
+    CHECK(shape && shape->graphic && shape->graphic->shape.fill2_argb == 0xffff0000u);
+    CHECK(shape && shape->graphic && shape->graphic->shape.gradient_angle_tenths == 2700);
+
+    st.gradient = OL_GRADIENT_RADIAL + 1;          /* not a gradient: refused, the old shape kept */
+    CHECK(!ol_node_set_shape(frame, &st, 0, NULL));
+    CHECK(shape && shape->graphic && shape->graphic->shape.gradient == OL_GRADIENT_LINEAR);
+
+    st.gradient = OL_GRADIENT_NONE;                /* none: the other colour and angle cleared */
+    CHECK(ol_node_set_shape(frame, &st, 0, NULL));
+    CHECK(ol_layout(doc, OL_CSSPX(200), measure, NULL));
+    shape = only_shape(doc);
+    CHECK(shape && shape->graphic && shape->graphic->shape.fill2_argb == 0 &&
+          shape->graphic->shape.gradient_angle_tenths == 0);
+
+    /* a program built for 0.14 hands a shorter style: no gradient, its fields as they were */
+    memset(&old, 0, sizeof old);
+    old.v13.size = sizeof old;
+    old.v13.type = OL_SHAPE_ELLIPSE;
+    old.v13.fill_argb = 0xff00ff00u;
+    old.rotation_tenths = 450;
+    CHECK(ol_node_set_shape(frame, (const ol_shape_style *)&old, 0, NULL));
+    CHECK(ol_layout(doc, OL_CSSPX(200), measure, NULL));
+    shape = only_shape(doc);
+    CHECK(shape && shape->graphic && shape->graphic->shape.type == OL_SHAPE_ELLIPSE &&
+          shape->graphic->shape.fill_argb == 0xff00ff00u && shape->graphic->shape.rotation_tenths == 450);
+    CHECK(shape && shape->graphic && shape->graphic->shape.gradient == OL_GRADIENT_NONE &&
+          shape->graphic->shape.fill2_argb == 0);
+    ol_document_free(doc);
+}
+
 int main(void)
 {
     test_alignment();
@@ -2099,6 +2174,7 @@ int main(void)
     test_wrap_random();
     test_exact_lines();
     test_drawing_v14();
+    test_gradient_v20();
     if (failures) {
         printf("OPENLAYOUT DOCUMENT FAIL (%d)\n", failures);
         return 20;
