@@ -120,9 +120,10 @@ typedef struct fake {
     unsigned char *px;
     int32_t bpr;
     uint32_t fmt;
-    int begins, submits, aborts, retires, detaches, in_batch;
+    int begins, submits, aborts, retires, detaches, in_batch, failed_submits;
     long uploaded;              /* pixels uploaded */
     int fail_bind_at;           /* the bind call that fails, 0 none */
+    int fail_submit;            /* the next submit fails: the batch is dropped, uploads and all */
     int binds;
 } fake;
 
@@ -261,6 +262,13 @@ static int f_submit(void *ctx, void *batch, uint32_t *fence)
 {
     int i;
     (void)ctx; (void)batch;
+    if (fk.fail_submit) {
+        for (i = 0; i < fk.nt; i++) memcpy(fk.t[i].stage, fk.t[i].copy, (size_t)fk.t[i].bpr * fk.t[i].h);
+        fk.fail_submit = 0;
+        fk.failed_submits++;
+        fk.in_batch = 0;
+        return -1;
+    }
     for (i = 0; i < fk.nt; i++) memcpy(fk.t[i].copy, fk.t[i].stage, (size_t)fk.t[i].bpr * fk.t[i].h);
     fk.submits++;
     fk.in_batch = 0;
@@ -433,8 +441,10 @@ static void run(uint32_t fmt, int with_accel, int steps)
             }
         }
         if (with_accel && rnd(8) == 0) fk.fail_bind_at = 1 + rnd(4), fk.binds = 0;   /* the CPU takes over */
+        if (with_accel && rnd(10) == 0) fk.fail_submit = 1;                        /* so does a failed submit */
         rc = olc_compose(sc, NULL);
         fk.fail_bind_at = 0;
+        fk.fail_submit = 0;
         if (rc != 0) bad++;
         reference(fmt, want, scr.bpr);
         if (memcmp(want, scr.px, (size_t)scr.bpr * SH)) {
@@ -448,8 +458,10 @@ static void run(uint32_t fmt, int with_accel, int steps)
     if (with_accel) {
         printf("  %d composes: %d batches, %d aborted to the CPU, %ld pixels uploaded\n", steps, fk.begins, fk.aborts,
                fk.uploaded);
-        CHECK(fk.begins == fk.submits + fk.aborts);
-        CHECK(fk.aborts > 0 && fk.submits > steps / 2);
+        printf("  %d submits failed\n", fk.failed_submits);
+        CHECK(fk.begins == fk.submits + fk.aborts + fk.failed_submits);
+        CHECK(fk.failed_submits > 0);
+        CHECK(fk.aborts > 0 && fk.submits > steps / 3);
     }
     for (i = 0; i < nlayers; i++) {}
     olc_scene_free(sc);
@@ -546,6 +558,20 @@ static void test_scenes(void)
             CHECK(got == 0x00445566);
             s2.fmt = 99;
             CHECK(olc_scene_rebind(sc, &s2, SW, SH) == -1);
+            /* a bitmap of another format: refused, and the scene stays on s2 as it was */
+            {
+                static fake_screen s3;
+                memset(&s3, 0, sizeof s3);
+                s3.fmt = OLC_FMT_CLUT8;
+                s3.bpr = SW;
+                s2.fmt = OLC_FMT_XRGB32;
+                CHECK(olc_scene_rebind(sc, &s3, SW, SH) == -1);
+                olc_layer_restack(a, NULL);
+                CHECK(olc_compose(sc, NULL) == 0);
+                memcpy(&got, s2.px + 2 * s2.bpr + 2 * 4, 4);
+                CHECK(got == 0x00112233);
+                CHECK(s3.px[2 * s3.bpr + 2] == 0);
+            }
         }
     }
     olc_scene_free(sc);
