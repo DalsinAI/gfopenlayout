@@ -52,6 +52,15 @@ done
 "$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
   -noixemul -I"$HERE/include" "$HERE/tests/test_draw_amiga.c" "$OUT/libgfopenlayout_draw.a" -o "$OUT/DrawAmigaTest"
 echo "$OUT/libgfopenlayout_draw.a ($(wc -c < "$OUT/libgfopenlayout_draw.a") bytes)"
+# The ROM core, step 1 (include/gfopenlayout_core.h; core/olc_core.c: regions and surfaces). ROM code, so -Os;
+# libgfopenlayout_core.a, and CoreTest (tests/test_core.c on m68k, with exec's AllocVec and MEMF_FAST)
+"$CC" -m68040 -Os -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
+  -noixemul -DOLC_AMIGA -I"$HERE/include" -I"$HERE/core" -c "$HERE/core/olc_core.c" -o "$OUT/olc_core.o"
+"$AR" rcs "$OUT/libgfopenlayout_core.a" "$OUT/olc_core.o"
+"$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
+  -noixemul -DOLC_AMIGA -DOLC_TEST_HOOKS -I"$HERE/include" -I"$HERE/core" "$HERE/tests/test_core.c" \
+  "$HERE/core/olc_core.c" -o "$OUT/CoreTest"
+echo "$OUT/libgfopenlayout_core.a ($(wc -c < "$OUT/libgfopenlayout_core.a") bytes)"
 # 0.5: gfopenlayout.library and its tests (LayoutLibTest, LayoutLibStress) too, for the lab (Cradle builds with
 # this script alone)
 OUT="$OUT/library" STOVE="$STOVE" CC="$CC" sh "$HERE/build-library.sh"

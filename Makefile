@@ -28,7 +28,7 @@ GTK_HDR = gtk/include/glib.h gtk/include/gtk/gtk.h gtk/include/gtk/gtkc.h gtk/in
           gtk/include/gdk/gdkkeysyms.h gtk/gtkc_internal.h
 
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_table_span $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui \
-	 $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_ogpu_accel
+	 $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_ogpu_accel
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -88,7 +88,7 @@ $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
 test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_table_span $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
-	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_ogpu_accel
+	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_ogpu_accel
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
@@ -104,6 +104,7 @@ test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/te
 	./$(BUILD)/test_draw
 	./$(BUILD)/test_about
 	./$(BUILD)/test_core_api
+	./$(BUILD)/test_core
 	./$(BUILD)/test_ogpu_accel
 	python3 tools/gen-library.py --check
 	python3 -B -m unittest -v tests.test_native_modules
@@ -114,6 +115,10 @@ $(BUILD)/test_core_api: tests/test_core_api.c include/gfopenlayout_core.h | $(BU
 	if command -v c++ >/dev/null; then printf '#include "gfopenlayout_core.h"\nint main(){return olc_oi()!=0;}\n' | \
 	  c++ -x c++ -Wall -Wextra -Werror -Iinclude -fsyntax-only -; fi
 	$(CC) $(CFLAGS) -std=c99 -pedantic -Wall -Wextra -Werror -Iinclude tests/test_core_api.c -o $@
+
+# The ROM core, step 1 (core/olc_core.c): regions against a pixel model, surfaces, and every allocation failing
+$(BUILD)/test_core: tests/test_core.c core/olc_core.c core/olc_core_internal.h include/gfopenlayout_core.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -DOLC_TEST_HOOKS -Iinclude -Icore tests/test_core.c core/olc_core.c -o $@
 
 # olc_oi()'s entries against openintuition's real env tables, with its m68k types (its NDK size checks need
 # 32-bit pointers): make probe_oi OI_DIR=<amigachrome-guest>/libraries/openintuition [OI_CC=m68k-linux-gnu-gcc]
