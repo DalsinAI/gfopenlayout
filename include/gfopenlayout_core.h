@@ -105,7 +105,9 @@ typedef struct olc_oi_hooks {
                           olc_oi_s32 y1);
 } olc_oi_hooks;
 #define OLC_OI_HOOKS 18
-/* The core's own; the same table for the life of the system. */
+/* The core's own; the same table for the life of the system. The core takes the pixel hooks (Dale, 16 November
+ * 2026); the entries Intuition keeps are NULL and the shell keeps its own there: obtain_rp, release_rp,
+ * draw_image_state, deep, limit_rect and limit_end. NULL when graphics.library can't be opened. Amiga only. */
 const olc_oi_hooks *olc_oi(void);
 
 /* ---- 2. surfaces ---- */
