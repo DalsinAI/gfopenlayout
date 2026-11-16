@@ -52,15 +52,27 @@ done
 "$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
   -noixemul -I"$HERE/include" "$HERE/tests/test_draw_amiga.c" "$OUT/libgfopenlayout_draw.a" -o "$OUT/DrawAmigaTest"
 echo "$OUT/libgfopenlayout_draw.a ($(wc -c < "$OUT/libgfopenlayout_draw.a") bytes)"
-# The ROM core, step 1 (include/gfopenlayout_core.h; core/olc_core.c: regions and surfaces). ROM code, so -Os;
-# libgfopenlayout_core.a, and CoreTest (tests/test_core.c on m68k, with exec's AllocVec and MEMF_FAST)
-"$CC" -m68040 -Os -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
-  -noixemul -DOLC_AMIGA -I"$HERE/include" -I"$HERE/core" -c "$HERE/core/olc_core.c" -o "$OUT/olc_core.o"
-"$AR" rcs "$OUT/libgfopenlayout_core.a" "$OUT/olc_core.o"
+# The ROM core (include/gfopenlayout_core.h): step 1 core/olc_core.c (regions and surfaces), step 2
+# core/olc_compose.c (scenes, layers, compose). ROM code, so -Os; libgfopenlayout_core.a, and CoreTest and
+# ComposeTest (tests/test_core.c and test_compose.c on m68k, with exec's AllocVec, MEMF_FAST and semaphores)
+for f in olc_core olc_compose olc_screen_amiga olc_oi_amiga; do
+  "$CC" -m68040 -Os -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
+    -noixemul -DOLC_AMIGA -I"$HERE/include" -I"$HERE/core" -c "$HERE/core/$f.c" -o "$OUT/$f.o"
+done
+"$AR" rcs "$OUT/libgfopenlayout_core.a" "$OUT/olc_core.o" "$OUT/olc_compose.o" "$OUT/olc_screen_amiga.o" \
+  "$OUT/olc_oi_amiga.o"
+for t in core:CoreTest compose:ComposeTest; do
+  "$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
+    -noixemul -DOLC_AMIGA -DOLC_TEST_HOOKS -I"$HERE/include" -I"$HERE/core" "$HERE/tests/test_${t%%:*}.c" \
+    "$HERE/core/olc_core.c" "$HERE/core/olc_compose.c" "$HERE/core/olc_screen_amiga.c" -o "$OUT/${t#*:}"
+done
+# OIHooksTest (tests/test_oi_amiga.c, run in a lab): each of olc_oi()'s hooks against the shell's graphics calls
 "$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
-  -noixemul -DOLC_AMIGA -DOLC_TEST_HOOKS -I"$HERE/include" -I"$HERE/core" "$HERE/tests/test_core.c" \
-  "$HERE/core/olc_core.c" -o "$OUT/CoreTest"
+  -noixemul -DOLC_AMIGA -I"$HERE/include" -I"$HERE/core" "$HERE/tests/test_oi_amiga.c" "$OUT/libgfopenlayout_core.a" \
+  -o "$OUT/OIHooksTest"
 echo "$OUT/libgfopenlayout_core.a ($(wc -c < "$OUT/libgfopenlayout_core.a") bytes)"
+# each core file's code and data bytes, for the ROM's byte count in a PR
+"${AR%ar}size" "$OUT/olc_core.o" "$OUT/olc_compose.o" "$OUT/olc_screen_amiga.o" "$OUT/olc_oi_amiga.o" || true
 # 0.5: gfopenlayout.library and its tests (LayoutLibTest, LayoutLibStress) too, for the lab (Cradle builds with
 # this script alone)
 OUT="$OUT/library" STOVE="$STOVE" CC="$CC" sh "$HERE/build-library.sh"
