@@ -182,6 +182,11 @@ static void reg_drop(olc_region *r)
     r->n = r->cap = 0;
 }
 
+void olc__region_drop(olc_region *r)
+{
+    if (r) reg_drop(r);
+}
+
 olc_region *olc_region_new(void)
 {
     return (olc_region *)olc__alloc(sizeof(olc_region), 0);
@@ -390,6 +395,7 @@ olc_surface *olc_surface_new(int32_t w, int32_t h, uint32_t fmt, uint32_t where,
 void olc_surface_free(olc_surface *s)
 {
     if (!s) return;
+    olc__surface_retire(s);
     olc__free(s->pixels);
     reg_drop(&s->damage);
     olc__free(s);
