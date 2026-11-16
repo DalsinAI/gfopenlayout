@@ -37,6 +37,10 @@ void olc__surface_damage_clear(olc_surface *s);
  * the RTG step (ORTG_BitMapInfo); host tests set their own. 0, or -1 when the bitmap can't be composited. */
 typedef int (*olc_screen_lookup)(void *screen, void **pixels, int32_t *bytes_per_row, uint32_t *fmt);
 void olc__set_screen_lookup(olc_screen_lookup fn);
+#ifdef OLC_AMIGA
+/* core/olc_screen_amiga.c: through GFOpenRTG's ORTG_BitMapInfo; the default on the Amiga */
+int olc__amiga_screen_lookup(void *screen, void **pixels, int32_t *bytes_per_row, uint32_t *fmt);
+#endif
 
 /* A region's boxes let go (the region itself is the caller's, as in a struct) */
 void olc__region_drop(olc_region *r);

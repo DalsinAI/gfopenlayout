@@ -14,6 +14,8 @@
  * Locks: the scene's lock is number 5 of the lock order. Every call that changes the scene takes it; the back
  * end's retire runs outside it. On the host there is no lock (the tests are one task).
  *
+ * The screen's pixels come from GFOpenRTG on the Amiga (core/olc_screen_amiga.c).
+ *
  * Not yet: the layer shadow (OLC_LOOK_SHADOW is kept, not drawn), a layer whose lock is busy (answer 1: needs
  * the layer locks of the hooks step), pens on deep screens (a pen there is black). MIT, Copyright (c) 2026
  * AmiCradle Team. */
@@ -57,7 +59,11 @@ struct olc_scene {
 
 /* ---- the screen lookup and the back end ---- */
 
+#ifdef OLC_AMIGA
+static olc_screen_lookup lookup = olc__amiga_screen_lookup;
+#else
 static olc_screen_lookup lookup;
+#endif
 static const olc_accel *accel;
 static uint32_t accel_gen;
 

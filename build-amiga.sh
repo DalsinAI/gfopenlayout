@@ -55,15 +55,15 @@ echo "$OUT/libgfopenlayout_draw.a ($(wc -c < "$OUT/libgfopenlayout_draw.a") byte
 # The ROM core (include/gfopenlayout_core.h): step 1 core/olc_core.c (regions and surfaces), step 2
 # core/olc_compose.c (scenes, layers, compose). ROM code, so -Os; libgfopenlayout_core.a, and CoreTest and
 # ComposeTest (tests/test_core.c and test_compose.c on m68k, with exec's AllocVec, MEMF_FAST and semaphores)
-for f in olc_core olc_compose; do
+for f in olc_core olc_compose olc_screen_amiga; do
   "$CC" -m68040 -Os -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
     -noixemul -DOLC_AMIGA -I"$HERE/include" -I"$HERE/core" -c "$HERE/core/$f.c" -o "$OUT/$f.o"
 done
-"$AR" rcs "$OUT/libgfopenlayout_core.a" "$OUT/olc_core.o" "$OUT/olc_compose.o"
+"$AR" rcs "$OUT/libgfopenlayout_core.a" "$OUT/olc_core.o" "$OUT/olc_compose.o" "$OUT/olc_screen_amiga.o"
 for t in core:CoreTest compose:ComposeTest; do
   "$CC" -m68040 -O2 -fno-delete-null-pointer-checks -fno-late-combine-instructions -std=c99 -Wall -Wextra -Werror \
     -noixemul -DOLC_AMIGA -DOLC_TEST_HOOKS -I"$HERE/include" -I"$HERE/core" "$HERE/tests/test_${t%%:*}.c" \
-    "$HERE/core/olc_core.c" "$HERE/core/olc_compose.c" -o "$OUT/${t#*:}"
+    "$HERE/core/olc_core.c" "$HERE/core/olc_compose.c" "$HERE/core/olc_screen_amiga.c" -o "$OUT/${t#*:}"
 done
 echo "$OUT/libgfopenlayout_core.a ($(wc -c < "$OUT/libgfopenlayout_core.a") bytes)"
 # 0.5: gfopenlayout.library and its tests (LayoutLibTest, LayoutLibStress) too, for the lab (Cradle builds with
