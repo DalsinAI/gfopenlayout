@@ -5,7 +5,8 @@
 #
 # The self-hosted job runs only for pushes and for pull requests from branches of this repository, never for a
 # fork's: a fork's code never runs on the Team's machine.
-# The stove is $OS32_GCC16_OPEN6 on the runner, else ~/AmiCradle/stoves/os32-gcc16-open6.
+# The stove is $OS32_GCC16_OPEN6 on the runner, else ~/AmiCradle/kitchen/stoves/os32-gcc16-open6
+# (or the old ~/AmiCradle/stoves/os32-gcc16-open6 where there is no kitchen).
 # MIT, Copyright (c) 2026 AmiCradle Team.
 name: Build on the stove
 on:
@@ -16,14 +17,20 @@ on:
 jobs:
   os3:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: self-hosted
+    runs-on: [self-hosted, amigachromebuild, gfopenlayout]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Build
         shell: bash
         run: |
-          export STOVE="${OS32_GCC16_OPEN6:-$HOME/AmiCradle/stoves/os32-gcc16-open6}"
+          STOVE="${OS32_GCC16_OPEN6:-}"
+          # the kitchen layout (daletop since 15 Nov), else the old ~/AmiCradle/stoves
+          if [ -z "$STOVE" ]; then
+            STOVE="$HOME/AmiCradle/kitchen/stoves/os32-gcc16-open6"
+            [ -d "$STOVE" ] || STOVE="$HOME/AmiCradle/stoves/os32-gcc16-open6"
+          fi
+          export STOVE
           if [ ! -x "$STOVE/prefix/bin/m68k-amigaos-gcc" ]; then
             echo "::error::No os32-gcc16-open6 stove at $STOVE (set OS32_GCC16_OPEN6 on the runner)"
             exit 1
