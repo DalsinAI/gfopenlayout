@@ -2148,6 +2148,88 @@ static void test_gradient_v20(void)
     ol_document_free(doc);
 }
 
+/* 0.22: hatching and a shadow ride on the shape style; an older (0.20) style has neither */
+typedef struct {
+    ol_shape_style_v14 v14;
+    uint32_t gradient;
+    uint32_t fill2_argb;
+    int32_t gradient_angle_tenths;
+} ol_shape_style_v20;
+
+static void test_hatch_v22(void)
+{
+    ol_document *doc = ol_document_new();
+    ol_node *frame = block(doc, NULL, OL_ROLE_BLOCK, OL_ALIGN_START);
+    ol_box_style box_style;
+    ol_shape_style st;
+    ol_shape_style_v20 old;
+    const ol_display_op *shape;
+
+    /* the hatch and shadow fields come after every 0.20 field */
+    CHECK(sizeof(ol_shape_style_v20) == offsetof(ol_shape_style, hatch));
+    ol_shape_style_init(&st);
+    CHECK(st.hatch == OL_HATCH_NONE && st.hatch_argb == 0 && st.hatch_distance == 0 && st.shadow_argb == 0);
+    CHECK(OL_SHAPE_STYLE_HAS_HATCH(&st));
+
+    ol_box_style_init(&box_style);
+    box_style.flags = OL_BOX_ABSOLUTE;
+    box_style.frame.width = OL_CSSPX(100);
+    box_style.frame.height = OL_CSSPX(50);
+    ol_node_set_box(frame, &box_style);
+    st.type = OL_SHAPE_RECT;
+    st.fill_argb = 0x80ffff00u;                    /* yellow, half see-through */
+    st.hatch = OL_HATCH_DOUBLE;
+    st.hatch_argb = 0xff0000ffu;
+    st.hatch_angle_tenths = -450;                  /* kept as 3150 */
+    st.hatch_distance = OL_CSSPX(8);
+    st.shadow_argb = 0xff808080u;
+    st.shadow_dx = OL_CSSPX(4);
+    st.shadow_dy = OL_CSSPX(-2);
+    CHECK(ol_node_set_shape(frame, &st, 0, NULL));
+    CHECK(ol_layout(doc, OL_CSSPX(200), measure, NULL));
+    shape = only_shape(doc);
+    CHECK(shape && shape->graphic && OL_SHAPE_STYLE_HAS_HATCH(&shape->graphic->shape));
+    CHECK(shape && shape->graphic && shape->graphic->shape.fill_argb == 0x80ffff00u);
+    CHECK(shape && shape->graphic && shape->graphic->shape.hatch == OL_HATCH_DOUBLE &&
+          shape->graphic->shape.hatch_argb == 0xff0000ffu && shape->graphic->shape.hatch_angle_tenths == 3150 &&
+          shape->graphic->shape.hatch_distance == OL_CSSPX(8));
+    CHECK(shape && shape->graphic && shape->graphic->shape.shadow_argb == 0xff808080u &&
+          shape->graphic->shape.shadow_dx == OL_CSSPX(4) && shape->graphic->shape.shadow_dy == OL_CSSPX(-2));
+
+    st.hatch = OL_HATCH_TRIPLE + 1;                /* not a hatch: refused, the old shape kept */
+    CHECK(!ol_node_set_shape(frame, &st, 0, NULL));
+    st.hatch = OL_HATCH_SINGLE;
+    st.hatch_distance = 0;                         /* lines no distance apart: refused too */
+    CHECK(!ol_node_set_shape(frame, &st, 0, NULL));
+    CHECK(shape && shape->graphic && shape->graphic->shape.hatch == OL_HATCH_DOUBLE);
+
+    st.hatch = OL_HATCH_NONE;                      /* none: the lines' fields cleared */
+    st.shadow_argb = 0x00808080u;                  /* a clear shadow is no shadow: its offset cleared */
+    CHECK(ol_node_set_shape(frame, &st, 0, NULL));
+    CHECK(ol_layout(doc, OL_CSSPX(200), measure, NULL));
+    shape = only_shape(doc);
+    CHECK(shape && shape->graphic && shape->graphic->shape.hatch_argb == 0 &&
+          shape->graphic->shape.hatch_angle_tenths == 0 && shape->graphic->shape.hatch_distance == 0);
+    CHECK(shape && shape->graphic && shape->graphic->shape.shadow_argb == 0 && shape->graphic->shape.shadow_dx == 0 &&
+          shape->graphic->shape.shadow_dy == 0);
+
+    /* a program built for 0.20 hands a shorter style: no hatch, no shadow, its gradient as it was */
+    memset(&old, 0, sizeof old);
+    old.v14.v13.size = sizeof old;
+    old.v14.v13.type = OL_SHAPE_ELLIPSE;
+    old.v14.v13.fill_argb = 0xff00ff00u;
+    old.gradient = OL_GRADIENT_RADIAL;
+    old.fill2_argb = 0xff000000u;
+    CHECK(ol_node_set_shape(frame, (const ol_shape_style *)&old, 0, NULL));
+    CHECK(ol_layout(doc, OL_CSSPX(200), measure, NULL));
+    shape = only_shape(doc);
+    CHECK(shape && shape->graphic && shape->graphic->shape.type == OL_SHAPE_ELLIPSE &&
+          shape->graphic->shape.gradient == OL_GRADIENT_RADIAL && shape->graphic->shape.fill2_argb == 0xff000000u);
+    CHECK(shape && shape->graphic && shape->graphic->shape.hatch == OL_HATCH_NONE &&
+          shape->graphic->shape.shadow_argb == 0);
+    ol_document_free(doc);
+}
+
 int main(void)
 {
     test_alignment();
@@ -2175,6 +2257,7 @@ int main(void)
     test_exact_lines();
     test_drawing_v14();
     test_gradient_v20();
+    test_hatch_v22();
     if (failures) {
         printf("OPENLAYOUT DOCUMENT FAIL (%d)\n", failures);
         return 20;
