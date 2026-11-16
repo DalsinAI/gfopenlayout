@@ -76,6 +76,12 @@ void oldraw_resize(oldraw *d, int width, int height);
 /* The theme or the fonts changed (GFOpenPrefs' Palette or Font was saved): the screen's pens are read again and
  * every remembered text size and opened font is dropped. Amiga only; oldraw_theme_changed on any target. */
 void oldraw_pens_changed(oldraw *d);
+/* on not 0: text is drawn and measured in outline (anti-aliased) type through gfopenlayout.library 19's
+ * OLUI_AmigaText, in the target's font's family and height, as GFOpenGadTools' ogt_text draws it, wherever the
+ * library can (16 pens or more, an outline font for the family, ENV:GFOpenLayout/Text not "bitmap"); elsewhere, and
+ * with on 0 (as made), with Text(). The baseline and line height stay the bitmap font's, so rows don't move. Amiga
+ * only; any other target ignores it. */
+void oldraw_outline_text(oldraw *d, int on);
 /* The target's fonts changed: every remembered text size is dropped, so the next measure asks the target. */
 void oldraw_theme_changed(oldraw *d);
 void oldraw_free(oldraw *d);
@@ -203,12 +209,15 @@ typedef struct oldraw_cell {
     const oldraw_image *image;  /* drawn before the text, centred top to bottom; NULL: none */
     int width;                  /* pixels; 0: the rest of the row (the last cell only) */
     int align;                  /* OLDRAW_LEFT ... */
+    oldraw_colour colour;       /* its text's colour; OLDRAW_NONE (0, as a cleared cell has): the row's */
 } oldraw_cell;
 enum {
     OLDRAW_ROW_SELECTED = 1u << 0,  /* OLDRAW_PEN_FILL behind, OLDRAW_PEN_FILLTEXT text */
     OLDRAW_ROW_CURRENT = 1u << 1,   /* the keyboard's row: a dotted box round it */
     OLDRAW_ROW_STRIPE = 1u << 2,    /* an odd row of a striped list: a shade off the background */
-    OLDRAW_ROW_GHOSTED = 1u << 3    /* dimmed text and images */
+    OLDRAW_ROW_GHOSTED = 1u << 3,   /* dimmed text and images */
+    OLDRAW_ROW_NOFILL = 1u << 4     /* the row's background is the program's, drawn already (a theme's gradient,
+                                     * with oldraw_fill): none is drawn */
 };
 typedef struct oldraw_row {
     const oldraw_cell *cells;
@@ -216,6 +225,9 @@ typedef struct oldraw_row {
     unsigned flags;             /* OLDRAW_ROW_... */
     const oldraw_font *font;    /* NULL: the screen's */
     int pad;                    /* pixels inside each side of a cell (so 2 * pad between two cells); below 0: 4 */
+    oldraw_colour text;         /* the cells' text colour; OLDRAW_NONE (0): by the flags */
+    oldraw_colour current;      /* OLDRAW_ROW_CURRENT: a one-pixel line round the row in this colour (a theme's
+                                 * accent); OLDRAW_NONE (0): the dotted box */
 } oldraw_row;
 /* The row filling r: its background, then each cell left to right, cut to its width and to r. */
 void oldraw_list_row(oldraw *d, const oldraw_rect *r, const oldraw_row *row);

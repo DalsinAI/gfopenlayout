@@ -44,6 +44,18 @@ static int cgx_users;
 
 #define MAX_PENS 64
 
+/* gfopenlayout.library 19's outline text, through its vectors as GFOpenGadTools' ogt_draw.c calls it (this file is in
+ * the static libgfopenlayout_draw.a, not the library); open while any target asks for outline text */
+static struct Library *OldrawOLayBase;
+static int olay_users;
+#define OL_AA_TEXT(rp, x, y, s, n, fam, px, argb, fl) \
+    LP10(0x41a, int, OLUI_AmigaText, struct RastPort *, (rp), a0, int, (x), d0, int, (y), d1, const char *, (s), \
+         a1, ULONG, (n), d2, const char *, (fam), a2, int, (px), d3, ULONG, (argb), d4, ULONG, (fl), d5, ULONG, 0, \
+         d6, , OldrawOLayBase)
+#define OL_AA_WIDTH(rp, s, n, fam, px, fl, size) \
+    LP7(0x420, int, OLUI_AmigaTextWidth, struct RastPort *, (rp), a0, const char *, (s), a1, ULONG, (n), d0, \
+        const char *, (fam), a2, int, (px), d1, ULONG, (fl), d2, LONG *, (size), a3, , OldrawOLayBase)
+
 typedef struct {
     struct RastPort *rp;
     struct Screen *scr;
@@ -58,6 +70,7 @@ typedef struct {
     struct Layer_Info *li;      /* a layerless RastPort's: oldraw's own layer on its BitMap, so it can be cut */
     struct Layer *own;
     oldraw *d;
+    int outline;                /* oldraw_outline_text: text through OldrawOLayBase where it can */
 } amiga_target;
 
 static ULONG pen_for_rgb(amiga_target *t, ULONG rgb)
@@ -259,6 +272,34 @@ static void font_back(amiga_target *t, struct TextFont *old)
     if (old && t->rp->Font != old) SetFont(t->rp, old);
 }
 
+/* outline text in rp's font (the one with_font set): its family, its height (6 at least), bold as asked; the same
+ * family, size and flags ogt_draw.c's aa_* give the library, so GFOpenFiles' rows look as its other text does */
+#define OL_AA_MAX 255
+static unsigned long outline_flags(unsigned style)
+{
+    return (unsigned long)(((style & OLDRAW_BOLD) ? 1u : 0u) | ((style & OLDRAW_ITALIC) ? 2u : 0u) |
+                           ((style & OLDRAW_UNDERLINE) ? 4u : 0u));
+}
+
+static int outline_width(amiga_target *t, const char *s, size_t n, unsigned style, int *width)
+{
+    LONG sz[3];
+    struct TextFont *tf = t->rp->Font;
+    if (!t->outline || !OldrawOLayBase || !tf || n > OL_AA_MAX) return 0;
+    if (!OL_AA_WIDTH(t->rp, s, n, tf->tf_Message.mn_Node.ln_Name, tf->tf_YSize < 6 ? 6 : tf->tf_YSize,
+                     outline_flags(style), sz)) return 0;
+    *width = (int)sz[0];
+    return 1;
+}
+
+static int outline_draw(amiga_target *t, int x, int y, const char *s, size_t n, oldraw_colour c, unsigned style)
+{
+    struct TextFont *tf = t->rp->Font;
+    if (!t->outline || !OldrawOLayBase || !tf || n > OL_AA_MAX) return 0;
+    return OL_AA_TEXT(t->rp, x, y, s, n, tf->tf_Message.mn_Node.ln_Name, tf->tf_YSize < 6 ? 6 : tf->tf_YSize,
+                      oldraw_resolve(t->d, c) | 0xFF000000UL, outline_flags(style)) != 0;
+}
+
 static int a_measure(void *tp, const char *s, size_t n, const oldraw_font *f, oldraw_text_size *size)
 {
     amiga_target *t = (amiga_target *)tp;
@@ -266,7 +307,8 @@ static int a_measure(void *tp, const char *s, size_t n, const oldraw_font *f, ol
     struct TextFont *old;
     int k = latin1(s, n, buf, (int)sizeof buf);
     with_font(t, f, f ? f->style : 0, &old);     /* oldraw_text_measure gives the call's style in f->style */
-    size->width = (int)TextLength(t->rp, (STRPTR)buf, (ULONG)k);
+    if (!outline_width(t, s, n, f ? f->style : 0, &size->width))
+        size->width = (int)TextLength(t->rp, (STRPTR)buf, (ULONG)k);
     size->ascent = t->rp->TxBaseline;
     size->descent = t->rp->TxHeight - t->rp->TxBaseline;
     font_back(t, old);
@@ -293,6 +335,11 @@ static int a_text(void *tp, int x, int y, const char *s, size_t n, const oldraw_
             Move(t->rp, x + o[0], y + o[1]);
             Text(t->rp, (STRPTR)buf, (ULONG)k);
         }
+    }
+    if (!(style & (OLDRAW_SHADOW | OLDRAW_OUTLINE)) && outline_draw(t, x, y, s, n, c, style | (f ? f->style : 0))) {
+        font_back(t, old);
+        clip_off(t, &cs);
+        return 1;
     }
     SetAPen(t->rp, (UBYTE)pen_of(t, c));      /* on true colour too: Text() draws with a pen */
     Move(t->rp, x, y);
@@ -373,6 +420,7 @@ static void free_target(oldraw *d)
     if (t->own) DeleteLayer(0, t->own);
     if (t->li) DisposeLayerInfo(t->li);
     if (--cgx_users == 0 && OldrawCgxBase) { CloseLibrary(OldrawCgxBase); OldrawCgxBase = NULL; }
+    if (t->outline && --olay_users == 0 && OldrawOLayBase) { CloseLibrary(OldrawOLayBase); OldrawOLayBase = NULL; }
     free(t);
     d->target = NULL;
 }
@@ -434,6 +482,24 @@ void oldraw_pens_changed(oldraw *d)
     if (t->font) { CloseFont(t->font); t->font = NULL; }   /* opened again, as Font prefs now say, when next used */
     t->family[0] = 0;
     oldraw_theme_changed(d);
+}
+
+void oldraw_outline_text(oldraw *d, int on)
+{
+    amiga_target *t;
+    if (!d || d->ops != &amiga_ops) return;
+    t = (amiga_target *)d->target;
+    on = on != 0;
+    if (t->outline == on) return;
+    if (on) {
+        if (!OldrawOLayBase) OldrawOLayBase = OpenLibrary((CONST_STRPTR)"gfopenlayout.library", 19);
+        ++olay_users;
+    } else if (--olay_users == 0 && OldrawOLayBase) {
+        CloseLibrary(OldrawOLayBase);
+        OldrawOLayBase = NULL;
+    }
+    t->outline = on;
+    oldraw_theme_changed(d);            /* the sizes remembered were the other kind's */
 }
 
 oldraw_image *oldraw_image_icon(oldraw *d, struct DiskObject *icon)
