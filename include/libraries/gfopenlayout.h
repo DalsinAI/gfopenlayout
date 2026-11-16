@@ -79,6 +79,9 @@
                                                after every 0.14 field. Older libraries keep the
                                                shorter style, so a renderer checks
                                                OL_SHAPE_STYLE_HAS_GRADIENT and fills plain. */
+#define OPENLAYOUTLIB_ROW_SPAN_VERSION 21   /* tables: ol_box_style's row_span (a cell down more
+                                               than one row), appended after every 0.20 field,
+                                               and a row's box.height as its least height */
 
 struct OLNodeAppend {
     ol_document *document;
