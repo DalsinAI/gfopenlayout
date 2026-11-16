@@ -544,6 +544,16 @@ typedef struct {
     /* 0.18: OL_BOX_GRID's count of columns (1 to OL_MAX_COLUMNS; 0: 1).
      * Older box sizes leave it 0. */
     int32_t grid_columns;
+    /* 0.21: a table cell down more than one row (0 or 1: one), CSS's
+     * rowspan and a slide's or a document's merged cells. The rows after
+     * its first leave its columns to it; the last row it crosses grows
+     * when the cell needs more than the rows give it, and a span past the
+     * table's last row ends there. A row's own background is not drawn
+     * under a cell from a row above it. Also from 0.21, a row's box.height
+     * is the least it is tall (CSS's height on a row; a slide's row
+     * height); its content can make it taller. Older box sizes leave
+     * row_span 0. */
+    int32_t row_span;
 } ol_box_style;
 
 /* An anchored frame (box.anchor not 0) is laid out on its own and placed
@@ -645,6 +655,9 @@ int ol_node_shape_exclusions(const ol_node *shape, const ol_rect *bounds,
 /* The size before 0.18's grid. Programs using it through
  * gfopenlayout.library open OPENLAYOUTLIB_GRID_VERSION. */
 #define OL_BOX_STYLE_SIZE_0_17 offsetof(ol_box_style, grid_columns)
+/* The size before 0.21's row_span. Programs using it through
+ * gfopenlayout.library open OPENLAYOUTLIB_ROW_SPAN_VERSION. */
+#define OL_BOX_STYLE_SIZE_0_20 offsetof(ol_box_style, row_span)
 
 /* 0.6: where an anchored frame went after ol_layout_pages (or ol_layout,
  * in the galley): its page and its rectangle on it, the frame's width and

@@ -1,4 +1,4 @@
-/* gfopenlayout.library 20.0: version 3 adds pages, tables, frames and the
+/* gfopenlayout.library 21.0: version 3 adds pages, tables, frames and the
  * caret (GFOpenLayout 0.2) after version 2's calls, which are unchanged;
  * version 4 adds tab stops that align and their leaders (GFOpenLayout 0.3);
  * version 5 places frames anchored to their pages (GFOpenLayout 0.4, the
@@ -33,7 +33,9 @@
  * its own (OLUI_AmigaText, OLUI_AmigaTextWidth). Version 20 carries a
  * gradient fill on a shape's style (gradient, fill2_argb and
  * gradient_angle_tenths, after every 0.14 field) for the programs that draw
- * shapes; a style of an older size has no gradient.
+ * shapes; a style of an older size has no gradient. Version 21 lays out a
+ * table cell down more than one row (the box style's row_span, after every
+ * 0.20 field) and takes a row's box.height as the least it is tall.
  * Programs built for 2 to 8 keep working: a box style of an older size
  * has the fields after it 0, as ol_node_set_box copies only its size.
  * Copyright (c) 2026 AmiCradle Team. MIT.
@@ -54,7 +56,7 @@
 #include <proto/diskfont.h>
 
 #define REG(r, decl) register decl __asm(#r)
-#define LIB_VERSION 20
+#define LIB_VERSION 21
 #define LIB_REVISION 0
 
 struct OpenLayoutLibBase {
@@ -81,10 +83,10 @@ int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "gfopenlayout.library 20.0 (15.11.2026) GFOpenLayout 0.20, AmiCradle Team\r\n";
+    "gfopenlayout.library 21.0 (16.11.2026) GFOpenLayout 0.21, AmiCradle Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: gfopenlayout.library 20.0 (15.11.2026) GFOpenLayout 0.20, AmiCradle Team";
+    "$VER: gfopenlayout.library 21.0 (16.11.2026) GFOpenLayout 0.21, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),
