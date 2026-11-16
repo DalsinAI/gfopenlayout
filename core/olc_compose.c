@@ -161,7 +161,7 @@ olc_scene *olc_scene_new(void *screen, int32_t w, int32_t h, uint32_t mode)
 
 int olc_scene_rebind(olc_scene *sc, void *screen, int32_t w, int32_t h)
 {
-    olc_scene keep;
+    olc_scene t;
     if (!sc || w <= 0 || h <= 0) return -1;
     if (sc->mode == OLC_SCENE_DIRECT) {
         sc->screen = screen;
@@ -169,14 +169,16 @@ int olc_scene_rebind(olc_scene *sc, void *screen, int32_t w, int32_t h)
         sc->h = h;
         return 0;
     }
-    keep = *sc;
-    if (bind_screen(sc, screen, w, h) < 0) {
-        sc->screen = keep.screen;
-        sc->w = keep.w;
-        sc->h = keep.h;
-        return -1;
-    }
+    /* Looked up into a copy, so a refusal leaves the scene as it was. Every layer's surface is in the screen's
+     * format, so a bitmap of another format is refused: the caller makes a new scene for it. */
+    t = *sc;
+    if (bind_screen(&t, screen, w, h) < 0 || t.fmt != sc->fmt) return -1;
     LOCK(&sc->lock);
+    sc->screen = t.screen;
+    sc->pixels = t.pixels;
+    sc->bpr = t.bpr;
+    sc->w = t.w;
+    sc->h = t.h;
     sc->all = 1;                /* a new bitmap holds nothing of ours yet */
     UNLOCK(&sc->lock);
     return 0;
@@ -506,7 +508,12 @@ static int accel_compose(olc_scene *sc, const olc_region *d)
                                     : a->copy(a->ctx, batch, l->s->slot, &src, c.x0, c.y0) < 0) goto cpu;
     }
     olc__free(boxes);
-    return a->submit(a->ctx, batch, &fence) < 0 ? -1 : 0;
+    if (a->submit(a->ctx, batch, &fence) < 0) {
+        /* the batch is gone, uploads and all: the CPU composes, and the back end's copies are behind */
+        for (l = sc->backmost; l; l = l->front) l->s->stale = 1;
+        return -1;
+    }
+    return 0;
 cpu:
     a->abort(a->ctx, batch);
     /* what this batch would have uploaded never went up */

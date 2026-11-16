@@ -23,8 +23,9 @@ struct olc_surface {
     uint32_t upseq;             /* the compose that last uploaded its damage */
 };
 
-/* The core's memory: never Chip RAM. fast: pixels (MEMF_FAST on the Amiga, so a machine with only Chip RAM gets
- * none); otherwise the core's own small blocks. Both come back cleared. */
+/* The core's memory. fast: pixels, never in Chip RAM (MEMF_FAST on the Amiga, so a machine with only Chip RAM gets
+ * none); otherwise the core's own small blocks (MEMF_ANY: they may be in Chip RAM on a Chip-only machine). Both
+ * come back cleared. */
 void *olc__alloc(size_t bytes, int fast);
 void olc__free(void *p);
 
