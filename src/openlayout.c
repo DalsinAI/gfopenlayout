@@ -2330,6 +2330,59 @@ static ol_unit cell_hint(const ol_node *cell, ol_unit width)
  * top, middle or bottom of its row (box.valign); and the header rows
  * (OL_BOX_REPEAT_HEADER from the first row on) are kept with the first row
  * after them, and noted for the pages the table goes on to. */
+/* 0.21: the rows a cell goes down, at least one */
+static int cell_rows(const ol_node *cell)
+{
+    return cell->box.row_span > 1 ? cell->box.row_span : 1;
+}
+
+/* 0.21: the next column at or after col that no cell from a row above
+ * goes down into */
+static int free_column(const int *busy, int col, int ncols)
+{
+    while (col < ncols && busy[col] > 0) ++col;
+    return col;
+}
+
+/* 0.21: the rows above have gone by: what each span has left */
+static void rows_by(int *busy, int ncols)
+{
+    int i;
+    for (i = 0; i < ncols; ++i)
+        if (busy[i] > 0) --busy[i];
+}
+
+/* A cell as tall as the room down to bottom: its content at its top,
+ * middle or foot (box.valign), its background to match, and its borders. */
+static int finish_cell(ol_document *doc, ol_node *c, size_t first, size_t end, ol_unit bottom)
+{
+    ol_unit h = bottom - c->style.margin_bottom - c->bounds.y;
+    if (h > c->bounds.height) {
+        /* 0.9: its content in the middle or at the bottom of the room the row gives it */
+        ol_unit dy = c->box.valign == OL_VALIGN_MIDDLE ? (h - c->bounds.height) / 2
+                   : c->box.valign == OL_VALIGN_BOTTOM ? h - c->bounds.height : 0;
+        if (dy > 0)
+            move_cell_content(doc, c, first, end, dy);
+        c->bounds.height = h;
+        if ((c->style.background >> 24) != 0 && first < doc->op_count &&
+            doc->ops[first].type == OL_OP_FILL_RECT)
+            doc->ops[first].u.fill_rect.bounds = c->bounds;
+    }
+    return add_borders(doc, c);
+}
+
+/* 0.21: a cell down more than one row, laid out in its first and
+ * finished in its last */
+typedef struct {
+    ol_node *cell;
+    size_t first, end;
+    ol_unit top, bottom;
+    int rows_left;
+} ol_row_span;
+
+/* 0.21: the spans a table keeps open at once; a cell past them is one row */
+#define OL_MAX_SPANS 16
+
 #ifdef __GNUC__
 __attribute__((noinline))   /* its arrays stay out of every other block's stack frame */
 #endif
@@ -2339,7 +2392,12 @@ static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
 {
     ol_unit widths[OL_MAX_COLUMNS], col_x[OL_MAX_COLUMNS + 1], hints[OL_MAX_COLUMNS];
     ol_node *cells[OL_MAX_COLUMNS];
-    size_t cell_first_op[OL_MAX_COLUMNS];
+    size_t cell_first_op[OL_MAX_COLUMNS], cell_end_op[OL_MAX_COLUMNS];
+    /* 0.21: each column's rows left to a cell from a row above, the spans
+     * not yet finished, and the table's rows to come */
+    int busy[OL_MAX_COLUMNS];
+    ol_row_span spans[OL_MAX_SPANS];
+    int nspans = 0, rows_to_come = 0;
     int ncols = table->column_count, i, hinted = 0;
     const ol_unit *columns = table->columns;
     ol_node *row, *cell;
@@ -2348,28 +2406,41 @@ static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
     ol_unit head_top = 0, head_bottom = 0, first_body_bottom = -1;
     size_t head_first = 0, head_end = 0;
 
+    for (row = table->first_child; row; row = row->next_sibling)
+        if (row->role == OL_ROLE_ROW && row->style.display != OL_DISPLAY_NONE) ++rows_to_come;
     if (!ncols) {
+        memset(busy, 0, sizeof(busy));
         for (row = table->first_child; row; row = row->next_sibling) {
             int n = 0;
             if (row->role != OL_ROLE_ROW || row->style.display == OL_DISPLAY_NONE) continue;
-            for (cell = row->first_child; cell; cell = cell->next_sibling)
-                if (cell->style.display != OL_DISPLAY_NONE)
-                    n += cell->box.column_span > 1 ? cell->box.column_span : 1;
+            for (cell = row->first_child; cell; cell = cell->next_sibling) {
+                int span, k;
+                if (cell->style.display == OL_DISPLAY_NONE) continue;
+                n = free_column(busy, n, OL_MAX_COLUMNS);
+                span = cell->box.column_span > 1 ? cell->box.column_span : 1;
+                for (k = n; k < n + span && k < OL_MAX_COLUMNS; ++k) busy[k] = cell_rows(cell);
+                n += span;
+            }
             if (n > ncols) ncols = n;
+            rows_by(busy, OL_MAX_COLUMNS);
         }
     }
     if (ncols > OL_MAX_COLUMNS) ncols = OL_MAX_COLUMNS;
 
     if (ncols > 0 && !table->column_count) {        /* 0.9: the cells' widths as the columns' */
         memset(hints, 0, sizeof(hints));
+        memset(busy, 0, sizeof(busy));
         for (row = table->first_child; row; row = row->next_sibling) {
-            int col = 0;
+            int col = 0, k;
             if (row->role != OL_ROLE_ROW || row->style.display == OL_DISPLAY_NONE) continue;
             for (cell = row->first_child; cell && col < ncols; cell = cell->next_sibling) {
                 int span;
                 ol_unit h;
                 if (cell->style.display == OL_DISPLAY_NONE) continue;
+                col = free_column(busy, col, ncols);
+                if (col >= ncols) break;
                 span = cell->box.column_span > 1 ? cell->box.column_span : 1;
+                for (k = col; k < col + span && k < ncols; ++k) busy[k] = cell_rows(cell);
                 h = span == 1 ? cell_hint(cell, width) : 0;
                 if (h > hints[col]) {
                     hints[col] = h;
@@ -2377,6 +2448,7 @@ static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
                 }
                 col += span;
             }
+            rows_by(busy, ncols);
         }
         if (hinted) columns = hints;
     }
@@ -2406,10 +2478,14 @@ static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
         for (i = 0; i < ncols; ++i) col_x[i + 1] = col_x[i] + widths[i];
     }
 
+    memset(busy, 0, sizeof(busy));
     for (row = table->first_child; row; row = row->next_sibling) {
         ol_unit row_top = y, row_bottom = y;
-        size_t row_bg = (size_t)-1, row_first = doc->op_count, cells_end;
-        int col = 0, ncells = 0, k;
+        /* the row's background: one fill, or (0.21) one for each stretch of
+         * columns no span from above crosses */
+        size_t row_bg[OL_MAX_SPANS + 1], row_first = doc->op_count;
+        int bg_from[OL_MAX_SPANS + 1], bg_to[OL_MAX_SPANS + 1];
+        int col = 0, ncells = 0, nbg = 0, crossed = 0, k;
 
         if (row->style.display == OL_DISPLAY_NONE) continue;
         if (row->role != OL_ROLE_ROW || ncols <= 0) {
@@ -2421,49 +2497,90 @@ static int layout_table(ol_document *doc, ol_node *table, ol_unit x, ol_unit y,
         if ((row->box.flags & OL_BOX_PAGE_BREAK_BEFORE) && !add_break(doc, y)) return 0;
         memset(&row->bounds, 0, sizeof(row->bounds));
         if ((row->style.background >> 24) != 0) {
-            ol_display_op *bg = append_op(doc, OL_OP_FILL_RECT);
-            if (!bg) return 0;
-            row_bg = doc->op_count - 1;
-            bg->u.fill_rect.node_id = row->id;
-            bg->u.fill_rect.argb = row->style.background;
+            for (k = 0; k < ncols; ) {
+                int from;
+                if (busy[k] > 0) {
+                    crossed = 1;
+                    ++k;
+                    continue;
+                }
+                from = k;
+                while (k < ncols && busy[k] <= 0) ++k;
+                {
+                    ol_display_op *bg = append_op(doc, OL_OP_FILL_RECT);
+                    if (!bg) return 0;
+                    bg->u.fill_rect.node_id = row->id;
+                    bg->u.fill_rect.argb = row->style.background;
+                }
+                row_bg[nbg] = doc->op_count - 1;
+                bg_from[nbg] = from;
+                bg_to[nbg] = k;
+                ++nbg;
+            }
         }
         for (cell = row->first_child; cell && col < ncols; cell = cell->next_sibling) {
-            int span;
+            int span, rows;
             ol_unit cell_bottom;
+            size_t first = doc->op_count;
             if (cell->style.display == OL_DISPLAY_NONE) continue;
+            col = free_column(busy, col, ncols);
+            if (col >= ncols) break;
             span = cell->box.column_span > 1 ? cell->box.column_span : 1;
             if (col + span > ncols) span = ncols - col;
-            cells[ncells] = cell;
-            cell_first_op[ncells] = doc->op_count;
-            ++ncells;
+            /* 0.21: a span past the table's last row ends there */
+            rows = cell_rows(cell);
+            if (rows > rows_to_come) rows = rows_to_come;
             if (!layout_block(doc, cell, col_x[col], row_top, col_x[col + span] - col_x[col],
                               measure, measure_userdata, &cell_bottom))
                 return 0;
-            if (cell_bottom > row_bottom) row_bottom = cell_bottom;
+            if (rows > 1 && nspans < OL_MAX_SPANS) {
+                ol_row_span *sp = &spans[nspans++];
+                sp->cell = cell;
+                sp->first = first;
+                sp->end = doc->op_count;
+                sp->top = row_top;
+                sp->bottom = cell_bottom;
+                sp->rows_left = rows;
+                for (k = col; k < col + span; ++k) busy[k] = rows;
+            } else {
+                cells[ncells] = cell;
+                cell_first_op[ncells] = first;
+                cell_end_op[ncells] = doc->op_count;
+                ++ncells;
+                if (cell_bottom > row_bottom) row_bottom = cell_bottom;
+            }
             col += span;
         }
-        cells_end = doc->op_count;
-        for (k = 0; k < ncells; ++k) {
-            ol_node *c = cells[k];
-            ol_unit h = row_bottom - c->style.margin_bottom - c->bounds.y;
-            if (h > c->bounds.height) {
-                /* 0.9: its content in the middle or at the bottom of the room the row gives it */
-                ol_unit dy = c->box.valign == OL_VALIGN_MIDDLE ? (h - c->bounds.height) / 2
-                           : c->box.valign == OL_VALIGN_BOTTOM ? h - c->bounds.height : 0;
-                if (dy > 0)
-                    move_cell_content(doc, c, cell_first_op[k], k + 1 < ncells ? cell_first_op[k + 1] : cells_end, dy);
-                c->bounds.height = h;
-                if ((c->style.background >> 24) != 0 && cell_first_op[k] < doc->op_count &&
-                    doc->ops[cell_first_op[k]].type == OL_OP_FILL_RECT)
-                    doc->ops[cell_first_op[k]].u.fill_rect.bounds = c->bounds;
+        /* 0.21: the row's least height, and the room the spans that end in it need */
+        if (row->box.height > 0 && row_top + row->box.height > row_bottom)
+            row_bottom = row_top + row->box.height;
+        for (k = 0; k < nspans; ++k)
+            if (spans[k].rows_left == 1 && spans[k].bottom > row_bottom) row_bottom = spans[k].bottom;
+        for (k = 0; k < ncells; ++k)
+            if (!finish_cell(doc, cells[k], cell_first_op[k], cell_end_op[k], row_bottom)) return 0;
+        for (k = 0; k < nspans; ) {
+            if (--spans[k].rows_left > 0) {
+                ++k;
+                continue;
             }
-            if (!add_borders(doc, c)) return 0;
+            if (!finish_cell(doc, spans[k].cell, spans[k].first, spans[k].end, row_bottom)) return 0;
+            if (!add_keep(doc, spans[k].top, row_bottom)) return 0;
+            spans[k] = spans[--nspans];
         }
+        rows_by(busy, ncols);
+        --rows_to_come;
         row->bounds.x = x;
         row->bounds.y = row_top;
         row->bounds.width = width;
         row->bounds.height = row_bottom - row_top;
-        if (row_bg != (size_t)-1) doc->ops[row_bg].u.fill_rect.bounds = row->bounds;
+        for (k = 0; k < nbg; ++k) {
+            ol_rect r = row->bounds;
+            if (crossed) {
+                r.x = col_x[bg_from[k]];
+                r.width = col_x[bg_to[k]] - col_x[bg_from[k]];
+            }
+            doc->ops[row_bg[k]].u.fill_rect.bounds = r;
+        }
         if (!add_keep(doc, row_top, row_bottom)) return 0;
         if (in_header && (row->box.flags & OL_BOX_REPEAT_HEADER)) {
             if (!heads++) {
