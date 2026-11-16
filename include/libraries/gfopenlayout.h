@@ -74,6 +74,11 @@
                                                a box's children: OL_BOX_SAME_WIDTH and
                                                OL_BOX_SAME_HEIGHT, UI's same-size (MUI's
                                                SameSize) */
+#define OPENLAYOUTLIB_GRADIENT_VERSION 20   /* gradient fills: ol_shape_style's gradient,
+                                               fill2_argb and gradient_angle_tenths, appended
+                                               after every 0.14 field. Older libraries keep the
+                                               shorter style, so a renderer checks
+                                               OL_SHAPE_STYLE_HAS_GRADIENT and fills plain. */
 
 struct OLNodeAppend {
     ol_document *document;

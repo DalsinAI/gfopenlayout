@@ -82,6 +82,13 @@ typedef enum {
     OL_STROKE_DASH_DOT
 } ol_stroke_style;
 
+/* 0.20: how a shape's fill runs from fill_argb to fill2_argb */
+typedef enum {
+    OL_GRADIENT_NONE = 0,      /* fill_argb all over */
+    OL_GRADIENT_LINEAR,        /* along gradient_angle_tenths, across the shape's box */
+    OL_GRADIENT_RADIAL         /* from the box's centre (fill_argb) out to its corners (fill2_argb) */
+} ol_gradient;
+
 typedef struct {
     uint32_t size;             /* sizeof(ol_shape_style) */
     uint32_t type;             /* ol_shape_type */
@@ -92,7 +99,18 @@ typedef struct {
     uint32_t flags;            /* OL_SHAPE_... */
     uint32_t stroke_style;     /* ol_stroke_style */
     int32_t rotation_tenths;   /* 0.14: anticlockwise tenths of a degree */
+    /* 0.20, appended after every 0.14 field: a gradient fill. A renderer reads these only when the
+     * shape's size reaches them (OL_SHAPE_STYLE_HAS_GRADIENT); before that it fills with fill_argb. */
+    uint32_t gradient;         /* ol_gradient */
+    uint32_t fill2_argb;       /* the gradient's other end */
+    int32_t gradient_angle_tenths; /* LINEAR: the way from fill_argb to fill2_argb, anticlockwise
+                                      tenths of a degree, 0 left to right, 900 bottom to top; the
+                                      shape's rotation turns it too */
 } ol_shape_style;
+
+/* 1 when a style (as a display op carries it) holds 0.20's gradient fields */
+#define OL_SHAPE_STYLE_HAS_GRADIENT(st) \
+    ((st)->size >= offsetof(ol_shape_style, gradient_angle_tenths) + sizeof(int32_t))
 
 /* Source-image crop insets in thousandths. The four insets are non-negative
  * and opposite sides must add to less than OL_SHAPE_COORDS. */
