@@ -27,7 +27,7 @@ GTK_SRC = gtk/gtk.c gtk/glib.c gtk/gtkc_host.c
 GTK_HDR = gtk/include/glib.h gtk/include/gtk/gtk.h gtk/include/gtk/gtkc.h gtk/include/gdk/gdk.h \
           gtk/include/gdk/gdkkeysyms.h gtk/gtkc_internal.h
 
-all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui \
+all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_table_span $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui \
 	 $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_ogpu_accel
 
 $(BUILD):
@@ -50,6 +50,9 @@ $(BUILD)/test_document: tests/test_document.c $(BUILD)/libopenlayout.a
 
 $(BUILD)/test_rows: tests/test_rows.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_rows.c $(BUILD)/libopenlayout.a -o $@
+
+$(BUILD)/test_table_span: tests/test_table_span.c $(BUILD)/libopenlayout.a
+	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_table_span.c $(BUILD)/libopenlayout.a -o $@
 
 $(BUILD)/test_grid: tests/test_grid.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_grid.c $(BUILD)/libopenlayout.a -o $@
@@ -84,11 +87,12 @@ $(BUILD)/test_draw: tests/test_draw.c draw/oldraw.c draw/oldraw_internal.h inclu
 $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
-test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
+test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_table_span $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
 	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_ogpu_accel
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
+	./$(BUILD)/test_table_span
 	./$(BUILD)/test_grid
 	./$(BUILD)/test_samesize
 	./$(BUILD)/test_web
