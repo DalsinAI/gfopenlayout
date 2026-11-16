@@ -647,6 +647,12 @@ oldraw_image *oldraw_image_icon(oldraw *d, struct DiskObject *icon)
     (void)icon;
     return NULL;
 }
+
+void oldraw_outline_text(oldraw *d, int on)
+{
+    (void)d;
+    (void)on;
+}
 #endif
 
 int oldraw_image_width(const oldraw_image *img) { return img ? img->w : 0; }
@@ -763,9 +769,10 @@ void oldraw_list_row(oldraw *d, const oldraw_rect *r, const oldraw_row *row)
         bb = bb > 16 ? bb - 16 : 0;
         bg = OLDRAW_RGB((rr << 16) | (gg << 8) | bb);
     } else bg = OLDRAW_PEN(OLDRAW_PEN_BACKGROUND);
-    fg = (row->flags & OLDRAW_ROW_GHOSTED) ? OLDRAW_PEN(OLDRAW_PEN_SHADOW)
-         : OLDRAW_PEN((row->flags & OLDRAW_ROW_SELECTED) ? OLDRAW_PEN_FILLTEXT : OLDRAW_PEN_TEXT);
-    oldraw_fill(d, r, bg);
+    if (row->text != OLDRAW_NONE) fg = row->text;
+    else fg = (row->flags & OLDRAW_ROW_GHOSTED) ? OLDRAW_PEN(OLDRAW_PEN_SHADOW)
+              : OLDRAW_PEN((row->flags & OLDRAW_ROW_SELECTED) ? OLDRAW_PEN_FILLTEXT : OLDRAW_PEN_TEXT);
+    if (!(row->flags & OLDRAW_ROW_NOFILL)) oldraw_fill(d, r, bg);
     push_box(d, r, &had, &saved);
     for (i = 0; i < row->ncells; ++i) {
         const oldraw_cell *cell = &row->cells[i];
@@ -783,11 +790,24 @@ void oldraw_list_row(oldraw *d, const oldraw_rect *r, const oldraw_row *row)
             box.w -= h2;
         }
         if (cell->text && box.w > 0)
-            oldraw_text_box(d, &box, cell->text, (size_t)-1, row->font, fg, 0, cell->align);
+            oldraw_text_box(d, &box, cell->text, (size_t)-1, row->font, cell->colour != OLDRAW_NONE ? cell->colour : fg,
+                            0, cell->align);
         pop_box(d, cbox_had, &cbox_saved);
     }
     pop_box(d, had, &saved);
-    if (row->flags & OLDRAW_ROW_CURRENT)
+    if ((row->flags & OLDRAW_ROW_CURRENT) && row->current != OLDRAW_NONE) {
+        oldraw_rect e = *r;
+        e.h = 1;
+        oldraw_fill(d, &e, row->current);                       /* top */
+        e.y = r->y + r->h - 1;
+        oldraw_fill(d, &e, row->current);                       /* bottom */
+        e.y = r->y;
+        e.w = 1;
+        e.h = r->h;
+        oldraw_fill(d, &e, row->current);                       /* left */
+        e.x = r->x + r->w - 1;
+        oldraw_fill(d, &e, row->current);                       /* right */
+    } else if (row->flags & OLDRAW_ROW_CURRENT)
         oldraw_select_box(d, (int)r->x, (int)r->y, (int)(r->x + r->w - 1), (int)(r->y + r->h - 1));
 }
 

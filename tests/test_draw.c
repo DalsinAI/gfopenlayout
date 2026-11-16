@@ -394,6 +394,43 @@ static void test_list_row(oldraw *d)
     clear(0x123456);
     oldraw_list_row(d, &r, &row);
     CHECK(count(42, 10, 4, 12, TEXT) == 0);                   /* the pad between cells 1 and 2 */
+    /* a program's own colours (GFOpenFiles' theme): the row's text, one cell's, an accent line for the current row */
+    cells[1].text = "9";
+    row.text = OLDRAW_RGB(0x112233);
+    cells[2].colour = OLDRAW_RGB(0x445566);
+    clear(0x123456);
+    oldraw_list_row(d, &r, &row);
+    CHECK(count(8, 11, 5, 9, 0x112233) == 45 && count(36, 11, 5, 9, 0x112233) == 45);
+    CHECK(count(46, 11, 5, 9, 0x445566) == 45 && count(0, 0, W, H, TEXT) == 0);
+    row.flags = OLDRAW_ROW_SELECTED;                          /* the program's text wins over the fill's text pen */
+    clear(0x123456);
+    oldraw_list_row(d, &r, &row);
+    CHECK(count(0, 10, 60, 1, FILLC) == 60 && count(8, 11, 5, 9, 0x112233) == 45 && count(0, 0, W, H, FILLTEXT) == 0);
+    row.text = OLDRAW_NONE;
+    cells[2].colour = OLDRAW_NONE;
+    /* the current row with a colour: a solid line all round, nothing complemented */
+    row.flags = OLDRAW_ROW_CURRENT;
+    row.current = OLDRAW_RGB(0x00FF00);
+    clear(0x123456);
+    oldraw_list_row(d, &r, &row);
+    CHECK(count(0, 10, 60, 1, 0x00FF00) == 60 && count(0, 21, 60, 1, 0x00FF00) == 60);
+    CHECK(count(0, 10, 1, 12, 0x00FF00) == 12 && count(59, 10, 1, 12, 0x00FF00) == 12);
+    CHECK(count(1, 11, 58, 10, 0x00FF00) == 0 && count(0, 10, 60, 12, BG ^ 0xFFFFFFu) == 0);
+    row.current = OLDRAW_NONE;
+    /* no fill: the program's background stays (its gradient), the cells drawn over it */
+    row.flags = OLDRAW_ROW_NOFILL;
+    clear(0x123456);
+    oldraw_list_row(d, &r, &row);
+    CHECK(count(0, 10, 60, 1, 0x123456) == 60 && count(8, 11, 5, 9, TEXT) == 45 && count(0, 10, 60, 12, BG) == 0);
+    CHECK(count(2, 14, 4, 4, 0x00AA00) == 16);
+    /* a target other than the Amiga's: outline text asked for changes nothing */
+    oldraw_outline_text(d, 1);
+    row.flags = 0;
+    clear(0x123456);
+    oldraw_list_row(d, &r, &row);
+    CHECK(count(8, 11, 5, 9, TEXT) == 45);
+    oldraw_outline_text(d, 0);
+    oldraw_outline_text(NULL, 1);
     oldraw_image_free(d, img);
 }
 
