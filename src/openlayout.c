@@ -612,7 +612,8 @@ int ol_node_set_shape(ol_node *node, const ol_shape_style *style,
              s.stroke_width < 0 || s.radius_permille < 0 ||
              s.radius_permille > 500 ||
              ((s.type == OL_SHAPE_LINE || s.type == OL_SHAPE_POLYLINE) && count < 2) ||
-             (s.type == OL_SHAPE_POLYGON && count < 3) || s.gradient > OL_GRADIENT_RADIAL)
+             (s.type == OL_SHAPE_POLYGON && count < 3) || s.gradient > OL_GRADIENT_RADIAL ||
+             s.hatch > OL_HATCH_TRIPLE || (s.hatch != OL_HATCH_NONE && s.hatch_distance <= 0))
         return 0;
     s.rotation_tenths %= 3600;
     if (s.rotation_tenths < 0) s.rotation_tenths += 3600;
@@ -621,6 +622,17 @@ int ol_node_set_shape(ol_node *node, const ol_shape_style *style,
     if (s.gradient == OL_GRADIENT_NONE) {
         s.fill2_argb = 0;
         s.gradient_angle_tenths = 0;
+    }
+    s.hatch_angle_tenths %= 3600;
+    if (s.hatch_angle_tenths < 0) s.hatch_angle_tenths += 3600;
+    if (s.hatch == OL_HATCH_NONE) {
+        s.hatch_argb = 0;
+        s.hatch_angle_tenths = 0;
+        s.hatch_distance = 0;
+    }
+    if (!(s.shadow_argb >> 24)) {
+        s.shadow_argb = 0;
+        s.shadow_dx = s.shadow_dy = 0;
     }
     if (s.type == OL_SHAPE_RECT || s.type == OL_SHAPE_ROUND_RECT || s.type == OL_SHAPE_ELLIPSE)
         count = 0;

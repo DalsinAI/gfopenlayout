@@ -89,6 +89,14 @@ typedef enum {
     OL_GRADIENT_RADIAL         /* from the box's centre (fill_argb) out to its corners (fill2_argb) */
 } ol_gradient;
 
+/* 0.22: lines drawn over a shape's fill (or on their own when fill_argb's alpha is 0) */
+typedef enum {
+    OL_HATCH_NONE = 0,
+    OL_HATCH_SINGLE,           /* lines along hatch_angle_tenths */
+    OL_HATCH_DOUBLE,           /* and the same at right angles: a grid */
+    OL_HATCH_TRIPLE            /* and a third set at 45 degrees between them */
+} ol_hatch;
+
 typedef struct {
     uint32_t size;             /* sizeof(ol_shape_style) */
     uint32_t type;             /* ol_shape_type */
@@ -106,11 +114,25 @@ typedef struct {
     int32_t gradient_angle_tenths; /* LINEAR: the way from fill_argb to fill2_argb, anticlockwise
                                       tenths of a degree, 0 left to right, 900 bottom to top; the
                                       shape's rotation turns it too */
+    /* 0.22, appended after every 0.20 field: hatching and a shadow. A renderer reads these only when
+     * the shape's size reaches them (OL_SHAPE_STYLE_HAS_HATCH); before that there are none. A
+     * see-through fill is fill_argb's (and fill2_argb's) alpha below 255. */
+    uint32_t hatch;            /* ol_hatch */
+    uint32_t hatch_argb;       /* the lines' colour */
+    int32_t hatch_angle_tenths; /* the lines' direction, anticlockwise tenths of a degree from left to
+                                   right; the shape's rotation turns them too */
+    ol_unit hatch_distance;    /* between the lines; above 0 when hatch is set */
+    uint32_t shadow_argb;      /* alpha 0: no shadow; else the outline filled with it behind the shape */
+    ol_unit shadow_dx, shadow_dy; /* how far right and down the shadow lies */
 } ol_shape_style;
 
 /* 1 when a style (as a display op carries it) holds 0.20's gradient fields */
 #define OL_SHAPE_STYLE_HAS_GRADIENT(st) \
     ((st)->size >= offsetof(ol_shape_style, gradient_angle_tenths) + sizeof(int32_t))
+
+/* 1 when a style (as a display op carries it) holds 0.22's hatch and shadow fields */
+#define OL_SHAPE_STYLE_HAS_HATCH(st) \
+    ((st)->size >= offsetof(ol_shape_style, shadow_dy) + sizeof(ol_unit))
 
 /* Source-image crop insets in thousandths. The four insets are non-negative
  * and opposite sides must add to less than OL_SHAPE_COORDS. */
