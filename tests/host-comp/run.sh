@@ -29,3 +29,7 @@ $cc -O1 -g -w -Werror=implicit-function-declaration \
   -o "$tmp/t" "$here/test_infolock.c" "$GFX/library/layers/layers_lib.c" "$GFX/library/layers/layers_core.c"
 # each test leaves the library state it made (a library base is never torn down): no leak check; the race test counts its own
 ASAN_OPTIONS=detect_leaks=0 "$tmp/t"
+# 47.110, finished frames only: what a picture lacks and which one is next (library/layers/layers_present.h)
+$cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all \
+  -I"$GFX/library/layers" -I"$COMP" -o "$tmp/p" "$here/test_present.c"
+"$tmp/p"

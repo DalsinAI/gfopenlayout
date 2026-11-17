@@ -88,11 +88,15 @@ CONST_STRPTR OGPU_BackEndName(ULONG which);
 /* GFOpenRTG */
 #define OPENRTG_NAME "gfopenrtg.library"
 #define OPENRTG_VERSION 0
-struct OpenRTGBitMapInfo { ULONG format, width, height, bytes_per_row; APTR memory; };
+struct OpenRTGBitMapInfo { ULONG format, width, height, bytes_per_row; APTR memory; UBYTE monitor; };
 ULONG ORTG_BitMapInfo(struct BitMap *bm, struct OpenRTGBitMapInfo *bi);
 struct oc_span;
 ULONG ORTG_WrittenSpans(struct BitMap *bm, struct oc_span *s, ULONG max);
 #define LP3(o, rt, name, t1, v1, r1, t2, v2, r2, t3, v3, r3, bt, bn) name(v1, v2, v3)
+/* GFOpenRTG 0.28 (47.110): the test's GFOpenRTG is older, and these are never reached */
+LONG ORTG_ShowInstead(struct BitMap *screen, struct BitMap *picture);
+LONG ORTG_ShownNow(struct BitMap *screen, struct BitMap *picture);
+#define LP2(o, rt, name, t1, v1, r1, t2, v2, r2, bt, bn) name(v1, v2)
 
 /* The test's tasks: which one is running, and what a semaphore held by
  * another would have made it wait for. */
