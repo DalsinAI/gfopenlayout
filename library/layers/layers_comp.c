@@ -40,6 +40,18 @@
  * says whether there is anything: nothing costs a register read while
  * nobody writes, and nothing at all while no screen is watched.
  *
+ * 47.110 (finished frames only): a display that shows video RAM itself
+ * shows the screen's bitmap while a compose draws into it, as tearing.
+ * With GFOpenRTG 0.28 on a board of acrtg-v11 the screen's bitmap is still
+ * where everything is assembled, but no longer what is shown: what each
+ * compose changed is copied (a second batch, right behind the compose's)
+ * into one of up to three pictures of the screen's size in video RAM that
+ * the display is not showing, and ORTG_ShowInstead has the board show
+ * that picture once the copy has run (oc_present, layers_present.h).
+ * What programs write into the screen by address and what is drawn into
+ * it through a RastPort with no layer goes the same way. Without such a
+ * board, or with no room for two pictures, everything is as before.
+ *
  * Nothing here runs for a Layer_Info ComposeLayerInfo has not switched on:
  * those are classic layers, exactly as before. */
 #include <exec/tasks.h>
@@ -89,6 +101,8 @@ enum { SET_ON, SET_SHADOWS, SET_SIZE, SET_STRENGTH, SET_DRAG, SET_INACTIVE, SET_
 #define OC_SETTLE 1000
 #define OC_SETTLE_MAX 8000
 
+#include "layers_present.h"     /* 47.110: what a picture lacks, which one is next */
+
 /* 47.106: rectangles in no order, in an array that grows */
 struct oc_rl {
     struct lc_rect *r;
@@ -109,6 +123,15 @@ struct OComp {
     UBYTE pull;                 /* 47.106: GFOpenRTG has ORTG_WrittenSpans (0.23) */
     ULONG *shadow;              /* ARGB32, (4R + 1) square: the shadow's corners and edges */
     volatile ULONG *flag;       /* 47.106: the board's long, not 0 while it has something written; 0: no watch */
+    /* 47.110, finished frames only: the pictures, what each lacks (under cb->lock) */
+    struct BitMap *pic[OPR_PICS];
+    ULONG paddr[OPR_PICS];
+    struct opr_miss miss[OPR_PICS];
+    struct lc_rect direct;      /* drawn into the screen's bitmap through a RastPort with no layer (under Forbid) */
+    UBYTE npic;
+    UBYTE show;                 /* 0 not tried yet, 1 on, 2 the board can't: as before 47.110 */
+    BYTE last;                  /* the picture asked for last; -1 none */
+    volatile UBYTE owed;        /* the screen's bitmap has something no picture shown has */
 };
 
 struct OThunk {
@@ -252,7 +275,29 @@ static void oc_mark(struct OCB *cb, ULONG kind, const ULONG *regs)
 {
     struct Layer *l;
     struct lc_rect r;
-    if (oc_what(kind, regs, &l, &r)) oc_add(cb, OL(l), r.x0, r.y0, r.x1, r.y1);
+    const struct omark *k = &marks[kind];
+    struct RastPort *rp = (struct RastPort *)regs[k->rp];
+    struct OComp *c;
+    if (oc_what(kind, regs, &l, &r)) {
+        oc_add(cb, OL(l), r.x0, r.y0, r.x1, r.y1);
+        return;
+    }
+    /* 47.110: drawn straight into a composited screen's bitmap, past the
+     * layers: it is in the bitmap, and must get into a picture shown */
+    if (!rp || rp->Layer || !rp->BitMap) return;
+    Forbid();
+    for (c = cb->comps; c && c->screen != rp->BitMap; c = c->next)
+        ;
+    if (c && c->show != 2 && ocm_bounds(k, regs, rp, c->w, c->h, 0, 0, &r)) {
+        if (c->direct.x0 > c->direct.x1) c->direct = r;
+        else opr_grow(&c->direct, &r);
+        c->owed = 1;
+        if (!cb->pending) {
+            cb->pending = 1;
+            Signal(cb->task, OC_SIG);
+        }
+    }
+    Permit();
 }
 
 /* Called by a thunk before the call (below): the pen's place kept for a
@@ -588,6 +633,153 @@ static void oc_rl_free(struct oc_rl *a)
     a->n = a->cap = 0;
 }
 
+/* ---- finished frames only (47.110) --------------------------------------- */
+
+/* GFOpenRTG 0.28's calls (gfopenrtg.h), here so layers builds with an older one */
+#define oc_show_instead(s, p) \
+    LP2(0x8a, LONG, ORTG_ShowInstead, struct BitMap *, s, a0, struct BitMap *, p, a1, , OPENRTG_BASE_NAME)
+#define oc_shown_now(s, p) \
+    LP2(0x90, LONG, ORTG_ShownNow, struct BitMap *, s, a0, struct BitMap *, p, a1, , OPENRTG_BASE_NAME)
+
+static void oc_idle(struct OCB *cb);
+
+/* r of c's screen's bitmap has changed: every picture lacks it. Holds cb->lock. */
+static void oc_lack(struct OComp *c, const struct lc_rect *r0)
+{
+    struct lc_rect r = *r0;
+    unsigned p;
+    if (c->show == 2) return;
+    if (r.x0 < 0) r.x0 = 0;
+    if (r.y0 < 0) r.y0 = 0;
+    if (r.x1 > c->w - 1) r.x1 = c->w - 1;
+    if (r.y1 > c->h - 1) r.y1 = c->h - 1;
+    if (r.x0 > r.x1 || r.y0 > r.y1) return;
+    if (c->show)                                /* before they are made they lack everything */
+        for (p = 0; p < c->npic; p++) opr_add(&c->miss[p], &r);
+    c->owed = 1;
+}
+
+/* The pictures go; the board shows the screen's bitmap itself again. */
+static void oc_pics_free(struct OCB *cb, struct OComp *c)
+{
+    unsigned p;
+    if (!c->npic) return;
+    oc_show_instead(c->screen, 0);
+    oc_idle(cb);                                /* no copy into one still running */
+    for (p = 0; p < c->npic; p++) FreeBitMap(c->pic[p]);
+    c->npic = 0;
+    c->last = -1;
+}
+
+/* Up to OPR_PICS pictures like the screen's bitmap, in its board's video
+ * RAM (displayable friends; GFOpenRTG gives such friends at most half of
+ * it, and fast RAM after that, which the board can't show). 1 with two or
+ * more: each lacks all of the screen. */
+static int oc_pics_make(struct OCB *cb, struct OComp *c)
+{
+    struct OpenRTGBitMapInfo bi;
+    struct TagItem tags[] = {
+        { BMATags_Friend, (ULONG)c->screen }, { BMATags_Displayable, TRUE }, { TAG_DONE, 0 }
+    };
+    unsigned p;
+    for (p = 0; p < OPR_PICS; p++) {
+        struct BitMap *bm = AllocBitMap(c->w, c->h, c->depth, BMF_CHECKVALUE, (struct BitMap *)tags);
+        if (!bm) break;
+        if (!ORTG_BitMapInfo(bm, &bi) || !bi.monitor || bi.bytes_per_row != c->sbpr || bi.width != c->w || bi.height != c->h) {
+            FreeBitMap(bm);
+            break;
+        }
+        c->pic[p] = bm;
+        c->paddr[p] = (ULONG)bi.memory;
+        c->miss[p].n = 1;
+        c->miss[p].r[0].x0 = c->miss[p].r[0].y0 = 0;
+        c->miss[p].r[0].x1 = c->w - 1;
+        c->miss[p].r[0].y1 = c->h - 1;
+    }
+    c->npic = (UBYTE)p;
+    c->last = -1;
+    if (p >= 2) return 1;
+    oc_pics_free(cb, c);
+    return 0;
+}
+
+/* What c's screen's bitmap has that no picture shown has goes into the
+ * next picture, and the board is asked to show that one once the copy has
+ * run: one small batch behind whatever drew it, not waited for, and the
+ * asking with nothing between (Forbid). Holds cb->lock. While the screen
+ * is not the one its monitor shows, nothing: its bitmap is what is shown
+ * when it comes to the front, and the next compose brings the pictures up
+ * to it. With two pictures there may be none free until the display's
+ * next vertical blank: the compositor comes again. */
+static void oc_present(struct OCB *cb, struct OComp *c)
+{
+    ULONG w[6 + 6 + 2 + 3 + 5 * OPR_RECTS], fence = 0;
+    struct oc_batch b;
+    struct lc_rect d;
+    struct opr_miss *m;
+    unsigned p, shown = 0, i;
+    LONG ok;
+    int t;
+    if (c->show == 2 || !c->owed) return;
+    if (!cb->ortg->lib_Version && cb->ortg->lib_Revision < 28) {
+        c->show = 2;
+        return;
+    }
+    if (!c->show) {
+        if (!oc_shown_now(c->screen, 0)) return;        /* not in front yet */
+        if (!oc_pics_make(cb, c)) {
+            c->show = 2;
+            return;
+        }
+        c->show = 1;
+    }
+    Forbid();
+    d = c->direct;
+    c->direct.x0 = 1;
+    c->direct.x1 = 0;
+    Permit();
+    if (d.x0 <= d.x1) oc_lack(c, &d);
+    for (p = 0; p < c->npic; p++)
+        if (oc_shown_now(c->screen, c->pic[p])) shown |= 1U << p;
+    if (!shown && !oc_shown_now(c->screen, 0)) return;  /* behind another screen */
+    t = opr_pick(c->npic, shown, c->last);
+    if (t < 0) {
+        Forbid();
+        if (!cb->pending) {
+            cb->pending = 1;
+            Signal(cb->task, OC_SIG);
+        }
+        Permit();
+        return;
+    }
+    m = &c->miss[t];
+    b.w = w;
+    b.cap = sizeof w / sizeof w[0];
+    b.n = 0;
+    if (m->n) {
+        op_surface(&b, S_SCREEN, c->saddr, c->sbpr, c->w, c->h, c->fmt);
+        op_surface(&b, S_SUB, c->paddr[t], c->sbpr, c->w, c->h, c->fmt);
+        op_target(&b, S_SUB);
+        put(&b, OGPU_HDR(OGPU_OP_CLIP, 3));
+        put(&b, 0);
+        put(&b, 0);
+        for (i = 0; i < m->n; i++) op_copy(&b, S_SCREEN, m->r[i].x0, m->r[i].y0, &m->r[i]);
+    }
+    Forbid();
+    ok = !b.n || OGPU_Submit(w, b.n, &fence) == OGPU_OK;
+    if (ok && fence) cb->fence = fence;
+    if (ok && !oc_show_instead(c->screen, c->pic[t])) ok = -1;
+    Permit();
+    if (ok > 0) {
+        m->n = 0;
+        c->last = (BYTE)t;
+        c->owed = 0;
+    } else if (ok < 0) {                        /* the board can't after all: as before 47.110 */
+        oc_pics_free(cb, c);
+        c->show = 2;
+    }
+}
+
 /* Everything the board has of what the CPU wrote into c's screen, as
  * rectangles into out: a row under the last one with its columns grows
  * it, a span next to a one-row one in its row widens it. Under Forbid. */
@@ -684,6 +876,8 @@ static void oc_pull(struct OCB *cb, struct OComp *c)
             op_surface(&b, S_SCREEN, c->saddr, c->sbpr, c->w, c->h, c->fmt);
             head = b.n;
             for (i = 0; i < now.n; i++) oc_copy_in(cb, c, &b, &now.r[i], pass);
+            if (!pass)                          /* 47.110: it is in the screen's bitmap, in no picture */
+                for (i = 0; i < now.n; i++) oc_lack(c, &now.r[i]);
             if (pass || b.n == head) break;
             b.cap = b.n;
             if (!(b.w = AllocMem(b.cap * 4, MEMF_PUBLIC))) break;
@@ -821,6 +1015,9 @@ static int oc_compose(struct OCB *cb, struct OComp *c, struct lc_rects *a)
         Permit();
         cb->composes++;
         for (i = 0; i < n; i++) OL(ord[i])->soff = (UBYTE)(ord[i]->bounds.MinX & 15);
+        /* 47.110: what this changed, into the next picture, shown once it is there */
+        for (i = 0; i < a->n; i++) oc_lack(c, &a->r[i]);
+        oc_present(cb, c);
     }
     if (b.w) FreeMem(b.w, b.cap * 4);
     for (i = 0; i < n; i++)
@@ -880,6 +1077,7 @@ static void oc_run(struct OCB *cb)
             r = lc_or_rect(&a, &d);
         }
         if (!r && a.n) r = oc_compose(cb, c, &a);
+        if (c->owed) oc_present(cb, c);         /* 47.110: written or drawn past the layers, or a picture was not free */
         if (r < 0) c->full = 1;
         if (r) again = 1;
     }
@@ -1044,6 +1242,7 @@ static void oc_idle(struct OCB *cb)
 
 static void oc_free_comp(struct OCB *cb, struct OComp *c)
 {
+    oc_pics_free(cb, c);                /* 47.110 */
     oc_idle(cb);                        /* a compose still running may read the shadow's picture */
     if (c->shadow) FreeMem(c->shadow, (4 * (ULONG)c->set[SET_SIZE] + 1) * (4 * (ULONG)c->set[SET_SIZE] + 1) * 4);
     FreeMem(c, sizeof *c);
@@ -1368,6 +1567,8 @@ static struct OComp *oc_new(struct OCB *cb, struct OInfo *inf, struct Layer_Info
     c->h = bi.height;
     c->fmt = (UBYTE)fmt;
     c->depth = bi.format == 1 ? 16 : 32;
+    c->last = -1;                       /* 47.110: no picture asked for; nothing drawn past the layers */
+    c->direct.x0 = 1;
     /* 47.106: GFOpenRTG 0.23's ORTG_WrittenSpans; the board watches the
      * screen's bitmap from now when it can (0: it can't, and nothing of
      * this runs) */

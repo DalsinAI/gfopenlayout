@@ -155,6 +155,24 @@ Intuition (amicradle-guest `libraries/openintuition`):
 - It marks a window dragged (solid moves, the default feel) and inactive, with one SetLayerLook for each of a new window's layers.
 - GFOpenWindows (gfopenprefs) marks the windows it drags itself (`drag.solid on`) the same way.
 
+## Finished frames only (47.110)
+
+A display that shows video RAM itself (the Pi's direct display, amicradle's `AC_RTG_DIRECT`) shows the screen's bitmap while a compose draws into it: backfill first, then each window over it, seen as tearing at the edges of whatever moves.
+
+From 47.110, with GFOpenRTG 0.28 on a board of acrtg-v11, the screen's bitmap is still where everything is assembled (programs write it by address, and 47.106's pull reads it), but it is no longer what the display shows:
+
+- The compositor keeps up to three pictures like the screen's bitmap in video RAM (displayable friends; two are enough to work, three never wait for the display).
+- For each picture it keeps what that picture lacks: the rectangles composed since it was last filled, eight at most, then their bounding box (`library/layers/layers_present.h`, tested on the host by `tests/host-comp/test_present.c`).
+- After a compose's batch is sent, a second small batch copies what the next picture lacks from the screen's bitmap into it, and `ORTG_ShowInstead` asks the board to show that picture once everything sent so far has run. Nothing is waited for.
+- The next picture is never the one the display shows now (`ORTG_ShownNow`) and never the one asked for last, which the display may take at its next vertical blank.
+- What programs write into the screen by address (47.106) and what is drawn into the screen's bitmap through a RastPort with no layer lacks in every picture too, and is shown the same way.
+
+While the screen is behind another, nothing is copied: when it comes to the front the board shows its bitmap itself, and the next compose brings a picture up to it. On a board before acrtg-v11, with an older GFOpenRTG, or with no room in video RAM for two pictures (GFOpenRTG gives displayable friends at most half of it), everything is as before 47.110.
+
+Cost: one more copy of what changed for each compose, inside video RAM, and two or three screens' worth of video RAM (25 MB for three at 1920 x 1080 in 32 bits, so the 64 MiB board).
+
+The same call is there for any program that keeps its own finished frames in displayable bitmaps.
+
 ## The see-through bar (47.107)
 
 Dale, 24 October 2026: "make the title bar translucent until moused over then it goes its blue colour". GFOpenTitle (gfopenprefs) fades the Workbench's bar; the bar is Intuition's, so Intuition takes the opacity (`ICTRL_BarOpacity`) and layers composes it.

@@ -187,6 +187,8 @@ LONG OGPU_Wait(ULONG fence) { (void)fence; never("OGPU_Wait"); return 0; }
 ULONG OGPU_Query(ULONG op, ULONG fmt) { (void)op; (void)fmt; return rtg ? 2u << 8 | OGPU_FULL : 0; }   /* a driver, fully */
 CONST_STRPTR OGPU_BackEndName(ULONG w) { (void)w; return rtg ? "test" : 0; }
 ULONG ORTG_WrittenSpans(struct BitMap *bm, struct oc_span *s, ULONG max) { (void)bm; (void)s; (void)max; return 0; }
+LONG ORTG_ShowInstead(struct BitMap *screen, struct BitMap *picture) { (void)screen; (void)picture; never("ORTG_ShowInstead"); return 0; }
+LONG ORTG_ShownNow(struct BitMap *screen, struct BitMap *picture) { (void)screen; (void)picture; never("ORTG_ShownNow"); return 0; }
 ULONG ol_call_hook(struct Hook *h, APTR o, APTR m) { (void)h; (void)o; (void)m; never("a hook"); return 0; }
 /* graphics: layers_lib.c's classic paths, never reached from here */
 struct BitMap *AllocBitMap(ULONG w, ULONG h, ULONG d, ULONG f, struct BitMap *b) { (void)w; (void)h; (void)d; (void)f; (void)b; never("AllocBitMap"); return 0; }
