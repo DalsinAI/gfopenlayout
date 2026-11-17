@@ -115,7 +115,12 @@ enum {
     OLUI_AMIGA_TEXT_ITALIC = 1u << 1,
     OLUI_AMIGA_TEXT_UNDERLINE = 1u << 2,
     OLUI_AMIGA_TEXT_SHADOW = 1u << 3,
-    OLUI_AMIGA_TEXT_OUTLINE = 1u << 4
+    OLUI_AMIGA_TEXT_OUTLINE = 1u << 4,
+    /* library 23, olui_amiga_text_width only: size->ascent is the height of the face's capitals, in the rows
+     * olui_amiga_text fills above the baseline, where it is otherwise the ascender's. A line of text centred by
+     * its capitals sits where the eye puts its middle; centred by ascent and descent it sits high. A library
+     * before 23 takes no notice of it and answers the ascender's. */
+    OLUI_AMIGA_TEXT_CAPS = 1u << 5
 };
 typedef struct {
     int width;                  /* the pen's advance, whole pixels */

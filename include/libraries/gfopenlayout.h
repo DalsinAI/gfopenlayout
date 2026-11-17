@@ -88,6 +88,10 @@
                                                after every 0.20 field. Older libraries keep the
                                                shorter style, so a renderer checks
                                                OL_SHAPE_STYLE_HAS_HATCH and draws neither. */
+#define OPENLAYOUTLIB_TEXT_CAPS_VERSION 23  /* OLUI_AMIGA_TEXT_CAPS to OLUI_AmigaTextWidth: the
+                                               height of a face's capitals in size->ascent, for
+                                               text centred by its capitals. An older library
+                                               answers the ascender's whatever the flag. */
 
 struct OLNodeAppend {
     ol_document *document;

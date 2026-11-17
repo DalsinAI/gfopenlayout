@@ -20,6 +20,7 @@
  * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gfopenlayout_ui_amiga.h"
 #include "olui_amiga_text.h"
+#include "olui_amiga_text_cap.h"
 
 #include <exec/memory.h>
 #include <exec/semaphores.h>
@@ -117,6 +118,7 @@ typedef struct {
     unsigned style;             /* OLUI_AMIGA_TEXT_BOLD | _ITALIC */
     struct OFFace *face;        /* NULL: the family isn't an outline font here */
     int ascent, descent;        /* whole pixels */
+    int cap;                    /* the capitals' rows above the baseline (olui_aa_cap_rows) */
     int smear;                  /* bold asked for and the face isn't: drawn twice, a pixel apart */
     int ul_pos, ul_thick;       /* the underline: rows below the baseline */
     LONG matrix[4];
@@ -396,6 +398,7 @@ static aa_face *face_for(const char *family, int px, unsigned style)
     f->matrix[1] = 0;
     f->matrix[2] = 0;
     f->matrix[3] = xh > 0 ? (LONG)(((long long)px << 16) * target / xh) : (LONG)px << 16;
+    f->cap = olui_aa_cap_rows(m.fm_CapHeight, xh, target, px);
     if (style) {
         /* bold or italic asked for and the family has none: made from the regular */
         of_info info;
@@ -595,7 +598,9 @@ int olui_aa_measure(const char *family, int px, unsigned flags, const char *utf8
     int ok = 0;
     aa_obtain();
     if (engine() && (f = face_for(family, px, flags)) != NULL) {
-        size->ascent = f->ascent;
+        /* OLUI_AMIGA_TEXT_CAPS: the capitals' height, to centre a line of text by what the eye takes as its
+           middle */
+        size->ascent = (flags & OLUI_AMIGA_TEXT_CAPS) ? f->cap : f->ascent;
         size->descent = f->descent;
         size->width = 0;
         ok = 1;

@@ -189,6 +189,8 @@ int main(int argc, char **argv)
         }
         if (olui_amiga_text_width(rp, s, strlen(s), "DejaVuSans.font", 13, 0, &size))
             printf("WIDTH %d ASCENT %d DESCENT %d\n", size.width, size.ascent, size.descent);
+        if (olui_amiga_text_width(rp, s, strlen(s), "DejaVuSans.font", 13, OLUI_AMIGA_TEXT_CAPS, &size))
+            printf("CAPS %d\n", size.ascent);
         /* a friend BitMap over a gradient, as the bar draws its row: plain, shadow, outline */
         {
             int w = 440, h = 120;
