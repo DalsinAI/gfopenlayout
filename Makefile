@@ -28,7 +28,7 @@ GTK_HDR = gtk/include/glib.h gtk/include/gtk/gtk.h gtk/include/gtk/gtkc.h gtk/in
           gtk/include/gdk/gdkkeysyms.h gtk/gtkc_internal.h
 
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_table_span $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui \
-	 $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_compose $(BUILD)/test_ogpu_accel
+	 $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_surface $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_compose $(BUILD)/test_ogpu_accel
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -84,6 +84,9 @@ $(BUILD)/test_about: tests/test_about.c about/olabout.c draw/oldraw.c include/gf
 $(BUILD)/test_draw: tests/test_draw.c draw/oldraw.c draw/oldraw_internal.h include/gfopenlayout_draw.h | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) -Iinclude -Idraw tests/test_draw.c draw/oldraw.c -o $@
 
+$(BUILD)/test_surface: tests/test_surface.c draw/olsurface.c include/gfopenlayout_surface.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_surface.c draw/olsurface.c -o $@
+
 $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
@@ -92,7 +95,7 @@ $(BUILD)/test_text_cap: tests/test_text_cap.c amiga/olui_amiga_text_cap.h
 	$(CC) $(CFLAGS) $(WARN) -Iamiga tests/test_text_cap.c -o $@
 
 test: $(BUILD)/test_text_cap $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_table_span $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
-	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_compose $(BUILD)/test_ogpu_accel
+	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_surface $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_compose $(BUILD)/test_ogpu_accel
 	./$(BUILD)/test_text_cap
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
@@ -107,6 +110,7 @@ test: $(BUILD)/test_text_cap $(BUILD)/test_layout $(BUILD)/test_document $(BUILD
 	./$(BUILD)/test_desktop
 	./$(BUILD)/test_gtk
 	./$(BUILD)/test_draw
+	./$(BUILD)/test_surface
 	./$(BUILD)/test_about
 	./$(BUILD)/test_core_api
 	./$(BUILD)/test_core
