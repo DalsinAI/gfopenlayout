@@ -130,8 +130,8 @@ struct OComp {
     struct lc_rect direct;      /* drawn into the screen's bitmap through a RastPort with no layer (under Forbid) */
     UBYTE npic;
     UBYTE show;                 /* 0 not tried yet, 1 on, 2 the board can't: as before 47.110 */
-    ULONG asked[OPR_PICS];      /* each picture's place in the order of the askings; 0 never (opr_pick) */
-    ULONG askn;                 /* the askings so far */
+    unsigned long asked[OPR_PICS];    /* each picture's place in the order of the askings; 0 never (opr_pick) */
+    unsigned long askn;         /* the askings so far */
     UBYTE tries;                /* no picture free, the display on none of them: so many times in a row */
     volatile UBYTE owed;        /* the screen's bitmap has something no picture shown has */
 };
