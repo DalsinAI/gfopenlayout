@@ -87,8 +87,13 @@ $(BUILD)/test_draw: tests/test_draw.c draw/oldraw.c draw/oldraw_internal.h inclu
 $(BUILD)/test_css: tests/test_css.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_css.c $(BUILD)/libopenlayout.a -o $@
 
-test: $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_table_span $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
+$(BUILD)/test_text_cap: tests/test_text_cap.c amiga/olui_amiga_text_cap.h
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -Iamiga tests/test_text_cap.c -o $@
+
+test: $(BUILD)/test_text_cap $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_table_span $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
 	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_compose $(BUILD)/test_ogpu_accel
+	./$(BUILD)/test_text_cap
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
 	./$(BUILD)/test_rows
