@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gfopenlayout.library's version 10 through 18 calls, made from the C API itself.
+"""gfopenlayout.library's version 10 through 24 calls, made from the C API itself.
 
 Version 10 folds GFCSS's document calls, GFOpenLayout UI and its Amiga glue
 into gfopenlayout.library. The calls are the C functions as the headers
@@ -31,6 +31,16 @@ shared primitive flattening and rotation after every version 13 vector.
 Version 16 adds copied local text-flow exclusions after every version 14
 vector (version 15 added box fields but no call). Version 17 adds contour
 bands derived from node-owned shape geometry.
+
+Version 24 adds the document calls of the C API as the header declares them
+(versions 1 to 7 carry them as request structures, and some not at all), so
+a program that compiled GFOpenLayout's source in links the library instead.
+Their side of the link library is a file of its own
+(library/link/gfopenlayout_link_core.c), taken in only by a program that
+calls them: one that still compiles the source in and links the UI's calls
+is not given two of each. Through it a version 24 call on an older library
+stops the program and says why: a document that silently stays empty would
+be worse.
 
 Run it after a header's calls change; --check says whether the files are
 as it would write them (the Makefile's test runs that).
@@ -84,16 +94,30 @@ CORE17 = """ol_node_shape_exclusions""".split()
 AMIGA18 = """olui_amiga_own_input olui_amiga_owner""".split()
 # Version 19: anti-aliased outline text for what draws into a RastPort of its own (the screen's bar, icon labels)
 AMIGA19 = """olui_amiga_text olui_amiga_text_width""".split()
+# Version 24: the document calls by their C prototypes (what GFOffice's programs call), for a
+# program that links the library where it compiled src/openlayout.c in
+CORE24 = """ol_document_new ol_document_new_reserved ol_document_free ol_document_root_const
+ol_node_append ol_node_by_id ol_node_parent ol_node_id ol_node_role ol_node_text ol_node_href
+ol_node_set_href ol_node_style ol_node_set_style ol_style_init ol_box_style_init_sized ol_node_box
+ol_node_set_box ol_node_set_columns ol_node_set_image ol_node_set_tab_stops ol_node_bounds_to
+ol_node_page_box ol_frame_place ol_layout ol_layout_pages ol_layout_pages_columns
+ol_layout_pages_notes ol_layout_pages_sections ol_page_count ol_display_count ol_display_get
+ol_display_page_range ol_hit_test_page ol_hit_text ol_caret_box ol_draw_page ol_scale_set
+ol_scale_fit ol_scale_x ol_scale_y ol_scale_length ol_scale_rect_to ol_unscale_x
+ol_unscale_y""".split()
 CALLS = ([("core", n) for n in CORE] + [("ui", n) for n in UI] + [("amiga", n) for n in AMIGA] +
          [("ui11", n) for n in UI11] + [("amiga11", n) for n in AMIGA11] +
          [("ui12", n) for n in UI12] + [("core13", n) for n in CORE13] +
          [("core14", n) for n in CORE14] + [("core16", n) for n in CORE16] +
          [("core17", n) for n in CORE17] + [("amiga18", n) for n in AMIGA18] +
-         [("amiga19", n) for n in AMIGA19])
+         [("amiga19", n) for n in AMIGA19] + [("core24", n) for n in CORE24])
 # the library version each part's calls came in: a call of a later one is
 # not called through an older library (the link library's side says so)
 VERSION_OF = {"core": 10, "ui": 10, "amiga": 10, "ui11": 11, "amiga11": 11, "ui12": 12,
-              "core13": 13, "core14": 14, "core16": 16, "core17": 17, "amiga18": 18, "amiga19": 19}
+              "core13": 13, "core14": 14, "core16": 16, "core17": 17, "amiga18": 18, "amiga19": 19,
+              "core24": 24}
+# the parts whose program side is gfopenlayout_link_core.c, and stops the program on an older library
+LINK_CORE = {"core24"}
 TITLES = {"core": "version 10: GFCSS in documents", "ui": "version 10: GFOpenLayout UI",
           "amiga": "version 10: GFOpenLayout UI's Amiga glue",
           "ui11": "version 11: what a desktop needs (GFOpenLayout UI 0.4)",
@@ -104,7 +128,8 @@ TITLES = {"core": "version 10: GFCSS in documents", "ui": "version 10: GFOpenLay
           "core16": "version 16: bounded text-flow exclusions",
           "core17": "version 17: shape contour exclusion bands",
           "amiga18": "version 18: input for the widgets a program draws itself",
-          "amiga19": "version 19: anti-aliased outline text in a RastPort"}
+          "amiga19": "version 19: anti-aliased outline text in a RastPort",
+          "core24": "version 24: the document calls by their C prototypes"}
 
 # the program's side, where a call's plain one won't do: olui_theme_css's
 # string is the program's to free(), so it is copied out of the library's
@@ -127,12 +152,51 @@ HEADERS = {"core": "include/gfopenlayout.h", "ui": "include/gfopenlayout_ui.h",
            "amiga11": "include/gfopenlayout_ui_amiga.h", "ui12": "include/gfopenlayout_ui.h",
            "core13": "include/gfopenlayout.h", "core14": "include/gfopenlayout.h",
            "core16": "include/gfopenlayout.h", "core17": "include/gfopenlayout.h",
-           "amiga18": "include/gfopenlayout_ui_amiga.h", "amiga19": "include/gfopenlayout_ui_amiga.h"}
+           "amiga18": "include/gfopenlayout_ui_amiga.h", "amiga19": "include/gfopenlayout_ui_amiga.h",
+           "core24": "include/gfopenlayout.h"}
+
+# gfopenlayout_link_core.c after its calls: the three C calls a library can't carry as they are
+# (a structure by value, a structure whose size is the caller's), and what stops the program
+LINK_CORE_HEAD = '''static void ol_link_core_needs(void) __attribute__((noreturn));
+static void ol_link_core_needs(void)
+{
+    static const char why[] = "This needs gfopenlayout.library 24 or later in LIBS:\\n";
+    struct Library *dos = OpenLibrary((CONST_STRPTR)"dos.library", 36);
+    if (dos) {
+        BPTR out = LP0(0x3c, BPTR, Output, , dos);     /* Output() */
+        if (out) LP3(0x30, LONG, Write, BPTR, out, d1, APTR, (APTR)why, d2, LONG, (LONG)sizeof(why) - 1, d3, , dos);
+        CloseLibrary(dos);
+    }
+    exit(RETURN_FAIL);
+}'''
+LINK_CORE_TAIL = '''/* ---- the C calls the library carries in another shape ---- */
+void ol_box_style_init(ol_box_style *box)
+{
+    if (!box) return;
+    memset(box, 0, sizeof(*box));
+    ol_box_style_init_sized(box, sizeof(*box));   /* this program's size, whatever the library's is */
+}
+
+ol_rect ol_node_bounds(const ol_node *node)
+{
+    ol_rect r = {0, 0, 0, 0};
+    ol_node_bounds_to(node, &r);
+    return r;
+}
+
+ol_pixel_rect ol_scale_rect(const ol_scale *scale, ol_rect r)
+{
+    ol_pixel_rect p = {0, 0, 0, 0};
+    ol_scale_rect_to(scale, &r, &p);
+    return p;
+}'''
 
 
-def lib_name(c):
-    """ol_node_set_tag -> OL_NodeSetTag, olui_amiga_new -> OLUI_AmigaNew"""
+def lib_name(c, part=None):
+    """ol_node_set_tag -> OL_NodeSetTag, olui_amiga_new -> OLUI_AmigaNew, version 24's ol_layout -> OLAPI_Layout"""
     prefix, rest = ("OLUI_", c[5:]) if c.startswith("olui_") else ("OL_", c[3:])
+    if part in LINK_CORE:
+        prefix = "OLAPI_"       # versions 1 to 7 have OL_DocumentNew and the rest, in their own shapes
     return prefix + "".join(w[:1].upper() + w[1:] for w in rest.split("_"))
 
 
@@ -183,11 +247,11 @@ def is_void(ret):
 
 def generate():
     calls = prototypes()
-    sfd, inline, lib, link, vectors = [], [], [], [], []
+    sfd, inline, lib, link, link_core, vectors = [], [], [], [], [], []
     bias = FIRST_BIAS
     part_seen = None
     for part, name, ret, params in calls:
-        L = lib_name(name)
+        L = lib_name(name, part)
         regs = registers(name, params)
         if part != part_seen:
             title = TITLES[part]
@@ -219,13 +283,16 @@ def generate():
         cbody = f"{L}({', '.join(n for _, n in params)});"
         # a call of a later version than the library opened (version 10 is the least) does nothing
         guard = ""
-        if VERSION_OF[part] > 10:
+        dest = link_core if part in LINK_CORE else link
+        if part in LINK_CORE:
+            guard = f"    if (OpenLayoutBase->lib_Version < {VERSION_OF[part]}) ol_link_core_needs();\n"
+        elif VERSION_OF[part] > 10:
             guard = (f"    if (OpenLayoutBase->lib_Version < {VERSION_OF[part]}) "
                      f"return{'' if is_void(ret) else ' 0'};\n")
         if name in LINK_BODY:
-            link.append(f"{ret} {name}({cargs})\n{{\n{guard}{LINK_BODY[name]}\n}}")
+            dest.append(f"{ret} {name}({cargs})\n{{\n{guard}{LINK_BODY[name]}\n}}")
         else:
-            link.append(f"{ret} {name}({cargs})\n{{\n{guard}    {'' if is_void(ret) else 'return '}{cbody}\n}}")
+            dest.append(f"{ret} {name}({cargs})\n{{\n{guard}    {'' if is_void(ret) else 'return '}{cbody}\n}}")
         bias += 6
     v = ", \\\n    ".join(", ".join(vectors[i:i + 3]) for i in range(0, len(vectors), 3))
     libh = ("/* Made by tools/gen-library.py from the headers: don't edit. gfopenlayout.library\n"
@@ -243,7 +310,16 @@ def generate():
              " * MIT, Copyright (c) 2026 AmiCradle Team. */\n"
              "#include <stdlib.h>\n#include <string.h>\n#include <proto/gfopenlayout.h>\n\n"
              + "\n\n".join(link) + "\n")
-    return "\n".join(sfd), "\n".join(inline), libh, linkc, len(calls), bias - 6
+    corec = ("/* Made by tools/gen-library.py from the headers: don't edit. GFOpenLayout's document\n"
+             " * calls (gfopenlayout.h) through gfopenlayout.library 24: a program links this\n"
+             " * (libgfopenlayout_link.a) where it compiled src/openlayout.c in;\n"
+             " * gfopenlayout_link_base.c opens the library for it. On an older library the first\n"
+             " * call stops the program and says which it needs.\n"
+             " * MIT, Copyright (c) 2026 AmiCradle Team. */\n"
+             "#include <stdlib.h>\n#include <string.h>\n#include <dos/dos.h>\n#include <proto/exec.h>\n"
+             "#include <proto/gfopenlayout.h>\n\n"
+             + LINK_CORE_HEAD + "\n\n" + "\n\n".join(link_core) + "\n\n" + LINK_CORE_TAIL + "\n")
+    return "\n".join(sfd), "\n".join(inline), libh, linkc, corec, len(calls), bias - 6
 
 
 def between(text, start, end, new):
@@ -254,7 +330,7 @@ def between(text, start, end, new):
 
 def main():
     check = "--check" in sys.argv
-    sfd_new, inline_new, libh, linkc, n, last = generate()
+    sfd_new, inline_new, libh, linkc, corec, n, last = generate()
     out = {}
     p = ROOT / "library/gfopenlayout_lib.sfd"
     s = p.read_text()
@@ -268,6 +344,7 @@ def main():
     out[p] = between(s, "/* ---- version 10 (tools/gen-library.py) ---- */", "/* ---- end of version 10 ---- */", inline_new)
     out[ROOT / "library/openlayout_lib_v10.h"] = libh
     out[ROOT / "library/link/gfopenlayout_link.c"] = linkc
+    out[ROOT / "library/link/gfopenlayout_link_core.c"] = corec
     stale = []
     for path, text in out.items():
         if not path.exists() or path.read_text() != text:

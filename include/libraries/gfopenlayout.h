@@ -92,6 +92,14 @@
                                                height of a face's capitals in size->ascent, for
                                                text centred by its capitals. An older library
                                                answers the ascender's whatever the flag. */
+#define OPENLAYOUTLIB_CORE_API_VERSION 24   /* the document calls by their C prototypes
+                                               (OLAPI_DocumentNew to OLAPI_UnscaleY, after every
+                                               version 19 vector): a program that compiled
+                                               GFOpenLayout's source in links
+                                               libgfopenlayout_link.a and calls ol_layout and the
+                                               rest as before. Through it, an older library stops
+                                               the program at its first call with a line saying
+                                               which it needs. */
 
 struct OLNodeAppend {
     ol_document *document;

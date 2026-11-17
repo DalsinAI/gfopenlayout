@@ -1,5 +1,5 @@
 #!/bin/sh
-# gfopenlayout.library 19: GFOpenLayout, GFCSS, GFOpenLayout UI and its
+# gfopenlayout.library 24: GFOpenLayout, GFCSS, GFOpenLayout UI and its
 # Intuition glue in one library, with the os32 stove; libgfopenlayout_link.a,
 # the C API through it; and the tests, the UI's linked through the library.
 #   OGT_ROOT=.../amicradle-guest/libraries/opengadtools ./build-library.sh
@@ -61,8 +61,16 @@ LINKF="-m68040 $SPECFLAG -noixemul -O2 -fno-delete-null-pointer-checks -fno-late
 "$CC" $LINKF -c "$HERE/library/link/gfopenlayout_link.c" -o "$OUT/obj/gfopenlayout_link.o"
 # shellcheck disable=SC2086
 "$CC" $LINKF -c "$HERE/library/link/gfopenlayout_link_base.c" -o "$OUT/obj/gfopenlayout_link_base.o"
+# the document calls (version 24), an object of their own: only a program that calls them takes it in
+# shellcheck disable=SC2086
+"$CC" $LINKF -c "$HERE/library/link/gfopenlayout_link_core.c" -o "$OUT/obj/gfopenlayout_link_core.o"
 rm -f "$OUT/lib/libgfopenlayout_link.a"
-"$P/bin/m68k-amigaos-ar" rcs "$OUT/lib/libgfopenlayout_link.a" "$OUT/obj/gfopenlayout_link.o" "$OUT/obj/gfopenlayout_link_base.o"
+"$P/bin/m68k-amigaos-ar" rcs "$OUT/lib/libgfopenlayout_link.a" "$OUT/obj/gfopenlayout_link.o" "$OUT/obj/gfopenlayout_link_core.o" \
+  "$OUT/obj/gfopenlayout_link_base.o"
+# a program with no layout source of its own: the document calls through the library
+# shellcheck disable=SC2086
+"$CC" $LINKF -s -o "$OUT/tests/LayoutCoreTestLib" "$HERE/tests/test_link_core.c" -L"$OUT/lib" -lgfopenlayout_link
+echo "$OUT/tests/LayoutCoreTestLib ($(wc -c < "$OUT/tests/LayoutCoreTestLib") bytes)"
 for t in test_ui:OLUITestLib test_ui_css:OLUICSSTestLib; do
   # shellcheck disable=SC2086
   "$CC" $LINKF -DOLUI_LINK_LIBRARY -s -o "$OUT/tests/${t#*:}" "$HERE/tests/${t%%:*}.c" -L"$OUT/lib" -lgfopenlayout_link
