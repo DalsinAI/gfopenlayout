@@ -662,6 +662,7 @@ static void oc_lack(struct OComp *c, const struct lc_rect *r0)
 /* The pictures go; the board shows the screen's bitmap itself again. */
 static void oc_pics_free(struct OCB *cb, struct OComp *c)
 {
+    struct ol_base *olb = cb->olb;
     unsigned p;
     if (!c->npic) return;
     oc_show_instead(c->screen, 0);
@@ -677,6 +678,7 @@ static void oc_pics_free(struct OCB *cb, struct OComp *c)
  * more: each lacks all of the screen. */
 static int oc_pics_make(struct OCB *cb, struct OComp *c)
 {
+    struct ol_base *olb = cb->olb;
     struct OpenRTGBitMapInfo bi;
     struct TagItem tags[] = {
         { BMATags_Friend, (ULONG)c->screen }, { BMATags_Displayable, TRUE }, { TAG_DONE, 0 }
