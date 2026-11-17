@@ -15,8 +15,7 @@ int main(void)
 {
     struct opr_miss m = { { { 0, 0, 0, 0 } }, 0 };
     struct lc_rect r;
-    int i, seq[6], last = -1;
-    unsigned glass;
+    int i;
 
     r = R(10, 10, 19, 19); opr_add(&m, &r);
     CHECK("the first rectangle is kept", m.n == 1 && is(&m.r[0], 10, 10, 19, 19));
@@ -34,21 +33,44 @@ int main(void)
     r = R(20, 500, 29, 509); opr_add(&m, &r);
     CHECK("one more: all of it as its bounding box, nothing lost", m.n == 1 && is(&m.r[0], 0, 0, (OPR_RECTS - 1) * 100 + 9, 509));
 
-    CHECK("three pictures, none shown, none asked: the second", opr_pick(3, 0, -1) == 1);
-    CHECK("never the one asked for last", opr_pick(3, 0, 1) == 2 && opr_pick(3, 0, 2) == 0 && opr_pick(3, 0, 0) == 1);
-    CHECK("never the one on the display", opr_pick(3, 1u << 2, 1) == 0 && opr_pick(3, 1u << 0, 2) == 1);
-    CHECK("the display on the last asked: either of the others, in turn", opr_pick(3, 1u << 1, 1) == 2);
-    /* a display that takes each picture at its vertical blank: frames faster than it never land on the glass */
-    for (i = 0, glass = 0; i < 6; i++) {
-        seq[i] = opr_pick(3, glass, last);
-        if (i & 1) glass = 1u << seq[i];        /* the display takes every second one */
-        last = seq[i];
+    {
+        /* a display like acscreen: it takes the picture asked for last at each vertical blank (the flip
+         * begins), and says so only at the next one (the flip has happened). Frames come `rate` to a blank. */
+        unsigned long asked[3], n;
+        int rate, tick, glass, bringing, want, t, bad, waits, frames;
+        asked[0] = asked[1] = asked[2] = 0;
+        CHECK("three pictures, none asked: the first", opr_pick(3, 0, asked) == 0);
+        asked[0] = 1;
+        CHECK("the display still on the screen's own bitmap: never the one asked for", opr_pick(3, 0, asked) == 1);
+        asked[1] = 2; asked[2] = 3;
+        CHECK("all three asked for and none shown yet: the frame waits", opr_pick(3, 0, asked) == -1);
+        CHECK("the display on the first: the two asked for after it may be coming, the frame waits", opr_pick(3, 1u << 0, asked) == -1);
+        CHECK("the display on the second: the first is free, the third is not", opr_pick(3, 1u << 1, asked) == 0);
+        CHECK("the display on the third: the one asked for longest ago", opr_pick(3, 1u << 2, asked) == 0);
+        asked[0] = 4;
+        CHECK("and then the next oldest", opr_pick(3, 1u << 2, asked) == 1);
+        asked[0] = 1; asked[1] = 2;
+        CHECK("two pictures, the display on the first, the second asked for: the frame waits", opr_pick(2, 1u << 0, asked) == -1);
+        CHECK("two pictures, the display on the second: the first", opr_pick(2, 1u << 1, asked) == 0);
+        for (rate = 1, bad = 0, waits = 0, frames = 0; rate <= 5; rate++) {
+            asked[0] = asked[1] = asked[2] = 0;
+            n = 0; glass = -1; bringing = -1; want = -1;
+            for (tick = 0; tick < 600; tick++) {
+                if (tick % rate == 0) {                 /* a vertical blank */
+                    if (bringing >= 0) { glass = bringing; bringing = -1; }
+                    if (want >= 0 && want != glass) bringing = want;
+                }
+                t = opr_pick(3, glass < 0 ? 0 : 1u << glass, asked);
+                if (t < 0) { waits++; continue; }
+                if (t == glass || t == bringing) bad++;  /* written into what is on the glass, or on its way */
+                asked[t] = ++n;
+                want = t;
+                frames++;
+            }
+        }
+        CHECK("frames faster than the display never go into a picture it shows or is bringing", bad == 0);
+        CHECK("and frames keep coming: at least one to each vertical blank", frames >= 600 + 300 + 200 + 150 + 120 - 15 && waits > 0);
     }
-    for (i = 1, r.x0 = 1; i < 6; i++) if (seq[i] < 0 || seq[i] == seq[i - 1]) r.x0 = 0;
-    CHECK("three pictures always have one free", r.x0 == 1);
-    CHECK("two pictures: the other one while the display is not on it", opr_pick(2, 0, 0) == 1 && opr_pick(2, 1u << 0, 0) == 1);
-    CHECK("two pictures, one on the display and the other asked for: the frame waits", opr_pick(2, 1u << 0, 1) == -1);
-    CHECK("one picture is never free once asked for", opr_pick(1, 0, 0) == -1);
     printf("%d/%d present cases pass\n", cases - fails, cases);
     return fails != 0;
 }

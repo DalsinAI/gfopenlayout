@@ -130,7 +130,9 @@ struct OComp {
     struct lc_rect direct;      /* drawn into the screen's bitmap through a RastPort with no layer (under Forbid) */
     UBYTE npic;
     UBYTE show;                 /* 0 not tried yet, 1 on, 2 the board can't: as before 47.110 */
-    BYTE last;                  /* the picture asked for last; -1 none */
+    ULONG asked[OPR_PICS];      /* each picture's place in the order of the askings; 0 never (opr_pick) */
+    ULONG askn;                 /* the askings so far */
+    UBYTE tries;                /* no picture free, the display on none of them: so many times in a row */
     volatile UBYTE owed;        /* the screen's bitmap has something no picture shown has */
 };
 
@@ -669,7 +671,9 @@ static void oc_pics_free(struct OCB *cb, struct OComp *c)
     oc_idle(cb);                                /* no copy into one still running */
     for (p = 0; p < c->npic; p++) FreeBitMap(c->pic[p]);
     c->npic = 0;
-    c->last = -1;
+    c->askn = 0;
+    c->tries = 0;
+    for (p = 0; p < OPR_PICS; p++) c->asked[p] = 0;
 }
 
 /* Up to OPR_PICS pictures like the screen's bitmap, in its board's video
@@ -699,7 +703,9 @@ static int oc_pics_make(struct OCB *cb, struct OComp *c)
         c->miss[p].r[0].y1 = c->h - 1;
     }
     c->npic = (UBYTE)p;
-    c->last = -1;
+    c->askn = 0;
+    c->tries = 0;
+    for (p = 0; p < OPR_PICS; p++) c->asked[p] = 0;
     if (p >= 2) return 1;
     oc_pics_free(cb, c);
     return 0;
@@ -744,8 +750,14 @@ static void oc_present(struct OCB *cb, struct OComp *c)
     for (p = 0; p < c->npic; p++)
         if (oc_shown_now(c->screen, c->pic[p])) shown |= 1U << p;
     if (!shown && !oc_shown_now(c->screen, 0)) return;  /* behind another screen */
-    t = opr_pick(c->npic, shown, c->last);
+    t = opr_pick(c->npic, shown, c->asked);
     if (t < 0) {
+        if (shown) c->tries = 0;
+        else if (++c->tries >= OPR_GIVE_UP) {   /* the board shows the screen's own bitmap again: from the start */
+            c->tries = 0;
+            c->askn = 0;
+            for (p = 0; p < OPR_PICS; p++) c->asked[p] = 0;
+        }
         Forbid();
         if (!cb->pending) {
             cb->pending = 1;
@@ -774,7 +786,8 @@ static void oc_present(struct OCB *cb, struct OComp *c)
     Permit();
     if (ok > 0) {
         m->n = 0;
-        c->last = (BYTE)t;
+        c->asked[t] = ++c->askn;
+        c->tries = 0;
         c->owed = 0;
     } else if (ok < 0) {                        /* the board can't after all: as before 47.110 */
         oc_pics_free(cb, c);
@@ -1569,7 +1582,7 @@ static struct OComp *oc_new(struct OCB *cb, struct OInfo *inf, struct Layer_Info
     c->h = bi.height;
     c->fmt = (UBYTE)fmt;
     c->depth = bi.format == 1 ? 16 : 32;
-    c->last = -1;                       /* 47.110: no picture asked for; nothing drawn past the layers */
+    /* 47.110: no picture asked for (zalloc); nothing drawn past the layers */
     c->direct.x0 = 1;
     /* 47.106: GFOpenRTG 0.23's ORTG_WrittenSpans; the board watches the
      * screen's bitmap from now when it can (0: it can't, and nothing of

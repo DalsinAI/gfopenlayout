@@ -62,18 +62,33 @@ static inline void opr_add(struct opr_miss *m, const struct lc_rect *r)
 }
 
 /* The picture the next frame goes into, of n: not one the display shows
- * now (shown: a bit each), not the one asked for last (it may be the one
- * the display takes at its next vertical blank; -1: none asked for), and
- * the one before `last` in turn, so each waits as long as it can. -1:
- * none is free yet (two pictures, both taken): the frame waits. */
-static inline int opr_pick(int n, unsigned shown, int last)
+ * now (shown: a bit each), and not one asked for after the one it shows
+ * (asked: each picture's place in the order of the askings, 0 never). The
+ * display says a picture is shown only once its flip has happened, a
+ * vertical blank after it took it, so any of those asked for since may be
+ * the one it is bringing: writing into it would be seen. Of the rest, the
+ * one asked for longest ago. -1: none is free yet: the frame waits for the
+ * display's word. */
+static inline int opr_pick(int n, unsigned shown, const unsigned long *asked)
 {
-    int i, p;
-    for (i = 1; i <= n; i++) {
-        p = ((last < 0 ? 0 : last) + i) % n;
-        if (p != last && !(shown >> p & 1)) return p;
+    unsigned long s = 0, best = ~0UL;
+    int p, t = -1;
+    for (p = 0; p < n; p++)
+        if ((shown >> p & 1) && asked[p] > s) s = asked[p];
+    for (p = 0; p < n; p++) {
+        if ((shown >> p & 1) || asked[p] > s) continue;
+        if (asked[p] < best) {
+            best = asked[p];
+            t = p;
+        }
     }
-    return -1;
+    return t;
 }
+
+/* How many times in a row no picture was free while the display showed
+ * none of them before the askings are forgotten: the board stopped showing
+ * pictures (the screen went behind another and came back), and nothing
+ * will free them. Tries come OC_SETTLE apart or more: several frames. */
+#define OPR_GIVE_UP 100
 
 #endif
