@@ -754,8 +754,280 @@ static int OLUI_AmigaTextWidth(REG(a0, struct RastPort * rp), REG(a1, const char
     return olui_amiga_text_width(rp, utf8, length, family, px, flags, size);
 }
 
+/* ---- the document calls by their C prototypes ---- */
+
+static ol_document * OLAPI_DocumentNew(REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_document_new();
+}
+
+static ol_document * OLAPI_DocumentNewReserved(REG(d0, size_t ops), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_document_new_reserved(ops);
+}
+
+static void OLAPI_DocumentFree(REG(a0, ol_document * doc), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_document_free(doc);
+}
+
+static const ol_node * OLAPI_DocumentRootConst(REG(a0, const ol_document * doc), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_document_root_const(doc);
+}
+
+static ol_node * OLAPI_NodeAppend(REG(a0, ol_document * doc), REG(a1, ol_node * parent), REG(d0, ol_role role), REG(a2, const char * utf8), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_append(doc, parent, role, utf8);
+}
+
+static const ol_node * OLAPI_NodeById(REG(a0, const ol_document * doc), REG(d0, ol_id id), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_by_id(doc, id);
+}
+
+static const ol_node * OLAPI_NodeParent(REG(a0, const ol_node * node), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_parent(node);
+}
+
+static ol_id OLAPI_NodeId(REG(a0, const ol_node * node), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_id(node);
+}
+
+static ol_role OLAPI_NodeRole(REG(a0, const ol_node * node), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_role(node);
+}
+
+static const char * OLAPI_NodeText(REG(a0, const ol_node * node), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_text(node);
+}
+
+static const char * OLAPI_NodeHref(REG(a0, const ol_node * node), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_href(node);
+}
+
+static int OLAPI_NodeSetHref(REG(a0, ol_node * node), REG(a1, const char * utf8), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_set_href(node, utf8);
+}
+
+static const ol_style * OLAPI_NodeStyle(REG(a0, const ol_node * node), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_style(node);
+}
+
+static void OLAPI_NodeSetStyle(REG(a0, ol_node * node), REG(a1, const ol_style * style), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_node_set_style(node, style);
+}
+
+static void OLAPI_StyleInit(REG(a0, ol_style * style), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_style_init(style);
+}
+
+static void OLAPI_BoxStyleInitSized(REG(a0, ol_box_style * box), REG(d0, size_t size), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_box_style_init_sized(box, size);
+}
+
+static const ol_box_style * OLAPI_NodeBox(REG(a0, const ol_node * node), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_box(node);
+}
+
+static void OLAPI_NodeSetBox(REG(a0, ol_node * node), REG(a1, const ol_box_style * box), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_node_set_box(node, box);
+}
+
+static int OLAPI_NodeSetColumns(REG(a0, ol_node * node), REG(d0, int count), REG(a1, const ol_unit * widths), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_set_columns(node, count, widths);
+}
+
+static void OLAPI_NodeSetImage(REG(a0, ol_node * node), REG(d0, int image_id), REG(d1, ol_unit width), REG(d2, ol_unit height), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_node_set_image(node, image_id, width, height);
+}
+
+static int OLAPI_NodeSetTabStops(REG(a0, ol_node * node), REG(d0, int count), REG(a1, const ol_tab_stop * stops), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_set_tab_stops(node, count, stops);
+}
+
+static void OLAPI_NodeBoundsTo(REG(a0, const ol_node * node), REG(a1, ol_rect * out), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_node_bounds_to(node, out);
+}
+
+static int OLAPI_NodePageBox(REG(a0, const ol_document * doc), REG(d0, ol_id node_id), REG(a1, int * page), REG(a2, ol_rect * box), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_node_page_box(doc, node_id, page, box);
+}
+
+static int OLAPI_FramePlace(REG(a0, const ol_document * doc), REG(a1, const ol_node * frame), REG(a2, int * page), REG(a3, ol_rect * rect), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_frame_place(doc, frame, page, rect);
+}
+
+static int OLAPI_Layout(REG(a0, ol_document * doc), REG(d0, ol_unit viewport_width), REG(a1, ol_measure_text_fn measure), REG(a2, void * measure_userdata), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_layout(doc, viewport_width, measure, measure_userdata);
+}
+
+static int OLAPI_LayoutPages(REG(a0, ol_document * doc), REG(a1, const ol_page * page), REG(a2, ol_measure_text_fn measure), REG(a3, void * measure_userdata), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_layout_pages(doc, page, measure, measure_userdata);
+}
+
+static int OLAPI_LayoutPagesColumns(REG(a0, ol_document * doc), REG(a1, const ol_page * page), REG(d0, int count), REG(d1, ol_unit gap), REG(a2, ol_measure_text_fn measure), REG(a3, void * measure_userdata), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_layout_pages_columns(doc, page, count, gap, measure, measure_userdata);
+}
+
+static int OLAPI_LayoutPagesNotes(REG(a0, ol_document * doc), REG(a1, const ol_page * page), REG(a2, const ol_page_note * notes), REG(d0, int note_count), REG(d1, ol_unit separator), REG(a3, int * note_page), REG(d2, ol_measure_text_fn measure), REG(d3, void * measure_userdata), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_layout_pages_notes(doc, page, notes, note_count, separator, note_page, measure, measure_userdata);
+}
+
+static int OLAPI_LayoutPagesSections(REG(a0, ol_document * doc), REG(a1, const ol_page * page), REG(a2, const ol_page_section * sections), REG(d0, int section_count), REG(a3, ol_measure_text_fn measure), REG(d1, void * measure_userdata), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_layout_pages_sections(doc, page, sections, section_count, measure, measure_userdata);
+}
+
+static int OLAPI_PageCount(REG(a0, const ol_document * doc), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_page_count(doc);
+}
+
+static size_t OLAPI_DisplayCount(REG(a0, const ol_document * doc), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_display_count(doc);
+}
+
+static const ol_display_op * OLAPI_DisplayGet(REG(a0, const ol_document * doc), REG(d0, size_t index), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_display_get(doc, index);
+}
+
+static int OLAPI_DisplayPageRange(REG(a0, const ol_document * doc), REG(d0, int page), REG(a1, size_t * first), REG(a2, size_t * count), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_display_page_range(doc, page, first, count);
+}
+
+static const ol_node * OLAPI_HitTestPage(REG(a0, const ol_document * doc), REG(d0, int page), REG(d1, ol_unit x), REG(d2, ol_unit y), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_hit_test_page(doc, page, x, y);
+}
+
+static int OLAPI_HitText(REG(a0, const ol_document * doc), REG(d0, int page), REG(d1, ol_unit x), REG(d2, ol_unit y), REG(a1, ol_measure_text_fn measure), REG(a2, void * measure_userdata), REG(a3, ol_text_position * pos), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_hit_text(doc, page, x, y, measure, measure_userdata, pos);
+}
+
+static int OLAPI_CaretBox(REG(a0, const ol_document * doc), REG(a1, const ol_text_position * pos), REG(a2, ol_measure_text_fn measure), REG(a3, void * measure_userdata), REG(d0, int * page), REG(d1, ol_rect * box), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_caret_box(doc, pos, measure, measure_userdata, page, box);
+}
+
+static size_t OLAPI_DrawPage(REG(a0, const ol_document * doc), REG(d0, int page), REG(a1, const ol_scale * scale), REG(a2, const ol_pixel_rect * clip), REG(a3, ol_draw_fn draw), REG(d1, void * userdata), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_draw_page(doc, page, scale, clip, draw, userdata);
+}
+
+static void OLAPI_ScaleSet(REG(a0, ol_scale * scale), REG(d0, int32_t num), REG(d1, int32_t den), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_scale_set(scale, num, den);
+}
+
+static void OLAPI_ScaleFit(REG(a0, ol_scale * scale), REG(d0, ol_unit length), REG(d1, int32_t pixels), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_scale_fit(scale, length, pixels);
+}
+
+static int32_t OLAPI_ScaleX(REG(a0, const ol_scale * scale), REG(d0, ol_unit x), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_scale_x(scale, x);
+}
+
+static int32_t OLAPI_ScaleY(REG(a0, const ol_scale * scale), REG(d0, ol_unit y), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_scale_y(scale, y);
+}
+
+static int32_t OLAPI_ScaleLength(REG(a0, const ol_scale * scale), REG(d0, ol_unit length), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_scale_length(scale, length);
+}
+
+static void OLAPI_ScaleRectTo(REG(a0, const ol_scale * scale), REG(a1, const ol_rect * r), REG(a2, ol_pixel_rect * out), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    ol_scale_rect_to(scale, r, out);
+}
+
+static ol_unit OLAPI_UnscaleX(REG(a0, const ol_scale * scale), REG(d0, int32_t px), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_unscale_x(scale, px);
+}
+
+static ol_unit OLAPI_UnscaleY(REG(a0, const ol_scale * scale), REG(d0, int32_t py), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return ol_unscale_y(scale, py);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x420
+#define OL_V10_LAST_BIAS 0x52e
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -798,4 +1070,19 @@ static int OLUI_AmigaTextWidth(REG(a0, struct RastPort * rp), REG(a1, const char
     (APTR)OL_ShapeStyleInit, (APTR)OL_NodeSetShape, (APTR)OL_NodeSetImageCrop, \
     (APTR)OL_ShapePath, (APTR)OL_NodeSetExclusions, (APTR)OL_NodeShapeExclusions, \
     (APTR)OLUI_AmigaOwnInput, (APTR)OLUI_AmigaOwner, (APTR)OLUI_AmigaText, \
-    (APTR)OLUI_AmigaTextWidth
+    (APTR)OLUI_AmigaTextWidth, (APTR)OLAPI_DocumentNew, (APTR)OLAPI_DocumentNewReserved, \
+    (APTR)OLAPI_DocumentFree, (APTR)OLAPI_DocumentRootConst, (APTR)OLAPI_NodeAppend, \
+    (APTR)OLAPI_NodeById, (APTR)OLAPI_NodeParent, (APTR)OLAPI_NodeId, \
+    (APTR)OLAPI_NodeRole, (APTR)OLAPI_NodeText, (APTR)OLAPI_NodeHref, \
+    (APTR)OLAPI_NodeSetHref, (APTR)OLAPI_NodeStyle, (APTR)OLAPI_NodeSetStyle, \
+    (APTR)OLAPI_StyleInit, (APTR)OLAPI_BoxStyleInitSized, (APTR)OLAPI_NodeBox, \
+    (APTR)OLAPI_NodeSetBox, (APTR)OLAPI_NodeSetColumns, (APTR)OLAPI_NodeSetImage, \
+    (APTR)OLAPI_NodeSetTabStops, (APTR)OLAPI_NodeBoundsTo, (APTR)OLAPI_NodePageBox, \
+    (APTR)OLAPI_FramePlace, (APTR)OLAPI_Layout, (APTR)OLAPI_LayoutPages, \
+    (APTR)OLAPI_LayoutPagesColumns, (APTR)OLAPI_LayoutPagesNotes, (APTR)OLAPI_LayoutPagesSections, \
+    (APTR)OLAPI_PageCount, (APTR)OLAPI_DisplayCount, (APTR)OLAPI_DisplayGet, \
+    (APTR)OLAPI_DisplayPageRange, (APTR)OLAPI_HitTestPage, (APTR)OLAPI_HitText, \
+    (APTR)OLAPI_CaretBox, (APTR)OLAPI_DrawPage, (APTR)OLAPI_ScaleSet, \
+    (APTR)OLAPI_ScaleFit, (APTR)OLAPI_ScaleX, (APTR)OLAPI_ScaleY, \
+    (APTR)OLAPI_ScaleLength, (APTR)OLAPI_ScaleRectTo, (APTR)OLAPI_UnscaleX, \
+    (APTR)OLAPI_UnscaleY

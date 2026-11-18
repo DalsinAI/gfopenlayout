@@ -527,6 +527,11 @@ ol_rect ol_node_bounds(const ol_node *node)
     return node ? node->bounds : r;
 }
 
+void ol_node_bounds_to(const ol_node *node, ol_rect *out)
+{
+    if (out) *out = ol_node_bounds(node);
+}
+
 static int set_string(char **dst, const char *s)
 {
     char *p = ol_strdup0(s);
@@ -833,6 +838,19 @@ void ol_box_style_init(ol_box_style *box)
     box->size = sizeof(*box);
     box->border_argb = 0xff000000u;
     box->border_sides = OL_BORDER_ALL;
+}
+
+void ol_box_style_init_sized(ol_box_style *box, size_t size)
+{
+    ol_box_style full;
+    if (!box || size < sizeof(full.size)) return;
+    ol_box_style_init(&full);
+    if (size > sizeof(full)) {
+        memset((char *)box + sizeof(full), 0, size - sizeof(full));
+        size = sizeof(full);
+    }
+    full.size = (uint32_t)size;
+    memcpy(box, &full, size);
 }
 
 void ol_node_set_box(ol_node *node, const ol_box_style *box)
@@ -5440,6 +5458,11 @@ ol_pixel_rect ol_scale_rect(const ol_scale *scale, ol_rect r)
     p.x += scale->origin_x;
     p.y += scale->origin_y;
     return p;
+}
+
+void ol_scale_rect_to(const ol_scale *scale, const ol_rect *r, ol_pixel_rect *out)
+{
+    if (scale && r && out) *out = ol_scale_rect(scale, *r);
 }
 
 static int pixel_rects_cross(const ol_pixel_rect *a, const ol_pixel_rect *b)

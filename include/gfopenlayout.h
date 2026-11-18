@@ -330,6 +330,8 @@ const char *ol_node_value(const ol_node *node);
 const char *ol_node_href(const ol_node *node);
 const ol_style *ol_node_style(const ol_node *node);
 ol_rect ol_node_bounds(const ol_node *node);
+/* The same into *out: gfopenlayout.library carries no structure by value. */
+void ol_node_bounds_to(const ol_node *node, ol_rect *out);
 
 int ol_node_set_text(ol_node *node, const char *utf8);
 int ol_node_set_name(ol_node *node, const char *utf8);
@@ -689,6 +691,10 @@ int ol_node_shape_exclusions(const ol_node *shape, const ol_rect *bounds,
 int ol_frame_place(const ol_document *doc, const ol_node *frame, int *page, ol_rect *rect);
 
 void ol_box_style_init(ol_box_style *box);
+/* For a caller whose ol_box_style may be another size than this code's (a
+ * program and the gfopenlayout.library it opened): fills size bytes at most,
+ * zeroes what is past this code's own, and sets box->size to what it filled. */
+void ol_box_style_init_sized(ol_box_style *box, size_t size);
 /* Copies box->size bytes at most, so a smaller older ol_box_style works. */
 void ol_node_set_box(ol_node *node, const ol_box_style *box);
 const ol_box_style *ol_node_box(const ol_node *node);
@@ -880,6 +886,8 @@ ol_unit ol_unscale_y(const ol_scale *scale, int32_t py);
 int32_t ol_scale_length(const ol_scale *scale, ol_unit length);
 /* A box by its edges. */
 ol_pixel_rect ol_scale_rect(const ol_scale *scale, ol_rect r);
+/* The same from *r into *out, for gfopenlayout.library. */
+void ol_scale_rect_to(const ol_scale *scale, const ol_rect *r, ol_pixel_rect *out);
 
 /* One display op in pixels. */
 typedef struct {

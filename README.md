@@ -360,6 +360,38 @@ That also builds `OLUITestLib`, `OLUICSSTestLib` and `OLUIDemoLib`, the UI's
 tests and demo through the library. `gfcss_*` (the engine on its own) is not
 in the library yet: programs reach it through documents.
 
+### The document calls (24)
+
+Version 24 carries the document calls a program makes (`ol_document_new`,
+`ol_node_append`, `ol_layout`, `ol_layout_pages` and its notes, columns and
+sections, the display list, hit-testing, the caret, `ol_draw_page`, the
+scale) by their C prototypes, as `OLAPI_DocumentNew` to `OLAPI_UnscaleY`: 45
+vectors after every version 19 one, so each earlier call is where it was and
+programs built for 23 run unchanged. Versions 1 to 7 already had most of
+them, as request structures; these are the same code under the C shapes, and
+11 of them (`ol_document_root_const`, `ol_node_parent`, `ol_node_style`,
+`ol_node_page_box`, `ol_layout_pages_columns`, `_notes` and `_sections`,
+`ol_scale_x`, `_y`, `_length` and `_rect`) had no vector at all.
+
+A program that compiled `src/openlayout.c` in drops it and links
+`libgfopenlayout_link.a`; its source does not change. The calls are an
+object of their own in that archive (`gfopenlayout_link_core.c`), so a
+program that still compiles the source in and links only the UI's calls is
+not given two of each. Three C calls go in another shape, and the link
+library gives the C ones back: `ol_node_bounds` and `ol_scale_rect` (a
+structure by value) through `ol_node_bounds_to` and `ol_scale_rect_to`, and
+`ol_box_style_init` through `ol_box_style_init_sized`, which fills the
+program's size of `ol_box_style` whatever the library's is. `ol_style` has
+no size of its own: it can only grow with a new call. On a library older
+than 24 the first document call stops the program with RETURN_FAIL and
+"This needs gfopenlayout.library 24 or later in LIBS:". A package whose
+programs link these ships `gfopenlayout.library` 24 with them.
+
+`tests/test_link_core.c` makes each of these calls once and checks what it
+answers: `make test` runs it against the source, and `build-library.sh`
+links the same file with `libgfopenlayout_link.a` as `LayoutCoreTestLib`,
+which makes them through the library on an Amiga.
+
 The OS 3.2.3 / AC090 68040 qualification opens the library from `LIBS:` and runs both the normal ABI test and a 48-node stress test covering allocation growth, metadata, image nodes, layout and display-list access.
 
 The Amiga builds use the AmiCradle os32-gcc16 stove by default.

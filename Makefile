@@ -28,7 +28,7 @@ GTK_HDR = gtk/include/glib.h gtk/include/gtk/gtk.h gtk/include/gtk/gtkc.h gtk/in
           gtk/include/gdk/gdkkeysyms.h gtk/gtkc_internal.h
 
 all: $(BUILD)/libopenlayout.a $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_table_span $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui \
-	 $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_surface $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_compose $(BUILD)/test_ogpu_accel
+	 $(BUILD)/test_css $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_surface $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_compose $(BUILD)/test_ogpu_accel $(BUILD)/test_link_core
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -44,6 +44,11 @@ $(BUILD)/libopenlayout.a: $(BUILD)/openlayout.o $(CSS_OBJ)
 
 $(BUILD)/test_layout: tests/test_layout.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_layout.c $(BUILD)/libopenlayout.a -o $@
+
+# the document calls gfopenlayout.library 24 carries by their C prototypes (on an Amiga the same file
+# links libgfopenlayout_link.a: build-library.sh's LayoutCoreTestLib)
+$(BUILD)/test_link_core: tests/test_link_core.c $(BUILD)/libopenlayout.a
+	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_link_core.c $(BUILD)/libopenlayout.a -o $@
 
 $(BUILD)/test_document: tests/test_document.c $(BUILD)/libopenlayout.a
 	$(CC) $(CFLAGS) $(WARN) -Iinclude tests/test_document.c $(BUILD)/libopenlayout.a -o $@
@@ -95,7 +100,7 @@ $(BUILD)/test_text_cap: tests/test_text_cap.c amiga/olui_amiga_text_cap.h
 	$(CC) $(CFLAGS) $(WARN) -Iamiga tests/test_text_cap.c -o $@
 
 test: $(BUILD)/test_text_cap $(BUILD)/test_layout $(BUILD)/test_document $(BUILD)/test_rows $(BUILD)/test_table_span $(BUILD)/test_grid $(BUILD)/test_samesize $(BUILD)/test_web $(BUILD)/test_ui $(BUILD)/test_css \
-	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_surface $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_compose $(BUILD)/test_ogpu_accel
+	  $(BUILD)/test_ui_css $(BUILD)/test_desktop $(BUILD)/test_gtk $(BUILD)/test_draw $(BUILD)/test_surface $(BUILD)/test_about $(BUILD)/test_core_api $(BUILD)/test_core $(BUILD)/test_compose $(BUILD)/test_ogpu_accel $(BUILD)/test_link_core
 	./$(BUILD)/test_text_cap
 	./$(BUILD)/test_layout
 	./$(BUILD)/test_document
@@ -116,6 +121,7 @@ test: $(BUILD)/test_text_cap $(BUILD)/test_layout $(BUILD)/test_document $(BUILD
 	./$(BUILD)/test_core
 	./$(BUILD)/test_compose
 	./$(BUILD)/test_ogpu_accel
+	./$(BUILD)/test_link_core
 	python3 tools/gen-library.py --check
 	python3 -B -m unittest -v tests.test_native_modules
 

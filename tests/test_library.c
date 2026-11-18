@@ -497,6 +497,47 @@ int main(void)
         CHECK(contour[0].bounds.width < contour[count / 2].bounds.width);
     }
 
+    if (OpenLayoutBase->lib_Version >= OPENLAYOUTLIB_CORE_API_VERSION) {
+        /* version 24: the document calls by their C prototypes, on a document of their own
+           (tests/test_link_core.c makes every one through the link library) */
+        ol_document *doc24 = OLAPI_DocumentNew();
+        CHECK(doc24 != NULL);
+        if (doc24) {
+            ol_node *para24 = OLAPI_NodeAppend(doc24, NULL, OL_ROLE_PARAGRAPH, NULL);
+            ol_node *text24 = OLAPI_NodeAppend(doc24, para24, OL_ROLE_TEXT, (const char *)"version 24");
+            ol_style style24;
+            ol_box_style box24;
+            ol_rect at24 = {0, 0, 0, 0};
+            ol_pixel_rect px24 = {0, 0, 0, 0};
+            ol_scale scale24;
+            OLAPI_StyleInit(&style24);
+            style24.display = OL_DISPLAY_INLINE;
+            OLAPI_NodeSetStyle(text24, &style24);
+            CHECK(OLAPI_NodeParent(text24) == para24);
+            CHECK(OLAPI_NodeParent(para24) == OLAPI_DocumentRootConst(doc24));
+            CHECK(OLAPI_NodeStyle(text24) && OLAPI_NodeStyle(text24)->display == OL_DISPLAY_INLINE);
+            CHECK(OLAPI_NodeById(doc24, OLAPI_NodeId(text24)) == text24);
+            memset(&box24, 0xaa, sizeof box24);
+            OLAPI_BoxStyleInitSized(&box24, sizeof box24);
+            CHECK(box24.size == sizeof box24 && box24.flags == 0);
+            CHECK(OLAPI_Layout(doc24, OL_CSSPX(300), NULL, NULL));
+            OLAPI_NodeBoundsTo(para24, &at24);
+            CHECK(at24.width > 0 && at24.height > 0);
+            CHECK(OLAPI_DisplayCount(doc24) > 0 && OLAPI_DisplayGet(doc24, 0) != NULL);
+            memset(&scale24, 0, sizeof scale24);
+            OLAPI_ScaleSet(&scale24, 2, OL_UNITS_PER_CSSPX);
+            CHECK(OLAPI_ScaleX(&scale24, OL_CSSPX(10)) == 20 && OLAPI_ScaleY(&scale24, OL_CSSPX(10)) == 20);
+            CHECK(OLAPI_ScaleLength(&scale24, 1) == 1);
+            at24.x = OL_CSSPX(10);
+            at24.y = OL_CSSPX(20);
+            at24.width = OL_CSSPX(30);
+            at24.height = OL_CSSPX(40);
+            OLAPI_ScaleRectTo(&scale24, &at24, &px24);
+            CHECK(px24.x == 20 && px24.y == 40 && px24.width == 60 && px24.height == 80);
+            OLAPI_DocumentFree(doc24);
+        }
+    }
+
     printf("LAYOUTLIB PASS version=%s height=%ld ops=%lu link=%lu\n",
            (const char *)OL_VersionString(),
            (long)(OL_DocumentContentHeight(doc) / OL_UNITS_PER_CSSPX),
