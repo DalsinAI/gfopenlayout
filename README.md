@@ -387,6 +387,33 @@ than 24 the first document call stops the program with RETURN_FAIL and
 "This needs gfopenlayout.library 24 or later in LIBS:". A package whose
 programs link these ships `gfopenlayout.library` 24 with them.
 
+### GFOpenLayout drawing (25)
+
+Version 25 carries GFOpenLayout drawing (`gfopenlayout_draw.h`: `oldraw_new`,
+`oldraw_new_rastport`, the damage list and `oldraw_redraw`, boxes, text,
+pictures and icons, list rows, the selection box, progress bars, pie
+segments, lines, polygons and ellipses) by its C prototypes, as
+`OLDraw_NewRastport` to `OLDraw_EllipseHas`: 43 vectors after every version
+24 one, with the Amiga target (`amiga/oldraw_amiga.c`) in the library. A
+program that compiled `draw/oldraw.c` and `amiga/oldraw_amiga.c` in drops
+them and links `libgfopenlayout_link.a`; its source does not change. The
+calls are an object of their own in that archive
+(`gfopenlayout_link_draw.c`). `oldraw_pie_sweep` takes two 64-bit numbers,
+which no register carries, so the link library works it out in the program.
+What a program hands in (an `oldraw_ops` target's calls, the call
+`oldraw_redraw` is given) is called from the library on the caller's task.
+In the library the Amiga target opens `cybergraphics.library` and
+`icon.library` (44, with the first icon) once and keeps them until the
+library goes, and its outline text is the library's own. On a library older
+than 25 the first drawing call stops the program with RETURN_FAIL and "This
+needs gfopenlayout.library 25 or later in LIBS:".
+
+`tests/test_link_draw.c` makes each of these calls on a target of pixels it
+keeps itself, using the public header alone: `make test` runs it against the
+source, and `build-library.sh` links the same file with
+`libgfopenlayout_link.a` as `LayoutDrawTestLib`, where the drawing is the
+library's and the target's calls come back into the program.
+
 `tests/test_link_core.c` makes each of these calls once and checks what it
 answers: `make test` runs it against the source, and `build-library.sh`
 links the same file with `libgfopenlayout_link.a` as `LayoutCoreTestLib`,

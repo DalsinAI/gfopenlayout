@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gfopenlayout.library's version 10 through 24 calls, made from the C API itself.
+"""gfopenlayout.library's version 10 through 25 calls, made from the C API itself.
 
 Version 10 folds GFCSS's document calls, GFOpenLayout UI and its Amiga glue
 into gfopenlayout.library. The calls are the C functions as the headers
@@ -41,6 +41,12 @@ calls them: one that still compiles the source in and links the UI's calls
 is not given two of each. Through it a version 24 call on an older library
 stops the program and says why: a document that silently stays empty would
 be worse.
+
+Version 25 adds GFOpenLayout drawing (gfopenlayout_draw.h, with its Amiga
+target in the library) the same way, as OLDraw_ calls after version 24's,
+with a file of its own in the link library
+(library/link/gfopenlayout_link_draw.c). oldraw_pie_sweep takes two 64-bit
+numbers and stays on the program's side.
 
 Run it after a header's calls change; --check says whether the files are
 as it would write them (the Makefile's test runs that).
@@ -105,19 +111,32 @@ ol_layout_pages_notes ol_layout_pages_sections ol_page_count ol_display_count ol
 ol_display_page_range ol_hit_test_page ol_hit_text ol_caret_box ol_draw_page ol_scale_set
 ol_scale_fit ol_scale_x ol_scale_y ol_scale_length ol_scale_rect_to ol_unscale_x
 ol_unscale_y""".split()
+# Version 25: GFOpenLayout drawing (gfopenlayout_draw.h), for a program that links the library where it
+# compiled draw/oldraw.c and amiga/oldraw_amiga.c in. oldraw_pie_sweep takes two 64-bit numbers, which no
+# register carries: the program's side works it out itself
+DRAW25 = """oldraw_new_rastport oldraw_resize oldraw_pens_changed oldraw_outline_text oldraw_theme_changed
+oldraw_free oldraw_new oldraw_resolve oldraw_damage oldraw_damage_all oldraw_damage_count oldraw_damage_get
+oldraw_redraw oldraw_clip oldraw_flush oldraw_copy oldraw_scroll oldraw_fill oldraw_frame oldraw_text
+oldraw_text_measure oldraw_text_box oldraw_image_argb oldraw_image_icon oldraw_image_width
+oldraw_image_height oldraw_image_pixel oldraw_image_free oldraw_image_blocks oldraw_image_draw
+oldraw_list_row oldraw_list_cell_box oldraw_select_box oldraw_progress oldraw_progress_fill oldraw_pie
+oldraw_pie_has oldraw_line oldraw_polyline oldraw_polygon oldraw_ellipse oldraw_ellipse_frame
+oldraw_ellipse_has""".split()
 CALLS = ([("core", n) for n in CORE] + [("ui", n) for n in UI] + [("amiga", n) for n in AMIGA] +
          [("ui11", n) for n in UI11] + [("amiga11", n) for n in AMIGA11] +
          [("ui12", n) for n in UI12] + [("core13", n) for n in CORE13] +
          [("core14", n) for n in CORE14] + [("core16", n) for n in CORE16] +
          [("core17", n) for n in CORE17] + [("amiga18", n) for n in AMIGA18] +
-         [("amiga19", n) for n in AMIGA19] + [("core24", n) for n in CORE24])
+         [("amiga19", n) for n in AMIGA19] + [("core24", n) for n in CORE24] +
+         [("draw25", n) for n in DRAW25])
 # the library version each part's calls came in: a call of a later one is
 # not called through an older library (the link library's side says so)
 VERSION_OF = {"core": 10, "ui": 10, "amiga": 10, "ui11": 11, "amiga11": 11, "ui12": 12,
               "core13": 13, "core14": 14, "core16": 16, "core17": 17, "amiga18": 18, "amiga19": 19,
-              "core24": 24}
-# the parts whose program side is gfopenlayout_link_core.c, and stops the program on an older library
-LINK_CORE = {"core24"}
+              "core24": 24, "draw25": 25}
+# the parts whose program side is a file of its own (gfopenlayout_link_core.c, gfopenlayout_link_draw.c),
+# and stops the program on an older library: the part, and the call that stops it
+LINK_CORE = {"core24": "ol_link_core_needs", "draw25": "ol_link_draw_needs"}
 TITLES = {"core": "version 10: GFCSS in documents", "ui": "version 10: GFOpenLayout UI",
           "amiga": "version 10: GFOpenLayout UI's Amiga glue",
           "ui11": "version 11: what a desktop needs (GFOpenLayout UI 0.4)",
@@ -129,7 +148,8 @@ TITLES = {"core": "version 10: GFCSS in documents", "ui": "version 10: GFOpenLay
           "core17": "version 17: shape contour exclusion bands",
           "amiga18": "version 18: input for the widgets a program draws itself",
           "amiga19": "version 19: anti-aliased outline text in a RastPort",
-          "core24": "version 24: the document calls by their C prototypes"}
+          "core24": "version 24: the document calls by their C prototypes",
+          "draw25": "version 25: GFOpenLayout drawing by its C prototypes"}
 
 # the program's side, where a call's plain one won't do: olui_theme_css's
 # string is the program's to free(), so it is copied out of the library's
@@ -153,14 +173,14 @@ HEADERS = {"core": "include/gfopenlayout.h", "ui": "include/gfopenlayout_ui.h",
            "core13": "include/gfopenlayout.h", "core14": "include/gfopenlayout.h",
            "core16": "include/gfopenlayout.h", "core17": "include/gfopenlayout.h",
            "amiga18": "include/gfopenlayout_ui_amiga.h", "amiga19": "include/gfopenlayout_ui_amiga.h",
-           "core24": "include/gfopenlayout.h"}
+           "core24": "include/gfopenlayout.h", "draw25": "include/gfopenlayout_draw.h"}
 
 # gfopenlayout_link_core.c after its calls: the three C calls a library can't carry as they are
 # (a structure by value, a structure whose size is the caller's), and what stops the program
-LINK_CORE_HEAD = '''static void ol_link_core_needs(void) __attribute__((noreturn));
-static void ol_link_core_needs(void)
+LINK_CORE_HEAD = '''static void NEEDS(void) __attribute__((noreturn));
+static void NEEDS(void)
 {
-    static const char why[] = "This needs gfopenlayout.library 24 or later in LIBS:\\n";
+    static const char why[] = "This needs gfopenlayout.library VERSION or later in LIBS:\\n";
     struct Library *dos = OpenLibrary((CONST_STRPTR)"dos.library", 36);
     if (dos) {
         BPTR out = LP0(0x3c, BPTR, Output, , dos);     /* Output() */
@@ -190,11 +210,26 @@ ol_pixel_rect ol_scale_rect(const ol_scale *scale, ol_rect r)
     ol_scale_rect_to(scale, &r, &p);
     return p;
 }'''
+# gfopenlayout_link_draw.c after its calls: the one a library can't carry (two 64-bit numbers)
+LINK_DRAW_TAIL = '''/* ---- the C call the library doesn't carry (two 64-bit numbers) ---- */
+unsigned oldraw_pie_sweep(uint64_t used, uint64_t size)
+{
+    if (!size) return 0;
+    if (used >= size) return 3600;
+    if (used > UINT64_MAX / 3600u) return (unsigned)(used / (size / 3600u ? size / 3600u : 1u));
+    return (unsigned)(used * 3600u / size);
+}'''
+
+
+def needs_head(part):
+    return LINK_CORE_HEAD.replace("NEEDS", LINK_CORE[part]).replace("VERSION", str(VERSION_OF[part]))
 
 
 def lib_name(c, part=None):
     """ol_node_set_tag -> OL_NodeSetTag, olui_amiga_new -> OLUI_AmigaNew, version 24's ol_layout -> OLAPI_Layout"""
     prefix, rest = ("OLUI_", c[5:]) if c.startswith("olui_") else ("OL_", c[3:])
+    if c.startswith("oldraw_"):
+        return "OLDraw_" + "".join(w[:1].upper() + w[1:] for w in c[7:].split("_"))
     if part in LINK_CORE:
         prefix = "OLAPI_"       # versions 1 to 7 have OL_DocumentNew and the rest, in their own shapes
     return prefix + "".join(w[:1].upper() + w[1:] for w in rest.split("_"))
@@ -247,7 +282,8 @@ def is_void(ret):
 
 def generate():
     calls = prototypes()
-    sfd, inline, lib, link, link_core, vectors = [], [], [], [], [], []
+    sfd, inline, lib, link, vectors = [], [], [], [], []
+    own = {part: [] for part in LINK_CORE}
     bias = FIRST_BIAS
     part_seen = None
     for part, name, ret, params in calls:
@@ -283,9 +319,9 @@ def generate():
         cbody = f"{L}({', '.join(n for _, n in params)});"
         # a call of a later version than the library opened (version 10 is the least) does nothing
         guard = ""
-        dest = link_core if part in LINK_CORE else link
+        dest = own[part] if part in LINK_CORE else link
         if part in LINK_CORE:
-            guard = f"    if (OpenLayoutBase->lib_Version < {VERSION_OF[part]}) ol_link_core_needs();\n"
+            guard = f"    if (OpenLayoutBase->lib_Version < {VERSION_OF[part]}) {LINK_CORE[part]}();\n"
         elif VERSION_OF[part] > 10:
             guard = (f"    if (OpenLayoutBase->lib_Version < {VERSION_OF[part]}) "
                      f"return{'' if is_void(ret) else ' 0'};\n")
@@ -298,7 +334,7 @@ def generate():
     libh = ("/* Made by tools/gen-library.py from the headers: don't edit. gfopenlayout.library\n"
             " * version 10's calls, each the C call with its arguments from their registers.\n"
             " * MIT, Copyright (c) 2026 AmiCradle Team. */\n"
-            "#include <gfopenlayout_ui.h>\n#include <gfopenlayout_ui_amiga.h>\n\n"
+            "#include <gfopenlayout_ui.h>\n#include <gfopenlayout_ui_amiga.h>\n#include <gfopenlayout_draw.h>\n\n"
             + "\n\n".join(lib)
             + "\n\n/* the last call's bias: lib_vectors is checked against it */\n"
             + f"#define OL_V10_LAST_BIAS 0x{bias - 6:x}\n"
@@ -318,8 +354,19 @@ def generate():
              " * MIT, Copyright (c) 2026 AmiCradle Team. */\n"
              "#include <stdlib.h>\n#include <string.h>\n#include <dos/dos.h>\n#include <proto/exec.h>\n"
              "#include <proto/gfopenlayout.h>\n\n"
-             + LINK_CORE_HEAD + "\n\n" + "\n\n".join(link_core) + "\n\n" + LINK_CORE_TAIL + "\n")
-    return "\n".join(sfd), "\n".join(inline), libh, linkc, corec, len(calls), bias - 6
+             + needs_head("core24") + "\n\n" + "\n\n".join(own["core24"]) + "\n\n" + LINK_CORE_TAIL + "\n")
+    drawc = ("/* Made by tools/gen-library.py from the headers: don't edit. GFOpenLayout drawing\n"
+             " * (gfopenlayout_draw.h) through gfopenlayout.library 25: a program links this\n"
+             " * (libgfopenlayout_link.a) where it compiled draw/oldraw.c and amiga/oldraw_amiga.c in;\n"
+             " * gfopenlayout_link_base.c opens the library for it, or the program has its own\n"
+             " * OpenLayoutBase. On an older library the first call stops the program and says which it\n"
+             " * needs. What an oldraw_ops target or a redraw is given is called in the program, from the\n"
+             " * library's call, on the caller's task.\n"
+             " * MIT, Copyright (c) 2026 AmiCradle Team. */\n"
+             "#include <stdint.h>\n#include <stdlib.h>\n#include <dos/dos.h>\n#include <proto/exec.h>\n"
+             "#include <gfopenlayout_draw.h>\n#include <proto/gfopenlayout.h>\n\n"
+             + needs_head("draw25") + "\n\n" + "\n\n".join(own["draw25"]) + "\n\n" + LINK_DRAW_TAIL + "\n")
+    return "\n".join(sfd), "\n".join(inline), libh, linkc, corec, drawc, len(calls), bias - 6
 
 
 def between(text, start, end, new):
@@ -330,7 +377,7 @@ def between(text, start, end, new):
 
 def main():
     check = "--check" in sys.argv
-    sfd_new, inline_new, libh, linkc, corec, n, last = generate()
+    sfd_new, inline_new, libh, linkc, corec, drawc, n, last = generate()
     out = {}
     p = ROOT / "library/gfopenlayout_lib.sfd"
     s = p.read_text()
@@ -345,6 +392,7 @@ def main():
     out[ROOT / "library/openlayout_lib_v10.h"] = libh
     out[ROOT / "library/link/gfopenlayout_link.c"] = linkc
     out[ROOT / "library/link/gfopenlayout_link_core.c"] = corec
+    out[ROOT / "library/link/gfopenlayout_link_draw.c"] = drawc
     stale = []
     for path, text in out.items():
         if not path.exists() or path.read_text() != text:

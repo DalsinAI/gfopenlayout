@@ -1,5 +1,5 @@
 #!/bin/sh
-# gfopenlayout.library 24: GFOpenLayout, GFCSS, GFOpenLayout UI and its
+# gfopenlayout.library 25: GFOpenLayout, GFCSS, GFOpenLayout UI and its
 # Intuition glue in one library, with the os32 stove; libgfopenlayout_link.a,
 # the C API through it; and the tests, the UI's linked through the library.
 #   OGT_ROOT=.../amicradle-guest/libraries/opengadtools ./build-library.sh
@@ -26,7 +26,7 @@ SPECFLAG=""
 mkdir -p "$OUT/include/libraries" "$OUT/include/inline" "$OUT/include/proto" "$OUT/lib" "$OUT/tests" "$OUT/obj"
 python3 "$HERE/tools/gen-library.py" --check
 cp "$HERE/include/gfopenlayout.h" "$HERE/include/gfopenlayout_css.h" "$HERE/include/gfopenlayout_ui.h" \
-   "$HERE/include/gfopenlayout_ui_amiga.h" "$OUT/include/"
+   "$HERE/include/gfopenlayout_ui_amiga.h" "$HERE/include/gfopenlayout_draw.h" "$OUT/include/"
 cp "$HERE/include/libraries/gfopenlayout.h" "$OUT/include/libraries/"
 cp "$HERE/include/inline/gfopenlayout.h" "$OUT/include/inline/"
 cp "$HERE/include/proto/gfopenlayout.h" "$OUT/include/proto/"
@@ -41,11 +41,12 @@ fi
 # shellcheck disable=SC2086
 "$CC" -m68040 -m68881 -mcrt=nix20 $OPT -fno-delete-null-pointer-checks -fno-late-combine-instructions -fomit-frame-pointer -fno-toplevel-reorder \
   -fno-builtin -Wall -Wextra -Werror -Wno-unused-parameter -Wno-sign-compare -nostartfiles \
-  -I"$HERE/include" -I"$HERE/ui" $THEME_INC -o "$OUT/lib/gfopenlayout.library" \
+  -DOLDRAW_AMIGA -DOLDRAW_IN_LIBRARY -I"$HERE/include" -I"$HERE/ui" -I"$HERE/draw" $THEME_INC -o "$OUT/lib/gfopenlayout.library" \
   "$HERE/library/openlayout_lib.c" "$HERE/library/openlayout_runtime.c" "$HERE/library/openlayout_runtime_text.c" \
   "$HERE/src/openlayout.c" \
   "$HERE/src/gfcss_parse.c" "$HERE/src/gfcss_values.c" "$HERE/src/gfcss_select.c" "$HERE/src/openlayout_css.c" \
   "$HERE/ui/olui.c" "$HERE/ui/olui_css.c" "$HERE/ui/olui_markup.c" $THEME "$HERE/amiga/olui_amiga.c" \
+  "$HERE/draw/oldraw.c" "$HERE/amiga/oldraw_amiga.c" \
   -lamiga -lgcc -Wl,-Map,"$OUT/lib/gfopenlayout.library.map"
 
 echo "$OUT/lib/gfopenlayout.library ($(wc -c < "$OUT/lib/gfopenlayout.library") bytes)"
@@ -64,13 +65,21 @@ LINKF="-m68040 $SPECFLAG -noixemul -O2 -fno-delete-null-pointer-checks -fno-late
 # the document calls (version 24), an object of their own: only a program that calls them takes it in
 # shellcheck disable=SC2086
 "$CC" $LINKF -c "$HERE/library/link/gfopenlayout_link_core.c" -o "$OUT/obj/gfopenlayout_link_core.o"
+# GFOpenLayout drawing (version 25), an object of its own the same way
+# shellcheck disable=SC2086
+"$CC" $LINKF -c "$HERE/library/link/gfopenlayout_link_draw.c" -o "$OUT/obj/gfopenlayout_link_draw.o"
 rm -f "$OUT/lib/libgfopenlayout_link.a"
 "$P/bin/m68k-amigaos-ar" rcs "$OUT/lib/libgfopenlayout_link.a" "$OUT/obj/gfopenlayout_link.o" "$OUT/obj/gfopenlayout_link_core.o" \
+  "$OUT/obj/gfopenlayout_link_draw.o" \
   "$OUT/obj/gfopenlayout_link_base.o"
 # a program with no layout source of its own: the document calls through the library
 # shellcheck disable=SC2086
 "$CC" $LINKF -s -o "$OUT/tests/LayoutCoreTestLib" "$HERE/tests/test_link_core.c" -L"$OUT/lib" -lgfopenlayout_link
 echo "$OUT/tests/LayoutCoreTestLib ($(wc -c < "$OUT/tests/LayoutCoreTestLib") bytes)"
+# and one with no drawing source of its own: GFOpenLayout drawing through the library, on a target of pixels
+# shellcheck disable=SC2086
+"$CC" $LINKF -s -o "$OUT/tests/LayoutDrawTestLib" "$HERE/tests/test_link_draw.c" -L"$OUT/lib" -lgfopenlayout_link
+echo "$OUT/tests/LayoutDrawTestLib ($(wc -c < "$OUT/tests/LayoutDrawTestLib") bytes)"
 for t in test_ui:OLUITestLib test_ui_css:OLUICSSTestLib; do
   # shellcheck disable=SC2086
   "$CC" $LINKF -DOLUI_LINK_LIBRARY -s -o "$OUT/tests/${t#*:}" "$HERE/tests/${t%%:*}.c" -L"$OUT/lib" -lgfopenlayout_link

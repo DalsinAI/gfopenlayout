@@ -2,6 +2,7 @@
 #include <exec/libraries.h>
 #include <proto/exec.h>
 #include <proto/gfopenlayout.h>
+#include <gfopenlayout_draw.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -536,6 +537,16 @@ int main(void)
             CHECK(px24.x == 20 && px24.y == 40 && px24.width == 60 && px24.height == 80);
             OLAPI_DocumentFree(doc24);
         }
+    }
+    if (OpenLayoutBase->lib_Version >= OPENLAYOUTLIB_DRAW_API_VERSION) {
+        /* version 25: GFOpenLayout drawing by its C prototypes. The calls that draw are
+         * LayoutDrawTestLib's (tests/test_link_draw.c); here, that the vectors are where
+         * the header says, by four that answer without a target */
+        oldraw_rect e25 = { 0, 0, 10, 10 };
+        CHECK(OLDraw_ProgressFill(40, 1, 4) == 10);
+        CHECK(OLDraw_EllipseHas(&e25, 5, 5) && !OLDraw_EllipseHas(&e25, 0, 0));
+        CHECK(OLDraw_PieHas(10, 0, 900, 3, -3) && !OLDraw_PieHas(10, 0, 900, -3, 3));
+        CHECK(OLDraw_NewRastport(NULL, NULL, 1, 1) == NULL);
     }
 
     printf("LAYOUTLIB PASS version=%s height=%ld ops=%lu link=%lu\n",

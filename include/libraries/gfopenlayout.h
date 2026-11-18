@@ -100,6 +100,15 @@
                                                rest as before. Through it, an older library stops
                                                the program at its first call with a line saying
                                                which it needs. */
+#define OPENLAYOUTLIB_DRAW_API_VERSION 25   /* GFOpenLayout drawing (gfopenlayout_draw.h) by its C
+                                               prototypes (OLDraw_NewRastport to OLDraw_EllipseHas,
+                                               after every version 24 vector), with its Amiga
+                                               target: a program that compiled draw/oldraw.c and
+                                               amiga/oldraw_amiga.c in links libgfopenlayout_link.a
+                                               and calls oldraw_new_rastport and the rest as
+                                               before. Through it, an older library stops the
+                                               program at its first drawing call with a line
+                                               saying which it needs. */
 
 struct OLNodeAppend {
     ol_document *document;
