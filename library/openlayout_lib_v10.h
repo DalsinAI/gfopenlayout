@@ -3,6 +3,7 @@
  * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include <gfopenlayout_ui.h>
 #include <gfopenlayout_ui_amiga.h>
+#include <gfopenlayout_draw.h>
 
 /* ---- GFCSS in documents ---- */
 
@@ -1026,8 +1027,268 @@ static ol_unit OLAPI_UnscaleY(REG(a0, const ol_scale * scale), REG(d0, int32_t p
     return ol_unscale_y(scale, py);
 }
 
+/* ---- GFOpenLayout drawing by its C prototypes ---- */
+
+static oldraw * OLDraw_NewRastport(REG(a0, struct RastPort * rp), REG(a1, struct Screen * scr), REG(d0, int width), REG(d1, int height), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_new_rastport(rp, scr, width, height);
+}
+
+static void OLDraw_Resize(REG(a0, oldraw * d), REG(d0, int width), REG(d1, int height), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_resize(d, width, height);
+}
+
+static void OLDraw_PensChanged(REG(a0, oldraw * d), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_pens_changed(d);
+}
+
+static void OLDraw_OutlineText(REG(a0, oldraw * d), REG(d0, int on), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_outline_text(d, on);
+}
+
+static void OLDraw_ThemeChanged(REG(a0, oldraw * d), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_theme_changed(d);
+}
+
+static void OLDraw_Free(REG(a0, oldraw * d), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_free(d);
+}
+
+static oldraw * OLDraw_New(REG(a0, const oldraw_ops * ops), REG(a1, void * target), REG(d0, int width), REG(d1, int height), REG(a2, const oldraw_colour * pens), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_new(ops, target, width, height, pens);
+}
+
+static oldraw_colour OLDraw_Resolve(REG(a0, const oldraw * d), REG(d0, oldraw_colour c), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_resolve(d, c);
+}
+
+static void OLDraw_Damage(REG(a0, oldraw * d), REG(a1, const oldraw_rect * r), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_damage(d, r);
+}
+
+static void OLDraw_DamageAll(REG(a0, oldraw * d), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_damage_all(d);
+}
+
+static int OLDraw_DamageCount(REG(a0, const oldraw * d), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_damage_count(d);
+}
+
+static int OLDraw_DamageGet(REG(a0, const oldraw * d), REG(d0, int i), REG(a1, oldraw_rect * r), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_damage_get(d, i, r);
+}
+
+static int OLDraw_Redraw(REG(a0, oldraw * d), REG(a1, oldraw_redraw_fn fn), REG(a2, void * userdata), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_redraw(d, fn, userdata);
+}
+
+static void OLDraw_Clip(REG(a0, oldraw * d), REG(a1, const oldraw_rect * r), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_clip(d, r);
+}
+
+static void OLDraw_Flush(REG(a0, oldraw * d), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_flush(d);
+}
+
+static void OLDraw_Copy(REG(a0, oldraw * d), REG(a1, const oldraw_rect * src), REG(d0, int dx), REG(d1, int dy), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_copy(d, src, dx, dy);
+}
+
+static void OLDraw_Scroll(REG(a0, oldraw * d), REG(a1, const oldraw_rect * area), REG(d0, int ddx), REG(d1, int ddy), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_scroll(d, area, ddx, ddy);
+}
+
+static void OLDraw_Fill(REG(a0, oldraw * d), REG(a1, const oldraw_rect * r), REG(d0, oldraw_colour c), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_fill(d, r, c);
+}
+
+static void OLDraw_Frame(REG(a0, oldraw * d), REG(a1, const oldraw_rect * r), REG(d0, int recessed), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_frame(d, r, recessed);
+}
+
+static int OLDraw_Text(REG(a0, oldraw * d), REG(d0, int x), REG(d1, int y), REG(a1, const char * utf8), REG(d2, size_t length), REG(a2, const oldraw_font * font), REG(d3, oldraw_colour c), REG(d4, unsigned style), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_text(d, x, y, utf8, length, font, c, style);
+}
+
+static int OLDraw_TextMeasure(REG(a0, oldraw * d), REG(a1, const char * utf8), REG(d0, size_t length), REG(a2, const oldraw_font * font), REG(d1, unsigned style), REG(a3, oldraw_text_size * size), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_text_measure(d, utf8, length, font, style, size);
+}
+
+static size_t OLDraw_TextBox(REG(a0, oldraw * d), REG(a1, const oldraw_rect * r), REG(a2, const char * utf8), REG(d0, size_t length), REG(a3, const oldraw_font * font), REG(d1, oldraw_colour c), REG(d2, unsigned style), REG(d3, int align), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_text_box(d, r, utf8, length, font, c, style, align);
+}
+
+static oldraw_image * OLDraw_ImageArgb(REG(a0, oldraw * d), REG(d0, int w), REG(d1, int h), REG(a1, const uint32_t * argb), REG(d2, int stride), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_image_argb(d, w, h, argb, stride);
+}
+
+static oldraw_image * OLDraw_ImageIcon(REG(a0, oldraw * d), REG(a1, struct DiskObject * icon), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_image_icon(d, icon);
+}
+
+static int OLDraw_ImageWidth(REG(a0, const oldraw_image * img), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_image_width(img);
+}
+
+static int OLDraw_ImageHeight(REG(a0, const oldraw_image * img), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_image_height(img);
+}
+
+static uint32_t OLDraw_ImagePixel(REG(a0, const oldraw_image * img), REG(d0, int x), REG(d1, int y), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_image_pixel(img, x, y);
+}
+
+static void OLDraw_ImageFree(REG(a0, oldraw * d), REG(a1, oldraw_image * img), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_image_free(d, img);
+}
+
+static int OLDraw_ImageBlocks(REG(a0, const oldraw_image * img), REG(a1, const oldraw_rect ** blocks), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_image_blocks(img, blocks);
+}
+
+static void OLDraw_ImageDraw(REG(a0, oldraw * d), REG(a1, const oldraw_image * img), REG(d0, int x), REG(d1, int y), REG(d2, unsigned flags), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_image_draw(d, img, x, y, flags);
+}
+
+static void OLDraw_ListRow(REG(a0, oldraw * d), REG(a1, const oldraw_rect * r), REG(a2, const oldraw_row * row), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_list_row(d, r, row);
+}
+
+static int OLDraw_ListCellBox(REG(a0, const oldraw_row * row), REG(a1, const oldraw_rect * r), REG(d0, int i), REG(a2, oldraw_rect * cell), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_list_cell_box(row, r, i, cell);
+}
+
+static void OLDraw_SelectBox(REG(a0, oldraw * d), REG(d0, int x0), REG(d1, int y0), REG(d2, int x1), REG(d3, int y1), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_select_box(d, x0, y0, x1, y1);
+}
+
+static void OLDraw_Progress(REG(a0, oldraw * d), REG(a1, const oldraw_rect * r), REG(d0, uint32_t done), REG(d1, uint32_t total), REG(d2, unsigned flags), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_progress(d, r, done, total, flags);
+}
+
+static int OLDraw_ProgressFill(REG(d0, int w), REG(d1, uint32_t done), REG(d2, uint32_t total), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_progress_fill(w, done, total);
+}
+
+static void OLDraw_Pie(REG(a0, oldraw * d), REG(d0, int cx), REG(d1, int cy), REG(d2, int r), REG(d3, int start), REG(d4, int sweep), REG(d5, oldraw_colour c), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_pie(d, cx, cy, r, start, sweep, c);
+}
+
+static int OLDraw_PieHas(REG(d0, int r), REG(d1, int start), REG(d2, int sweep), REG(d3, int dx), REG(d4, int dy), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_pie_has(r, start, sweep, dx, dy);
+}
+
+static void OLDraw_Line(REG(a0, oldraw * d), REG(d0, int x0), REG(d1, int y0), REG(d2, int x1), REG(d3, int y1), REG(d4, int width), REG(d5, oldraw_colour c), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_line(d, x0, y0, x1, y1, width, c);
+}
+
+static void OLDraw_Polyline(REG(a0, oldraw * d), REG(a1, const oldraw_point * pts), REG(d0, int n), REG(d1, int closed), REG(d2, int width), REG(d3, oldraw_colour c), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_polyline(d, pts, n, closed, width, c);
+}
+
+static void OLDraw_Polygon(REG(a0, oldraw * d), REG(a1, const oldraw_point * pts), REG(d0, int n), REG(d1, oldraw_colour c), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_polygon(d, pts, n, c);
+}
+
+static void OLDraw_Ellipse(REG(a0, oldraw * d), REG(a1, const oldraw_rect * r), REG(d0, oldraw_colour c), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_ellipse(d, r, c);
+}
+
+static void OLDraw_EllipseFrame(REG(a0, oldraw * d), REG(a1, const oldraw_rect * r), REG(d0, int width), REG(d1, oldraw_colour c), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    oldraw_ellipse_frame(d, r, width, c);
+}
+
+static int OLDraw_EllipseHas(REG(a0, const oldraw_rect * r), REG(d0, int x), REG(d1, int y), REG(a6, struct OpenLayoutLibBase *base))
+{
+    (void)base;
+    return oldraw_ellipse_has(r, x, y);
+}
+
 /* the last call's bias: lib_vectors is checked against it */
-#define OL_V10_LAST_BIAS 0x52e
+#define OL_V10_LAST_BIAS 0x630
 
 #define OL_V10_VECTORS \
     (APTR)OL_NodeSetTag, (APTR)OL_NodeTag, (APTR)OL_NodeSetAttr, \
@@ -1085,4 +1346,18 @@ static ol_unit OLAPI_UnscaleY(REG(a0, const ol_scale * scale), REG(d0, int32_t p
     (APTR)OLAPI_CaretBox, (APTR)OLAPI_DrawPage, (APTR)OLAPI_ScaleSet, \
     (APTR)OLAPI_ScaleFit, (APTR)OLAPI_ScaleX, (APTR)OLAPI_ScaleY, \
     (APTR)OLAPI_ScaleLength, (APTR)OLAPI_ScaleRectTo, (APTR)OLAPI_UnscaleX, \
-    (APTR)OLAPI_UnscaleY
+    (APTR)OLAPI_UnscaleY, (APTR)OLDraw_NewRastport, (APTR)OLDraw_Resize, \
+    (APTR)OLDraw_PensChanged, (APTR)OLDraw_OutlineText, (APTR)OLDraw_ThemeChanged, \
+    (APTR)OLDraw_Free, (APTR)OLDraw_New, (APTR)OLDraw_Resolve, \
+    (APTR)OLDraw_Damage, (APTR)OLDraw_DamageAll, (APTR)OLDraw_DamageCount, \
+    (APTR)OLDraw_DamageGet, (APTR)OLDraw_Redraw, (APTR)OLDraw_Clip, \
+    (APTR)OLDraw_Flush, (APTR)OLDraw_Copy, (APTR)OLDraw_Scroll, \
+    (APTR)OLDraw_Fill, (APTR)OLDraw_Frame, (APTR)OLDraw_Text, \
+    (APTR)OLDraw_TextMeasure, (APTR)OLDraw_TextBox, (APTR)OLDraw_ImageArgb, \
+    (APTR)OLDraw_ImageIcon, (APTR)OLDraw_ImageWidth, (APTR)OLDraw_ImageHeight, \
+    (APTR)OLDraw_ImagePixel, (APTR)OLDraw_ImageFree, (APTR)OLDraw_ImageBlocks, \
+    (APTR)OLDraw_ImageDraw, (APTR)OLDraw_ListRow, (APTR)OLDraw_ListCellBox, \
+    (APTR)OLDraw_SelectBox, (APTR)OLDraw_Progress, (APTR)OLDraw_ProgressFill, \
+    (APTR)OLDraw_Pie, (APTR)OLDraw_PieHas, (APTR)OLDraw_Line, \
+    (APTR)OLDraw_Polyline, (APTR)OLDraw_Polygon, (APTR)OLDraw_Ellipse, \
+    (APTR)OLDraw_EllipseFrame, (APTR)OLDraw_EllipseHas

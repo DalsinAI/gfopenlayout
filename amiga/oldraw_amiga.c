@@ -21,6 +21,10 @@
 #include <proto/intuition.h>
 #include <proto/layers.h>
 #include <proto/diskfont.h>
+#ifdef OLDRAW_IN_LIBRARY
+/* inside gfopenlayout.library (version 25) no start-up code opens icon.library: it is opened with the first icon */
+#define IconBase OldrawIconBase
+#endif
 #include <proto/icon.h>
 #include <inline/macros.h>
 
@@ -46,7 +50,24 @@ static int cgx_users;
 
 /* gfopenlayout.library 19's outline text, through its vectors as GFOpenGadTools' ogt_draw.c calls it (this file is in
  * the static libgfopenlayout_draw.a, not the library); open while any target asks for outline text */
+#ifdef OLDRAW_IN_LIBRARY
+/* Inside gfopenlayout.library every program's task shares what is below, so nothing is counted: what is opened
+ * stays open until the library goes (oldraw_amiga_cleanup, from its expunge), and outline text is the library's
+ * own base, which its init puts here (opening itself would keep it from ever going). */
+struct Library *OldrawOLayBase;
+struct Library *OldrawIconBase;
+#define OLDRAW_KEEP 1
+void oldraw_amiga_cleanup(void);
+void oldraw_amiga_cleanup(void)
+{
+    if (OldrawCgxBase) { CloseLibrary(OldrawCgxBase); OldrawCgxBase = NULL; }
+    if (OldrawIconBase) { CloseLibrary(OldrawIconBase); OldrawIconBase = NULL; }
+    OldrawOLayBase = NULL;
+}
+#else
 static struct Library *OldrawOLayBase;
+#define OLDRAW_KEEP 0
+#endif
 static int olay_users;
 #define OL_AA_TEXT(rp, x, y, s, n, fam, px, argb, fl) \
     LP10(0x41a, int, OLUI_AmigaText, struct RastPort *, (rp), a0, int, (x), d0, int, (y), d1, const char *, (s), \
@@ -419,8 +440,10 @@ static void free_target(oldraw *d)
     if (t->font) CloseFont(t->font);
     if (t->own) DeleteLayer(0, t->own);
     if (t->li) DisposeLayerInfo(t->li);
-    if (--cgx_users == 0 && OldrawCgxBase) { CloseLibrary(OldrawCgxBase); OldrawCgxBase = NULL; }
-    if (t->outline && --olay_users == 0 && OldrawOLayBase) { CloseLibrary(OldrawOLayBase); OldrawOLayBase = NULL; }
+    if (!OLDRAW_KEEP) {
+        if (--cgx_users == 0 && OldrawCgxBase) { CloseLibrary(OldrawCgxBase); OldrawCgxBase = NULL; }
+        if (t->outline && --olay_users == 0 && OldrawOLayBase) { CloseLibrary(OldrawOLayBase); OldrawOLayBase = NULL; }
+    }
     free(t);
     d->target = NULL;
 }
@@ -491,7 +514,9 @@ void oldraw_outline_text(oldraw *d, int on)
     t = (amiga_target *)d->target;
     on = on != 0;
     if (t->outline == on) return;
-    if (on) {
+    if (OLDRAW_KEEP) {
+        /* the library's own base, there since its init */
+    } else if (on) {
         if (!OldrawOLayBase) OldrawOLayBase = OpenLibrary((CONST_STRPTR)"gfopenlayout.library", 19);
         ++olay_users;
     } else if (--olay_users == 0 && OldrawOLayBase) {
@@ -509,6 +534,10 @@ oldraw_image *oldraw_image_icon(oldraw *d, struct DiskObject *icon)
     amiga_target *t;
     if (!d || !icon || d->ops != &amiga_ops) return NULL;
     t = (amiga_target *)d->target;
+#ifdef OLDRAW_IN_LIBRARY
+    if (!OldrawIconBase) OldrawIconBase = OpenLibrary((CONST_STRPTR)"icon.library", 44);
+    if (!OldrawIconBase) return NULL;
+#endif
     if (!GetIconRectangle(t->rp, icon, NULL, &r, ICONDRAWA_Frameless, TRUE, TAG_DONE)) return NULL;
     img = (oldraw_image *)calloc(1, sizeof *img);
     if (!img) return NULL;

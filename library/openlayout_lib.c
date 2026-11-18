@@ -1,4 +1,4 @@
-/* gfopenlayout.library 24.0: version 3 adds pages, tables, frames and the
+/* gfopenlayout.library 25.0: version 3 adds pages, tables, frames and the
  * caret (GFOpenLayout 0.2) after version 2's calls, which are unchanged;
  * version 4 adds tab stops that align and their leaders (GFOpenLayout 0.3);
  * version 5 places frames anchored to their pages (GFOpenLayout 0.4, the
@@ -45,6 +45,10 @@
  * prototypes (OLAPI_DocumentNew to OLAPI_UnscaleY, after version 19's
  * vectors), so a program that compiled GFOpenLayout's source in links
  * libgfopenlayout_link.a instead; every earlier vector is where it was.
+ * Version 25 carries GFOpenLayout drawing (gfopenlayout_draw.h: OLDraw_NewRastport
+ * to OLDraw_EllipseHas, after version 24's vectors) with its Amiga target, so
+ * a program that compiled draw/oldraw.c and amiga/oldraw_amiga.c in links
+ * libgfopenlayout_link.a for those too.
  * Programs built for 2 to 8 keep working: a box style of an older size
  * has the fields after it 0, as ol_node_set_box copies only its size.
  * Copyright (c) 2026 AmiCradle Team. MIT.
@@ -65,7 +69,7 @@
 #include <proto/diskfont.h>
 
 #define REG(r, decl) register decl __asm(#r)
-#define LIB_VERSION 24
+#define LIB_VERSION 25
 #define LIB_REVISION 0
 
 struct OpenLayoutLibBase {
@@ -87,15 +91,18 @@ struct Library *DiskfontBase;
    is loaded, and go with it */
 extern int olui_aa_keep;
 void olui_aa_cleanup(void);
+/* amiga/oldraw_amiga.c: the library's own base for its outline text, and what it opened closed */
+extern struct Library *OldrawOLayBase;
+void oldraw_amiga_cleanup(void);
 
 int start(void) { return -1; }
 
 static const char lib_name[] = OPENLAYOUTLIB_NAME;
 static const char lib_id[] =
-    "gfopenlayout.library 24.0 (17.11.2026) GFOpenLayout 0.24, AmiCradle Team\r\n";
+    "gfopenlayout.library 25.0 (18.11.2026) GFOpenLayout 0.25, AmiCradle Team\r\n";
 /* for Version and the file's version tag: lib_id has none */
 static const char lib_ver[] __attribute__((used)) =
-    "$VER: gfopenlayout.library 24.0 (17.11.2026) GFOpenLayout 0.24, AmiCradle Team";
+    "$VER: gfopenlayout.library 25.0 (18.11.2026) GFOpenLayout 0.25, AmiCradle Team";
 
 static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
                                 REG(a0, BPTR seglist),
@@ -184,7 +191,7 @@ static const APTR lib_vectors[] = {
     (APTR)OL_DocumentReserve, (APTR)OL_DocumentNewReserved,
     /* version 7 */
     (APTR)OL_FramePlace,
-    /* versions 10 through 24 (tools/gen-library.py) */
+    /* versions 10 through 25 (tools/gen-library.py) */
     OL_V10_VECTORS,
     (APTR)-1
 };
@@ -240,6 +247,7 @@ static struct Library *lib_init(REG(d0, struct OpenLayoutLibBase *base),
     base->seglist = seglist;
     base->lib.lib_Revision = LIB_REVISION;
     olui_aa_keep = 1;
+    OldrawOLayBase = &base->lib;
     return &base->lib;
 }
 
@@ -268,6 +276,7 @@ static BPTR lib_expunge(REG(a6, struct OpenLayoutLibBase *base))
     seglist = base->seglist;
     Remove(&base->lib.lib_Node);
     olui_aa_cleanup();
+    oldraw_amiga_cleanup();
     close_bases();
     FreeMem((UBYTE *)base - base->lib.lib_NegSize,
             base->lib.lib_NegSize + base->lib.lib_PosSize);
