@@ -33,3 +33,11 @@ ASAN_OPTIONS=detect_leaks=0 "$tmp/t"
 $cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all \
   -I"$GFX/library/layers" -I"$COMP" -o "$tmp/p" "$here/test_present.c"
 "$tmp/p"
+# 47.111, GFOpenLayout Overlay: the batch an overlay gets (oc_build_overlay)
+$cc -O1 -g -w -Werror=implicit-function-declaration \
+  -fsanitize=address,undefined -fno-sanitize=alignment -fno-sanitize-recover=all -DOL_COMPOSITE \
+  -I"$here/inc" -I"$GFX/tests/abihost/inc" -I"$GFX/tests/host-ndk" -I"$GFX/tests/m68k/text-ndk" -I"$GFX/include" \
+  -I"$GFX/library/layers" -I"$COMP" -include "$tmp/shim.h" -include "$here/comp_host.h" \
+  -Wl,--unresolved-symbols=ignore-in-object-files \
+  -o "$tmp/o" "$here/test_overlay.c" "$GFX/library/layers/layers_core.c"   # exec stubs: test_overlay calls none
+ASAN_OPTIONS=detect_leaks=0 "$tmp/o"
