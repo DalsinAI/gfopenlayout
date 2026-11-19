@@ -83,7 +83,7 @@ int main(void)
 
     /* 2 */
     oc_place(&olb, &ov);
-    CHECK("nothing in front: shown and composited", place.flags == (OVPF_SHOWN | OVPF_COMPOSITED));
+    CHECK("nothing in front: shown, composited and whole", place.flags == (OVPF_SHOWN | OVPF_COMPOSITED | OVPF_WHOLE));
     CHECK("the screen: its memory, bytes a row, size and ARGB32",
           place.screen == (APTR)0x60001000 && place.bytes_per_row == 7680 && place.screen_width == 1920 && place.format == 2);
     CHECK("the box on the screen, and one rect, all of it",
@@ -99,8 +99,8 @@ int main(void)
     f->LayerInfo = &li;
     bounds(f, 430, 0, 600, 700);
     oc_place(&olb, &ov);
-    CHECK("covered on the right: the left half shows, 320x480",
-          place.flags & OVPF_SHOWN && place_area(&place) == 320L * 480 && place.rects[0].MaxX <= 429);
+    CHECK("covered on the right: the left half shows, 320x480, not whole",
+          place.flags & OVPF_SHOWN && !(place.flags & OVPF_WHOLE) && place_area(&place) == 320L * 480 && place.rects[0].MaxX <= 429);
     CHECK("seq two more", place.seq == seq + 2);
 
     /* 4: the window moved so the box reaches past the screen's right edge */
@@ -108,7 +108,29 @@ int main(void)
     l->front = 0;
     bounds(l, 1600, 50, 660, 500);
     oc_place(&olb, &ov);
-    CHECK("past the screen's edge: cut to it (1610 to 1919)", place_area(&place) == 310L * 480 && place.box.MaxX == 1600 + 649);
+    CHECK("past the screen's edge: cut to it (1610 to 1919), not whole", place_area(&place) == 310L * 480 && place.box.MaxX == 1600 + 649
+          && !(place.flags & OVPF_WHOLE));
+
+    /* 4a (47.112): an AGA screen, not composited and not GFOpenRTG's: no memory for the host to write,
+     * but its size from the bitmap (interleaved, 640 wide, 4 planes), and the box whole on it */
+    {
+        static struct BitMap bm;
+        static struct RastPort rp;
+        bm.BytesPerRow = 80 * 4; bm.Rows = 256; bm.Depth = 4; bm.Flags = BMF_INTERLEAVED;
+        rp.BitMap = &bm;
+        l->rp = &rp;
+        game.surf = 0;
+        bounds(l, 0, 0, 320, 256);
+        ov.box.MinX = 0; ov.box.MinY = 0; ov.box.MaxX = 319; ov.box.MaxY = 255;
+        ov.aspect = OVASPECT_INTEGER;
+        oc_place(&olb, &ov);
+        CHECK("AGA: format 0, size 640x256 from the bitmap, shown and whole",
+              place.format == 0 && place.screen_width == 640 && place.screen_height == 256
+              && place.flags == (OVPF_SHOWN | OVPF_WHOLE) && place.nrects == 1);
+        CHECK("the aspect in the record, version 2's field", place.aspect == OVASPECT_INTEGER);
+        game.surf = (struct BitMap *)1;
+        l->rp = 0;
+    }
 
     /* 5 */
     game.hidden = 1;
