@@ -136,21 +136,21 @@ struct OComp {
     volatile UBYTE owed;        /* the screen's bitmap has something no picture shown has */
 };
 
-/* 47.111: GFOpenLayout Overlay. A box in a layer whose pixels come from
- * outside graphics.library, in a surface of its own at the picture's size,
- * composed right after its layer (gfopenlayers.h, docs/design/overlay.md).
- * Its layer points at it (OLayer's ovl); it outlives the layer, to be closed
- * by its producer, and has no surface while its layer isn't composited. */
+/* 47.111: GFOpenLayout Overlay (gfopenlayers.h, docs/design/overlay.md). A
+ * box in a layer whose pixels the host writes straight into the screen,
+ * scaled, from a place record the compositor keeps up to date: where the
+ * box is, what of it shows, the screen it is on. The compositor never draws
+ * the box (it leaves a hole there); whatever makes the pictures never sees
+ * the window. The layer points at it (OLayer's ovl); it outlives the layer,
+ * to be closed by whoever opened it. */
 struct OOverlay {
     struct Layer *layer;        /* 0 once the layer has gone */
-    struct BitMap *bm;          /* the picture's surface; 0: classic, the producer draws into the layer */
-    ULONG addr, bpr;
-    UWORD pw, ph;               /* the picture's size */
     struct Rectangle box;       /* in the layer */
-    UBYTE fmt;                  /* OGPU format of the surface */
-    UBYTE rfmt;                 /* GFOpenRTG's: 1 RGB565, 2 ARGB32 */
+    struct Library *ortg;       /* GFOpenRTG, for a classic screen's address */
+    struct LayerOverlayPlace *place;    /* public memory: what the host reads */
 };
-static void oc_overlay_drop(struct ol_base *olb, struct OOverlay *ov);
+static void oc_place(struct ol_base *olb, struct OOverlay *ov);
+static void oc_places(struct ol_base *olb, struct Layer_Info *li);
 
 struct OThunk {
     UWORD w[OC_THUNK + 1];
@@ -552,40 +552,17 @@ static void oc_sync(struct OCB *cb, struct oc_batch *b, const struct OComp *c, s
 /* The batch for a compose: the layers front to back in ord, each one's
  * part to show in v and its shadow's in s; rem, what no opaque layer
  * covers. */
-/* 47.111: a layer's overlay over it, cut to what of the layer shows (v): a
- * COPY at the picture's own size, a COMPOSITE scaled to the box otherwise,
- * at the layer's opacity */
-static void oc_build_overlay(struct oc_batch *b, struct Layer *l, const struct OOverlay *ov, const struct lc_rects *v, UBYTE a)
+/* 47.111: the overlay's box out of what the compositor draws of its layer:
+ * the host writes it (if v can't be cut for want of memory the layer's own
+ * pixels are drawn there, and the host's next frame covers them) */
+static void oc_hole(struct Layer *l, const struct OOverlay *ov, struct lc_rects *v)
 {
     struct lc_rect bx;
-    LONG bw, bh;
-    ULONG k;
     bx.x0 = l->bounds.MinX + ov->box.MinX;
     bx.y0 = l->bounds.MinY + ov->box.MinY;
     bx.x1 = l->bounds.MinX + ov->box.MaxX;
     bx.y1 = l->bounds.MinY + ov->box.MaxY;
-    bw = bx.x1 - bx.x0 + 1;
-    bh = bx.y1 - bx.y0 + 1;
-    if (bw <= 0 || bh <= 0 || !ov->pw || !ov->ph) return;
-    op_surface(b, S_OVL, ov->addr, ov->bpr, ov->pw, ov->ph, ov->fmt);
-    for (k = 0; k < v->n; k++) {
-        struct lc_rect r = v->r[k];
-        if (r.x0 < bx.x0) r.x0 = bx.x0;
-        if (r.y0 < bx.y0) r.y0 = bx.y0;
-        if (r.x1 > bx.x1) r.x1 = bx.x1;
-        if (r.y1 > bx.y1) r.y1 = bx.y1;
-        if (r.x0 > r.x1 || r.y0 > r.y1) continue;
-        if (ov->pw == bw && ov->ph == bh && a == 255) {
-            op_copy(b, S_OVL, r.x0 - bx.x0, r.y0 - bx.y0, &r);
-        } else {
-            /* the picture's part that lands on r, in the picture's pixels */
-            LONG sx0 = (r.x0 - bx.x0) * ov->pw / bw, sy0 = (r.y0 - bx.y0) * ov->ph / bh;
-            LONG sx1 = ((r.x1 - bx.x0 + 1) * ov->pw + bw - 1) / bw, sy1 = ((r.y1 - bx.y0 + 1) * ov->ph + bh - 1) / bh;
-            if (sx1 <= sx0) sx1 = sx0 + 1;
-            if (sy1 <= sy0) sy1 = sy0 + 1;
-            op_comp(b, S_OVL, sx0, sy0, sx1 - sx0, sy1 - sy0, &r, a, 0);
-        }
-    }
+    if (bx.x0 <= bx.x1 && bx.y0 <= bx.y1) lc_sub_rect(v, &bx);
 }
 
 static void oc_build(struct OCB *cb, const struct OComp *c, struct oc_batch *b, struct Layer **ord, ULONG n,
@@ -635,6 +612,7 @@ static void oc_build(struct OCB *cb, const struct OComp *c, struct oc_batch *b, 
             oc_shadow_rect(c, l, &l->bounds, &sr, 0);
             for (k = 0; k < s[i].n; k++) oc_shadow(b, c, &sr, &s[i].r[k]);
         }
+        if (o->ovl) oc_hole(l, o->ovl, &v[i]);  /* 47.111: the host's pixels there, not the layer's */
         if (!v[i].n) continue;
         op_surface(b, S_SURF, o->saddr, o->sbpr, o->sw, o->sh, argb ? OGPU_FMT_ARGB32 : c->fmt);
         if (held[i]) oc_sync(cb, b, c, l);
@@ -652,7 +630,6 @@ static void oc_build(struct OCB *cb, const struct OComp *c, struct oc_batch *b, 
                         OGPU_COMP_SRCALPHA);
             }
         }
-        if (o->ovl && o->ovl->bm) oc_build_overlay(b, l, o->ovl, &v[i], a);
     }
 }
 
@@ -1329,7 +1306,6 @@ static void oc_demoted(struct change *ch, int ok)
                 FreeBitMap(OL(l)->surf);
                 OL(l)->surf = 0;
             }
-            oc_overlay_drop(olb, OL(l)->ovl);   /* 47.111: classic now; OverlayInfo says so */
         }
         oc_free_comp(olb->cb, c);
     } else {
@@ -1341,22 +1317,13 @@ static void oc_demoted(struct change *ch, int ok)
     ch->demoted = 0;
 }
 
-static void oc_overlay_drop(struct ol_base *olb, struct OOverlay *ov)
-{
-    if (ov && ov->bm) {
-        FreeBitMap(ov->bm);     /* GFOpenRTG 0.21 waits for the batches still reading it */
-        ov->bm = 0;
-        ov->addr = 0;
-    }
-}
-
 static void oc_gone(struct ol_base *olb, struct Layer *l)
 {
     if (OL(l)->surf) FreeBitMap(OL(l)->surf);
     OL(l)->surf = 0;
-    if (OL(l)->ovl) {           /* 47.111: the overlay stays, without its surface or layer, till it is closed */
-        oc_overlay_drop(olb, OL(l)->ovl);
+    if (OL(l)->ovl) {           /* 47.111: the overlay stays, not shown, till it is closed */
         OL(l)->ovl->layer = 0;
+        oc_place(olb, OL(l)->ovl);
         OL(l)->ovl = 0;
     }
 }
@@ -1483,6 +1450,7 @@ static int oc_finish(struct change *ch, struct Layer *made, struct Layer *gone)
         if (is && !e) e = oc_ext(c, l, &l->bounds, &a, 0);
     }
     if (gone && !e && !OL(gone)->oldhidden) e = oc_ext(c, gone, &OL(gone)->oldb, &a, 0);
+    oc_places(olb, ch->li);     /* 47.111: the overlays' new places, before the compose that leaves their holes */
     if (e || oc_compose(cb, c, &a) < 0) {
         /* no memory: the compositor does all of it when it can */
         c->full = 1;
@@ -1771,38 +1739,6 @@ static ULONG ov_tag(const struct TagItem *t, ULONG tag, ULONG def)
     return def;
 }
 
-static struct OComp *ov_comp(struct OCB *cb, struct Layer *l)
-{
-    struct OComp *c;
-    if (!cb || !l || !OL(l)->surf) return 0;
-    for (c = cb->comps; c && c->li != l->LayerInfo; c = c->next)
-        ;
-    return c;
-}
-
-/* The overlay's surface, at its picture's size, in the screen's format. Holds cb->lock. */
-static int ov_surface(struct OCB *cb, struct OComp *c, struct OOverlay *ov)
-{
-    struct ol_base *olb = cb->olb;
-    struct OpenRTGBitMapInfo bi;
-    struct TagItem tags[] = {
-        { BMATags_Friend, (ULONG)c->screen }, { BMATags_Clear, TRUE }, { BMATags_Displayable, TRUE },
-        { TAG_DONE, 0 }
-    };
-    struct BitMap *bm = AllocBitMap(ov->pw, ov->ph, c->depth, BMF_CHECKVALUE, (struct BitMap *)tags);
-    if (!bm) return 0;
-    if (!ORTG_BitMapInfo(bm, &bi) || bi.format != (c->depth == 16 ? 1 : 2) || bi.width < ov->pw || bi.height < ov->ph) {
-        FreeBitMap(bm);
-        return 0;
-    }
-    ov->bm = bm;
-    ov->addr = (ULONG)bi.memory;
-    ov->bpr = bi.bytes_per_row;
-    ov->fmt = c->fmt;
-    ov->rfmt = (UBYTE)bi.format;
-    return 1;
-}
-
 static void ov_box(struct OOverlay *ov, struct Layer *l, const struct TagItem *tags)
 {
     LONG lw = l->bounds.MaxX - l->bounds.MinX + 1, lh = l->bounds.MaxY - l->bounds.MinY + 1;
@@ -1817,124 +1753,170 @@ static void ov_box(struct OOverlay *ov, struct Layer *l, const struct TagItem *t
     ov->box.MaxY = (WORD)(y + h - 1);
 }
 
-/* The box, composed again */
-static void ov_show(struct OCB *cb, struct OComp *c, struct OOverlay *ov)
+static struct OComp *ov_comp(struct OCB *cb, struct Layer *l)
 {
-    struct lc_rects a;
-    struct lc_rect r;
-    struct Layer *l = ov->layer;
-    if (!c || !l || OL(l)->hidden) return;
-    r.x0 = l->bounds.MinX + ov->box.MinX;
-    r.y0 = l->bounds.MinY + ov->box.MinY;
-    r.x1 = l->bounds.MinX + ov->box.MaxX;
-    r.y1 = l->bounds.MinY + ov->box.MaxY;
-    lc_init(&a, &mem);
-    if (!lc_or_rect(&a, &r)) oc_compose(cb, c, &a);
-    lc_free(&a);
+    struct OComp *c;
+    if (!cb || !l || !OL(l)->surf) return 0;
+    for (c = cb->comps; c && c->li != l->LayerInfo; c = c->next)
+        ;
+    return c;
+}
+
+static void ov_add(struct LayerOverlayPlace *p, const struct lc_rect *r)
+{
+    if (p->nrects >= OVP_MAXRECTS) { p->flags |= OVPF_TOOMANY; return; }
+    p->rects[p->nrects].MinX = (WORD)r->x0;
+    p->rects[p->nrects].MinY = (WORD)r->y0;
+    p->rects[p->nrects].MaxX = (WORD)r->x1;
+    p->rects[p->nrects].MaxY = (WORD)r->y1;
+    p->nrects++;
+}
+
+/* ORTG_BitMapInfo through a GFOpenRTG base of the overlay's own
+ * (OPENRTG_BASE_NAME is cb->ortg, and a classic screen may have no cb) */
+static BOOL ov_bminfo(struct Library *base, struct BitMap *bm, struct OpenRTGBitMapInfo *bi)
+{
+    struct { struct Library *ortg; } b, *cb = &b;
+    b.ortg = base;
+    return ORTG_BitMapInfo(bm, bi);
+}
+
+/* The place record, now: written between two increments of seq, so a reader
+ * that sees seq odd, or seq changed across its read, reads it again. Called
+ * after every change of the stack (layers_lib.c's finish, oc_finish), and by
+ * the calls below. */
+static void oc_place(struct ol_base *olb, struct OOverlay *ov)
+{
+    struct OCB *cb = olb->cb;
+    struct LayerOverlayPlace *p = ov->place;
+    struct Layer *l = ov->layer, *f;
+    struct OComp *c;
+    struct lc_rect bx, scr;
+    if (!p) return;
+    Forbid();
+    p->seq++;                               /* odd: being written */
+    p->flags = 0;
+    p->nrects = 0;
+    if (l && !OL(l)->hidden) {
+        struct BitMap *bm = l->rp ? l->rp->BitMap : 0;
+        c = ov_comp(cb, l);
+        if (c) {                            /* composited: the screen's bitmap is what is shown */
+            p->screen = (APTR)c->saddr;
+            p->bytes_per_row = c->sbpr;
+            p->screen_width = c->w;
+            p->screen_height = c->h;
+            p->format = c->depth == 16 ? 1 : 2;
+            p->flags |= OVPF_COMPOSITED;
+        } else if (bm && ov->ortg) {        /* classic: the screen's bitmap, as GFOpenRTG has it */
+            struct OpenRTGBitMapInfo bi;
+            if (ov_bminfo(ov->ortg, bm, &bi)) {
+                p->screen = bi.memory;
+                p->bytes_per_row = bi.bytes_per_row;
+                p->screen_width = (UWORD)bi.width;
+                p->screen_height = (UWORD)bi.height;
+                p->format = bi.format;
+            } else p->format = 0;
+        } else p->format = 0;               /* not GFOpenRTG's (AGA): the host can't write it */
+        bx.x0 = l->bounds.MinX + ov->box.MinX;
+        bx.y0 = l->bounds.MinY + ov->box.MinY;
+        bx.x1 = l->bounds.MinX + ov->box.MaxX;
+        bx.y1 = l->bounds.MinY + ov->box.MaxY;
+        p->box.MinX = (WORD)bx.x0; p->box.MinY = (WORD)bx.y0;
+        p->box.MaxX = (WORD)bx.x1; p->box.MaxY = (WORD)bx.y1;
+        /* what of it shows: inside the layer and the screen, nothing in front */
+        if (bx.x0 < l->bounds.MinX) bx.x0 = l->bounds.MinX;
+        if (bx.y0 < l->bounds.MinY) bx.y0 = l->bounds.MinY;
+        if (bx.x1 > l->bounds.MaxX) bx.x1 = l->bounds.MaxX;
+        if (bx.y1 > l->bounds.MaxY) bx.y1 = l->bounds.MaxY;
+        scr.x0 = scr.y0 = 0;
+        scr.x1 = (LONG)p->screen_width - 1;
+        scr.y1 = (LONG)p->screen_height - 1;
+        if (p->format && lc_meet(&bx, &scr, &bx)) {
+            struct lc_rects v;
+            lc_init(&v, &mem);
+            if (!lc_or_rect(&v, &bx)) {
+                ULONG k;
+                for (f = l->front; f; f = f->front) {
+                    struct lc_rect fb;
+                    if (OL(f)->hidden) continue;
+                    fb = lr(&f->bounds);
+                    if (lc_sub_rect(&v, &fb)) break;
+                }
+                for (k = 0; k < v.n; k++) ov_add(p, &v.r[k]);
+            }
+            lc_free(&v);
+            if (p->format) p->flags |= OVPF_SHOWN;
+        }
+    }
+    p->seq++;                               /* even: done */
+    Permit();
+}
+
+/* After a change of l's Layer_Info's stack (layers_lib.c's finish and oc_finish) */
+static void oc_places(struct ol_base *olb, struct Layer_Info *li)
+{
+    struct Layer *l;
+    for (l = li->top_layer; l; l = l->back)
+        if (OL(l)->ovl) oc_place(olb, OL(l)->ovl);
 }
 
 struct OOverlay *ol_OpenOverlay(struct ol_base *olb, struct Layer *l, const struct TagItem *tags)
 {
-    struct OCB *cb = olb->cb;
     struct OOverlay *ov;
-    struct OComp *c;
+    struct LayerOverlayPlace *p;
     if (!l || OL(l)->ovl) return 0;                 /* one overlay a layer */
     if (!(ov = AllocMem(sizeof *ov, MEMF_PUBLIC | MEMF_CLEAR))) return 0;
+    if (!(p = AllocMem(sizeof *p, MEMF_PUBLIC | MEMF_CLEAR))) { FreeMem(ov, sizeof *ov); return 0; }
+    p->magic = OVP_MAGIC;
+    p->version = OVP_VERSION;
+    p->pic_width = (UWORD)ov_tag(tags, OVA_PicWidth, 0);
+    p->pic_height = (UWORD)ov_tag(tags, OVA_PicHeight, 0);
+    ov->place = p;
     ov->layer = l;
+    ov->ortg = OpenLibrary((UBYTE *)"gfopenrtg.library", 0);
     ov->box.MaxX = ov->box.MaxY = -1;               /* "not set yet" for ov_box */
     ov_box(ov, l, tags);
-    ov->pw = (UWORD)ov_tag(tags, OVA_PicWidth, ov->box.MaxX - ov->box.MinX + 1);
-    ov->ph = (UWORD)ov_tag(tags, OVA_PicHeight, ov->box.MaxY - ov->box.MinY + 1);
-    if (cb) ObtainSemaphore(&cb->lock);
-    if ((c = ov_comp(cb, l)) != 0 && ov->pw && ov->ph) ov_surface(cb, c, ov);    /* else classic */
+    ObtainSemaphore(&l->LayerInfo->Lock);
     OL(l)->ovl = ov;
-    if (cb) ReleaseSemaphore(&cb->lock);
+    oc_place(olb, ov);
+    ReleaseSemaphore(&l->LayerInfo->Lock);
+    oc_touch(olb, l, 0);                            /* composited: the hole, composed */
     return ov;
 }
 
-LONG ol_OverlayInfo(struct ol_base *olb, struct OOverlay *ov, struct LayerOverlayInfo *info)
+struct LayerOverlayPlace *ol_OverlayPlace(struct ol_base *olb, struct OOverlay *ov)
 {
-    struct OCB *cb = olb->cb;
-    if (!ov || !info) return 0;
-    if (cb) ObtainSemaphore(&cb->lock);
-    info->kind = ov->bm ? LAYERS_OVERLAY_SURFACE : LAYERS_OVERLAY_CLASSIC;
-    info->memory = ov->bm ? (APTR)ov->addr : 0;
-    info->bytes_per_row = ov->bm ? ov->bpr : 0;
-    info->width = ov->pw;
-    info->height = ov->ph;
-    info->format = ov->bm ? ov->rfmt : 0;
-    info->box = ov->box;
-    if (cb) ReleaseSemaphore(&cb->lock);
-    return ov->layer != 0;
+    (void)olb;
+    return ov ? ov->place : 0;
 }
 
-/* r: the picture's pixels changed (0: all of it); marked as a drawing call's are, in the layer */
-void ol_DamageOverlay(struct ol_base *olb, struct OOverlay *ov, const struct Rectangle *r)
-{
-    struct OCB *cb = olb->cb;
-    struct Layer *l;
-    LONG bw, bh, x0, y0, x1, y1;
-    if (!cb || !ov || !ov->bm || !(l = ov->layer)) return;
-    bw = ov->box.MaxX - ov->box.MinX + 1;
-    bh = ov->box.MaxY - ov->box.MinY + 1;
-    if (r) {        /* the picture's pixels, to the box's */
-        x0 = ov->box.MinX + r->MinX * bw / ov->pw;
-        y0 = ov->box.MinY + r->MinY * bh / ov->ph;
-        x1 = ov->box.MinX + ((r->MaxX + 1) * bw + ov->pw - 1) / ov->pw - 1;
-        y1 = ov->box.MinY + ((r->MaxY + 1) * bh + ov->ph - 1) / ov->ph - 1;
-    } else {
-        x0 = ov->box.MinX; y0 = ov->box.MinY; x1 = ov->box.MaxX; y1 = ov->box.MaxY;
-    }
-    oc_add(cb, OL(l), x0, y0, x1, y1);
-}
-
-/* A new box or picture size (a guest's new mode); a new size gets a new, clear surface. Answers 1 when the
- * overlay has a surface after it (OverlayInfo says where). */
+/* A new box (in the layer), or a new picture size for whoever reads the record */
 LONG ol_SetOverlayAttrs(struct ol_base *olb, struct OOverlay *ov, const struct TagItem *tags)
 {
-    struct OCB *cb = olb->cb;
-    struct OComp *c;
-    UWORD pw, ph;
-    LONG ok;
-    if (!ov || !ov->layer) return 0;
-    if (cb) ObtainSemaphore(&cb->lock);
-    c = ov_comp(cb, ov->layer);
-    ov_box(ov, ov->layer, tags);
-    pw = (UWORD)ov_tag(tags, OVA_PicWidth, ov->pw);
-    ph = (UWORD)ov_tag(tags, OVA_PicHeight, ov->ph);
-    if (pw != ov->pw || ph != ov->ph || (!ov->bm && c)) {
-        oc_overlay_drop(olb, ov);
-        ov->pw = pw;
-        ov->ph = ph;
-        if (c && pw && ph) ov_surface(cb, c, ov);
-    }
-    ov_show(cb, c, ov);
-    ok = ov->bm != 0;
-    if (cb) ReleaseSemaphore(&cb->lock);
-    return ok;
+    struct Layer *l;
+    if (!ov || !(l = ov->layer)) return 0;
+    ObtainSemaphore(&l->LayerInfo->Lock);
+    ov_box(ov, l, tags);
+    ov->place->pic_width = (UWORD)ov_tag(tags, OVA_PicWidth, ov->place->pic_width);
+    ov->place->pic_height = (UWORD)ov_tag(tags, OVA_PicHeight, ov->place->pic_height);
+    oc_place(olb, ov);
+    ReleaseSemaphore(&l->LayerInfo->Lock);
+    oc_touch(olb, l, 0);
+    return 1;
 }
 
+/* Whoever writes into the screen from the record must have stopped first */
 void ol_CloseOverlay(struct ol_base *olb, struct OOverlay *ov)
 {
-    struct OCB *cb = olb->cb;
-    struct OComp *c;
+    struct Layer *l;
     if (!ov) return;
-    if (cb) ObtainSemaphore(&cb->lock);
-    c = ov->layer ? ov_comp(cb, ov->layer) : 0;
-    if (ov->layer) OL(ov->layer)->ovl = 0;
-    oc_overlay_drop(olb, ov);
-    if (c && ov->layer) {           /* the layer's own pixels show there again */
-        struct lc_rects a;
-        struct lc_rect r;
-        struct Layer *l = ov->layer;
-        r.x0 = l->bounds.MinX + ov->box.MinX;
-        r.y0 = l->bounds.MinY + ov->box.MinY;
-        r.x1 = l->bounds.MinX + ov->box.MaxX;
-        r.y1 = l->bounds.MinY + ov->box.MaxY;
-        lc_init(&a, &mem);
-        if (!OL(l)->hidden && !lc_or_rect(&a, &r)) oc_compose(cb, c, &a);
-        lc_free(&a);
+    if ((l = ov->layer) != 0) {
+        ObtainSemaphore(&l->LayerInfo->Lock);
+        OL(l)->ovl = 0;
+        ReleaseSemaphore(&l->LayerInfo->Lock);
+        oc_touch(olb, l, 0);                        /* composited: its own pixels there again */
     }
-    if (cb) ReleaseSemaphore(&cb->lock);
+    if (ov->ortg) CloseLibrary(ov->ortg);
+    FreeMem(ov->place, sizeof *ov->place);
     FreeMem(ov, sizeof *ov);
 }

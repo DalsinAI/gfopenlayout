@@ -1,117 +1,123 @@
 /* SPDX-License-Identifier: MIT */
-/* 47.111, GFOpenLayout Overlay: what the compositor's batch gets for a
- * layer's overlay (oc_build_overlay), on the host. gfopengfx's layers_lib.c
- * with this repository's layers_comp.c built in, in this unit, so the
- * statics are reached:
- *   1. at its own size, all of it showing: one COPY of the whole picture;
- *   2. the layer partly covered: a COPY of the part that shows only;
- *   3. scaled 2x into the box: a COMPOSITE whose source is the picture's
- *      own pixels for what shows;
- *   4. a translucent layer: a COMPOSITE at its opacity, at its own size;
- *   5. nothing of the box showing: nothing but the SURFACE.
+/* 47.111, GFOpenLayout Overlay, on the host: gfopengfx's layers_lib.c with
+ * this repository's layers_comp.c built in, in this unit, so the statics are
+ * reached. The compositor leaves a hole for an overlay's box (oc_hole) and
+ * keeps its place record (oc_place) as the host reads it:
+ *   1. the hole: the layer's own pixels are drawn everywhere but the box;
+ *   2. nothing in front: shown, composited, one rect, the box on the screen;
+ *   3. a window over its right half: what shows is the left half;
+ *   4. the box reaching past the screen: cut to the screen;
+ *   5. the layer hidden, then gone: not shown, no rects;
+ *   6. seq even after every write, two more each time.
  * Copyright (c) 2026 AmiCradle Team. MIT. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "layers_lib.c"
-#ifndef OGPU_HDR_OP
-#define OGPU_HDR_OP(w)    ((unsigned)((w) >> 16))
-#define OGPU_HDR_WORDS(w) ((unsigned)((w) & 0xFFFFUL))
-#endif
+
+void Forbid(void) {}
+void Permit(void) {}
+APTR AllocMem(ULONG size, ULONG flags) { (void)flags; return calloc(1, size); }
+void FreeMem(APTR p, ULONG size) { (void)size; free(p); }
 
 static int fails, cases;
 #define CHECK(what, ok) do { cases++; if (!(ok)) { fails++; printf("FAIL %s\n", what); } else printf("ok   %s\n", what); } while (0)
 
-static ULONG ovw[256];
-
-/* the rectangle lists' memory, from the host (layers_lib.c's goes through exec) */
-#include <stdlib.h>
 static void *t_alloc(void *ctx, uint32_t size) { (void)ctx; return malloc(size); }
 static void t_free(void *ctx, void *p, uint32_t size) { (void)ctx; (void)size; free(p); }
 static const struct lc_mem tmem = { t_alloc, t_free, 0 };
 
-static ULONG ov_batch(struct Layer *l, struct OOverlay *ov, const struct lc_rect *vis, int nvis, UBYTE a)
+static long area(const struct lc_rects *v)
 {
-    struct oc_batch b;
-    struct lc_rects v;
-    int i;
-    b.w = ovw; b.n = 0; b.cap = 256;
-    lc_init(&v, &tmem);
-    for (i = 0; i < nvis; i++) lc_or_rect(&v, &vis[i]);
-    oc_build_overlay(&b, l, ov, &v, a);
-    lc_free(&v);
-    return b.n;
+    long a = 0;
+    for (ULONG k = 0; k < v->n; k++) a += (long)(v->r[k].x1 - v->r[k].x0 + 1) * (v->r[k].y1 - v->r[k].y0 + 1);
+    return a;
 }
-
-/* the n-th command after the SURFACE: its op, and its words */
-static const ULONG *cmd(ULONG n, ULONG k, unsigned *op)
+static long place_area(const struct LayerOverlayPlace *p)
 {
-    ULONG at = 0, i = 0;
-    while (at < n) {
-        unsigned o = OGPU_HDR_OP(ovw[at]), w = OGPU_HDR_WORDS(ovw[at]);
-        if (o != OGPU_OP_SURFACE) { if (i == k) { *op = o; return &ovw[at]; } i++; }
-        at += w;
-    }
-    *op = 0;
-    return 0;
+    long a = 0;
+    for (int k = 0; k < p->nrects; k++) a += (long)(p->rects[k].MaxX - p->rects[k].MinX + 1) * (p->rects[k].MaxY - p->rects[k].MinY + 1);
+    return a;
+}
+static void bounds(struct Layer *l, int x, int y, int w, int h)
+{
+    l->bounds.MinX = x; l->bounds.MinY = y; l->bounds.MaxX = x + w - 1; l->bounds.MaxY = y + h - 1;
 }
 
 int main(void)
 {
-    struct Layer l;
-    struct OOverlay ov;
-    struct lc_rect all, part[2];
-    const ULONG *c;
-    unsigned op;
-    ULONG n;
+    static struct OLayer game, front;
+    static struct Layer_Info li;
+    static struct ol_base olb;
+    static struct OCB cb;
+    static struct OComp comp;
+    static struct LayerOverlayPlace place;
+    static struct OOverlay ov;
+    struct Layer *l = &game.l, *f = &front.l;
+    struct lc_rects v;
+    struct lc_rect all;
+    ULONG seq;
 
-    memset(&l, 0, sizeof l);
-    l.bounds.MinX = 100; l.bounds.MinY = 50; l.bounds.MaxX = 100 + 660 - 1; l.bounds.MaxY = 50 + 500 - 1;
-    memset(&ov, 0, sizeof ov);
-    ov.layer = &l;
-    ov.bm = (struct BitMap *)1;
-    ov.addr = 0x60100000; ov.bpr = 640 * 4; ov.fmt = OGPU_FMT_ARGB32;
+    /* a 1920x1080 composited ARGB32 screen; the game's window at 100,50, 660x500; its picture's box at 10,20 in it, 640x480 */
+    olb.cb = &cb;
+    cb.olb = &olb;
+    cb.comps = &comp;
+    comp.li = &li;
+    comp.saddr = 0x60001000; comp.sbpr = 7680; comp.w = 1920; comp.h = 1080; comp.depth = 32;
+    li.top_layer = l;
+    l->LayerInfo = &li;
+    game.surf = (struct BitMap *)1;
+    bounds(l, 100, 50, 660, 500);
+    ov.layer = l;
+    ov.place = &place;
     ov.box.MinX = 10; ov.box.MinY = 20; ov.box.MaxX = 10 + 640 - 1; ov.box.MaxY = 20 + 480 - 1;
-    ov.pw = 640; ov.ph = 480;
-    all.x0 = l.bounds.MinX; all.y0 = l.bounds.MinY; all.x1 = l.bounds.MaxX; all.y1 = l.bounds.MaxY;
+    game.ovl = &ov;
 
     /* 1 */
-    n = ov_batch(&l, &ov, &all, 1, 255);
-    c = cmd(n, 0, &op);
-    CHECK("its own size: SURFACE first, the picture's address and size",
-          OGPU_HDR_OP(ovw[0]) == OGPU_OP_SURFACE && ovw[1] == S_OVL && ovw[2] == 0x60100000 && ovw[4] == OGPU_XY(640, 480));
-    CHECK("its own size: one COPY of all of it, from 0,0 to the box",
-          c && op == OGPU_OP_COPY && c[1] == S_OVL && c[2] == OGPU_XY(0, 0) && c[3] == OGPU_XY(110, 70) && c[4] == OGPU_XY(640, 480)
-          && !cmd(n, 1, &op));
+    lc_init(&v, &tmem);
+    all.x0 = 100; all.y0 = 50; all.x1 = 759; all.y1 = 549;
+    lc_or_rect(&v, &all);
+    oc_hole(l, &ov, &v);
+    CHECK("the hole: the layer is drawn everywhere but the box", area(&v) == 660L * 500 - 640L * 480);
+    lc_free(&v);
 
-    /* 2: a window over its right half and its top 100 rows: what shows is the left part below them */
-    part[0].x0 = 100; part[0].y0 = 170; part[0].x1 = 429; part[0].y1 = 549;
-    n = ov_batch(&l, &ov, part, 1, 255);
-    c = cmd(n, 0, &op);
-    CHECK("covered: a COPY of what shows only, from the picture's 0,100",
-          c && op == OGPU_OP_COPY && c[2] == OGPU_XY(0, 100) && c[3] == OGPU_XY(110, 170) && c[4] == OGPU_XY(320, 380));
+    /* 2 */
+    oc_place(&olb, &ov);
+    CHECK("nothing in front: shown and composited", place.flags == (OVPF_SHOWN | OVPF_COMPOSITED));
+    CHECK("the screen: its memory, bytes a row, size and ARGB32",
+          place.screen == (APTR)0x60001000 && place.bytes_per_row == 7680 && place.screen_width == 1920 && place.format == 2);
+    CHECK("the box on the screen, and one rect, all of it",
+          place.box.MinX == 110 && place.box.MinY == 70 && place.box.MaxX == 749 && place.box.MaxY == 549
+          && place.nrects == 1 && place.rects[0].MinX == 110 && place.rects[0].MaxY == 549);
+    seq = place.seq;
+    CHECK("seq even after it is written", (seq & 1) == 0 && seq == 2);
 
-    /* 3: a 320x240 picture in the 640x480 box */
-    ov.pw = 320; ov.ph = 240;
-    n = ov_batch(&l, &ov, &all, 1, 255);
-    c = cmd(n, 0, &op);
-    CHECK("scaled 2x: a COMPOSITE from all of the picture to all of the box",
-          c && op == OGPU_OP_COMPOSITE && c[2] == OGPU_XY(0, 0) && c[3] == OGPU_XY(320, 240) && c[4] == OGPU_XY(110, 70)
-          && c[5] == OGPU_XY(640, 480) && c[6] == 255);
-    n = ov_batch(&l, &ov, part, 1, 255);
-    c = cmd(n, 0, &op);
-    CHECK("scaled 2x and covered: the source is the picture's part, 160x190 from 0,50",
-          c && op == OGPU_OP_COMPOSITE && c[2] == OGPU_XY(0, 50) && c[3] == OGPU_XY(160, 190) && c[5] == OGPU_XY(320, 380));
+    /* 3: another window in front, over the box's right half */
+    li.top_layer = f;
+    f->back = l;
+    l->front = f;
+    f->LayerInfo = &li;
+    bounds(f, 430, 0, 600, 700);
+    oc_place(&olb, &ov);
+    CHECK("covered on the right: the left half shows, 320x480",
+          place.flags & OVPF_SHOWN && place_area(&place) == 320L * 480 && place.rects[0].MaxX <= 429);
+    CHECK("seq two more", place.seq == seq + 2);
 
-    /* 4 */
-    ov.pw = 640; ov.ph = 480;
-    n = ov_batch(&l, &ov, &all, 1, 128);
-    c = cmd(n, 0, &op);
-    CHECK("translucent: a COMPOSITE at the layer's opacity", c && op == OGPU_OP_COMPOSITE && c[6] == 128 && c[3] == OGPU_XY(640, 480));
+    /* 4: the window moved so the box reaches past the screen's right edge */
+    li.top_layer = l;
+    l->front = 0;
+    bounds(l, 1600, 50, 660, 500);
+    oc_place(&olb, &ov);
+    CHECK("past the screen's edge: cut to it (1610 to 1919)", place_area(&place) == 310L * 480 && place.box.MaxX == 1600 + 649);
 
-    /* 5: only the layer's border shows (the box is all covered) */
-    part[0].x0 = 100; part[0].y0 = 50; part[0].x1 = 109; part[0].y1 = 549;
-    n = ov_batch(&l, &ov, part, 1, 255);
-    CHECK("nothing of the box shows: no COPY or COMPOSITE", !cmd(n, 0, &op));
+    /* 5 */
+    game.hidden = 1;
+    oc_place(&olb, &ov);
+    CHECK("hidden: not shown, no rects", place.flags == 0 && place.nrects == 0);
+    game.hidden = 0;
+    ov.layer = 0;
+    oc_place(&olb, &ov);
+    CHECK("gone: not shown, no rects", place.flags == 0 && place.nrects == 0 && (place.seq & 1) == 0);
 
     printf("%d/%d overlay cases pass\n", cases - fails, cases);
     return fails != 0;
