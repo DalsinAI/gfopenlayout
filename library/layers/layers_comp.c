@@ -146,6 +146,7 @@ struct OComp {
 struct OOverlay {
     struct Layer *layer;        /* 0 once the layer has gone */
     struct Rectangle box;       /* in the layer */
+    UWORD aspect;               /* OVA_Aspect: OVASPECT_ (47.112) */
     struct Library *ortg;       /* GFOpenRTG, for a classic screen's address */
     struct LayerOverlayPlace *place;    /* public memory: what the host reads */
 };
@@ -1817,6 +1818,13 @@ static void oc_place(struct ol_base *olb, struct OOverlay *ov)
                 p->format = bi.format;
             } else p->format = 0;
         } else p->format = 0;               /* not GFOpenRTG's (AGA): the host can't write it */
+        if (!p->format && bm) {             /* 47.112: an AGA screen still has its size, for a display's plane */
+            p->screen = 0;
+            p->bytes_per_row = 0;
+            p->screen_width = (UWORD)(bm->BytesPerRow * 8 / ((bm->Flags & BMF_INTERLEAVED) && bm->Depth ? bm->Depth : 1));
+            p->screen_height = bm->Rows;
+        }
+        p->aspect = ov->aspect;
         bx.x0 = l->bounds.MinX + ov->box.MinX;
         bx.y0 = l->bounds.MinY + ov->box.MinY;
         bx.x1 = l->bounds.MinX + ov->box.MaxX;
@@ -1831,7 +1839,7 @@ static void oc_place(struct ol_base *olb, struct OOverlay *ov)
         scr.x0 = scr.y0 = 0;
         scr.x1 = (LONG)p->screen_width - 1;
         scr.y1 = (LONG)p->screen_height - 1;
-        if (p->format && lc_meet(&bx, &scr, &bx)) {
+        if (p->screen_width && lc_meet(&bx, &scr, &bx)) {
             struct lc_rects v;
             lc_init(&v, &mem);
             if (!lc_or_rect(&v, &bx)) {
@@ -1845,7 +1853,13 @@ static void oc_place(struct ol_base *olb, struct OOverlay *ov)
                 for (k = 0; k < v.n; k++) ov_add(p, &v.r[k]);
             }
             lc_free(&v);
-            if (p->format) p->flags |= OVPF_SHOWN;
+            if (p->nrects) p->flags |= OVPF_SHOWN;
+            /* 47.112: whole: one piece and it is the box itself (nothing in front, inside the
+             * layer and the screen), so a display can put the picture on a hardware plane */
+            if (p->nrects == 1 && !(p->flags & OVPF_TOOMANY)
+                && p->rects[0].MinX == p->box.MinX && p->rects[0].MinY == p->box.MinY
+                && p->rects[0].MaxX == p->box.MaxX && p->rects[0].MaxY == p->box.MaxY)
+                p->flags |= OVPF_WHOLE;
         }
     }
     p->seq++;                               /* even: done */
@@ -1871,6 +1885,7 @@ struct OOverlay *ol_OpenOverlay(struct ol_base *olb, struct Layer *l, const stru
     p->version = OVP_VERSION;
     p->pic_width = (UWORD)ov_tag(tags, OVA_PicWidth, 0);
     p->pic_height = (UWORD)ov_tag(tags, OVA_PicHeight, 0);
+    ov->aspect = (UWORD)ov_tag(tags, OVA_Aspect, OVASPECT_KEEP);
     ov->place = p;
     ov->layer = l;
     ov->ortg = OpenLibrary((UBYTE *)"gfopenrtg.library", 0);
@@ -1899,6 +1914,7 @@ LONG ol_SetOverlayAttrs(struct ol_base *olb, struct OOverlay *ov, const struct T
     ov_box(ov, l, tags);
     ov->place->pic_width = (UWORD)ov_tag(tags, OVA_PicWidth, ov->place->pic_width);
     ov->place->pic_height = (UWORD)ov_tag(tags, OVA_PicHeight, ov->place->pic_height);
+    ov->aspect = (UWORD)ov_tag(tags, OVA_Aspect, ov->aspect);
     oc_place(olb, ov);
     ReleaseSemaphore(&l->LayerInfo->Lock);
     oc_touch(olb, l, 0);
