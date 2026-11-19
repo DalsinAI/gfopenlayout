@@ -17,7 +17,7 @@ on:
 jobs:
   os3:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: self-hosted
+    runs-on: [self-hosted, amicradle-validate]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -53,14 +53,14 @@ jobs:
             echo "::notice title=build-amiga.sh built::$(ls -l build-amiga/libgfopenlayout_draw.a 2>/dev/null | awk '{print $5 " bytes libgfopenlayout_draw.a"}')"
           fi
           exit $status
-      - uses: actions/upload-artifact@v4
+      - name: Keep the outputs on the runner (os3; no artifact storage on GitHub)
         if: always()
-        with:
-          name: os3
-          path: build-amiga
-          if-no-files-found: ignore
+        run: |
+          d="$HOME/AmiCradle-dev/ci/artifacts/${{ github.repository }}/${{ github.run_id }}/os3"; mkdir -p "$d"
+          for p in build-amiga; do [ -e "$p" ] && cp -a "$p" "$d/" || true; done
+          echo "kept in $d"
   host:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, amicradle-validate]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

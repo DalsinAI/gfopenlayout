@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   m68k:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, amicradle-validate]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,7 @@ jobs:
           repository: DalsinAI/gfopengfx
           path: gfopengfx
       - name: m68k cross GCC and qemu-m68k
-        run: sudo apt-get update && sudo apt-get install -y gcc-m68k-linux-gnu g++-m68k-linux-gnu qemu-user
+        run: command -v m68k-linux-gnu-gcc >/dev/null && command -v m68k-linux-gnu-g++ >/dev/null && command -v qemu-m68k >/dev/null || { sudo apt-get update && sudo apt-get install -y gcc-m68k-linux-gnu g++-m68k-linux-gnu qemu-user; }
       - name: GFOpenLayers composited marks
         run: GFX=gfopengfx QEMU_M68K=qemu-m68k sh tests/m68k/test_comp_marks.sh
       - name: The compositor's first start against the lock order (host)
